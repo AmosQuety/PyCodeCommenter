@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local/Temp Files for PyCodeCommenter
+env_info.txt
+out.txt
+output.txt
+modern_output.txt
+modern_results.txt
+test_output.txt
+reproduction.py
+test_cst.txt
+main_output.txt
+out_*.txt
+verify_*.py
+verify_*.txt
+error.txt
+version_info.txt
+
+# VS Code
+.vscode/
