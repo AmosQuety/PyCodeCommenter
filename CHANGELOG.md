@@ -4,7 +4,7 @@ All notable changes to PyCodeCommenter will be documented in this file.
 
 ## [2.0.0] - 2026-01-25
 
-### 🎉 Major Release - Complete Rewrite
+###  Major Release - Complete Rewrite
 
 #### Added
 - **Comprehensive Validation System** - 6 types of documentation checks

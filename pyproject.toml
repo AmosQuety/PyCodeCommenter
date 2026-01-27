@@ -8,7 +8,7 @@ version = "2.0.3"
 description = "Automatically generate, validate, and maintain Google-style docstrings for Python code"
 readme = "README.md"
 authors = [
-    {name = "Amos Quety", email = "amosnabasa4@gmail.com"}
+    {name = "Nabasa Amos", email = "amosnabasa4@gmail.com"}
 ]
 license = {text = "MIT"}
 classifiers = [
