@@ -6,7 +6,7 @@
 [![GitHub](https://img.shields.io/github/stars/AmosQuety/PyCodeCommenter?style=social)](https://github.com/AmosQuety/PyCodeCommenter)
 
 **The Python documentation tool that developers actually want to use.**
-
+<!-- hello world -->
 PyCodeCommenter automatically generates, validates, and maintains Google-style docstrings for your Python code. Unlike AI-based tools, it provides **deterministic, rule-based validation** that catches documentation issues AI might miss.
 
 ## Why PyCodeCommenter?
@@ -239,6 +239,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ##  Contributing
 Contributions welcome! Please read `CONTRIBUTING.md` first.
+
 
 ##  Show Your Support
 If PyCodeCommenter helped you, please star the repo! It helps others discover the project.
