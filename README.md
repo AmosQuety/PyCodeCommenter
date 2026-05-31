@@ -269,9 +269,9 @@ PyCodeCommenter -> Creator -> Nabasa Amos (Amos Quety)
 
 ## Connect With the Creator
 
-- **Portfolio**: [Projects and work](https://github.com/AmosQuety?tab=repositories)
+- **Portfolio**: [Projects and work](https://nabasa-amos.netlify.app)
 - **GitHub**: [AmosQuety](https://github.com/AmosQuety)
-- **LinkedIn**: [Nabasa Amos](https://www.linkedin.com/search/results/all/?keywords=Nabasa%20Amos)
+- **LinkedIn**: [Nabasa Amos](https://linkedin.com/in/nabasa-amos)
 - **Contact**: amosnabasa4@gmail.com
 
 ## License
