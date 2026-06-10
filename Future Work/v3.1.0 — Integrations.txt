@@ -32,7 +32,8 @@ display results in the Security tab:
 ```json
 {
   "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-  "version": "2.1.0",
+  "version": "v2.1.1"
+,
   "runs": [{
     "tool": {
       "driver": {

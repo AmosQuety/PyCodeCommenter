@@ -217,6 +217,15 @@ class PyCodeCommenter:
             return_type = self._get_return_type(func_node, local_types)
             return_desc = parsed_info.get("returns") or "Description of the return value."
             
+            if ":" in return_desc:
+                prefix, rest = return_desc.split(":", 1)
+                prefix_clean = prefix.strip()
+                if (prefix_clean == return_type or 
+                    " " not in prefix_clean or 
+                    "[" in prefix_clean or 
+                    "|" in prefix_clean):
+                    return_desc = rest.strip()
+            
             docstring += f"\nReturns:\n    {return_type}: {return_desc}\n"
             docstring += '"""'
             return docstring
