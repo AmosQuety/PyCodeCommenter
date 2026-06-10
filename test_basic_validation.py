@@ -53,4 +53,4 @@ def subtract(a, b):
     validator = DocstringValidator(code_string=code_order)
     report = validator.validate_all()
     # Should contain an error for the parameter order
-    assert any(issue.category == "order" for issue in report.issues)
+    assert any(issue.category == "signature" and "order" in issue.message.lower() for issue in report.issues)

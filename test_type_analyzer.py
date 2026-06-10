@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import pytest
+import ast
 
 # Ensure repository root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

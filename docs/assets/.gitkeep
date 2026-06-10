@@ -1,0 +1,12 @@
+# docs/assets/.gitkeep
+#
+# This file exists solely to make Git track the docs/assets/ directory.
+# It contains no content and can be safely ignored.
+#
+# TO ADD A LOGO:
+#   1. Place your logo file at:  docs/assets/logo.png
+#   2. In mkdocs.yml, uncomment the two lines:
+#        logo: assets/logo.png
+#        favicon: assets/logo.png
+#   3. Recommended dimensions: 512×512 px, PNG with transparent background.
+#      A square SVG also works — rename it to logo.svg and update mkdocs.yml.

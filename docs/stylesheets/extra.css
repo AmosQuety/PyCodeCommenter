@@ -1,0 +1,103 @@
+/*
+ * docs/stylesheets/extra.css
+ *
+ * PyCodeCommenter — custom theme overrides.
+ * All brand colours are defined as CSS variables here.
+ * To change the colour scheme, only edit the values in :root.
+ * The MkDocs Material slate palette provides the dark background base.
+ */
+
+/* ── Brand tokens ──────────────────────────────────────────────────── */
+:root {
+  --pcc-brand-primary:    #00897b;   /* Teal — matches mkdocs.yml primary */
+  --pcc-brand-accent:     #26c6da;   /* Cyan accent for hover states */
+  --pcc-brand-bg:         #0d1117;   /* Deep dark background (PyPI-style) */
+  --pcc-brand-surface:    #161b22;   /* Card / panel background */
+  --pcc-brand-border:     #30363d;   /* Subtle border colour */
+  --pcc-brand-text:       #e6edf3;   /* Primary text */
+  --pcc-brand-muted:      #8b949e;   /* Secondary / muted text */
+  --pcc-brand-code-bg:    #1f2937;   /* Inline code background */
+  --pcc-brand-logo-size:  2rem;      /* Logo size in the header */
+}
+
+/* ── Navigation cards on the home page ────────────────────────────── */
+.pcc-nav-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.pcc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 1.25rem 1.5rem;
+  background: var(--pcc-brand-surface);
+  border: 1px solid var(--pcc-brand-border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--pcc-brand-text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pcc-card:hover {
+  border-color: var(--pcc-brand-primary);
+  box-shadow: 0 0 0 1px var(--pcc-brand-primary);
+  text-decoration: none;
+  color: var(--pcc-brand-text);
+}
+
+.pcc-card__icon {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+  line-height: 1;
+}
+
+.pcc-card__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--pcc-brand-primary);
+  margin-bottom: 0.25rem;
+}
+
+.pcc-card__desc {
+  font-size: 0.82rem;
+  color: var(--pcc-brand-muted);
+  line-height: 1.45;
+}
+
+/* ── Hero / landing header ─────────────────────────────────────────── */
+.pcc-hero {
+  text-align: center;
+  padding: 2.5rem 1rem 1rem;
+}
+
+.pcc-hero__logo {
+  /* Placeholder dimensions — replace with real logo */
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1rem;
+  background: var(--pcc-brand-surface);
+  border: 2px dashed var(--pcc-brand-border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.pcc-hero__tagline {
+  font-size: 1.1rem;
+  color: var(--pcc-brand-muted);
+  max-width: 540px;
+  margin: 0 auto 1.5rem;
+}
+
+/* ── Inline code colour override ───────────────────────────────────── */
+code {
+  background: var(--pcc-brand-code-bg) !important;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}

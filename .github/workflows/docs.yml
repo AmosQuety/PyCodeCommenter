@@ -1,0 +1,66 @@
+# .github/workflows/docs.yml
+# Builds and deploys the MkDocs documentation site to GitHub Pages.
+#
+# Trigger: any push to `main` that touches docs/ or this workflow file.
+# Manual trigger: workflow_dispatch (run from the Actions tab at any time).
+#
+# REQUIRED ONE-TIME SETUP:
+# GitHub repo → Settings → Pages → Source → select "GitHub Actions"
+# Without that change the deploy job runs but the site never goes live.
+
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install MkDocs and theme
+        run: pip install mkdocs mkdocs-material
+
+      - name: Build site
+        run: mkdocs build --strict --site-dir _site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

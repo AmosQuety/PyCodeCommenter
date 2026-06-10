@@ -1,0 +1,66 @@
+# mkdocs.yml — PyCodeCommenter documentation site configuration
+
+site_name: PyCodeCommenter
+site_description: Automatically generate, validate, and maintain Google-style docstrings for Python code
+site_url: https://amosquety.github.io/PyCodeCommenter
+repo_url: https://github.com/AmosQuety/PyCodeCommenter
+repo_name: AmosQuety/PyCodeCommenter
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: slate          # Dark background (PyPI-aesthetic)
+    primary: teal
+    accent: teal
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  # logo: assets/logo.png   # Uncomment once docs/assets/logo.png is added
+  # favicon: assets/logo.png
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+    - Docstring Styles: docstring-styles.md
+    - Recipes & Workflows: recipes.md
+  - Reference:
+    - CLI Reference: cli-reference.md
+    - Python API: python-api.md
+    - Configuration: configuration.md
+    - Validation Checks: validation-checks.md
+  - Project:
+    - Changelog: changelog.md
+    - FAQ: faq.md
+    - Contributing: contributing.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css   # CSS variable overrides — swap colours here
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/AmosQuety/PyCodeCommenter
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pycodecommenter
+
+copyright: "© 2026 Nabasa Amos. Released under MIT License."

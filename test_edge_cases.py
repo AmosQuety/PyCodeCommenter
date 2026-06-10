@@ -34,7 +34,7 @@ def test_syntax_error(commenter):
 
 def test_unicode_handling(commenter):
     """Test with Unicode characters in function names and strings."""
-    code = """def 🚀_function(name="世界"):
+    code = """def 世界_function(name="世界"):
     return f"Hello {name} 🚀"
 """
     commenter.from_string(code)
