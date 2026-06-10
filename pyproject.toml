@@ -39,7 +39,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/AmosQuety/PyCodeCommenter"
-Documentation = "https://github.com/AmosQuety/PyCodeCommenter/blob/main/README.md"
+Documentation = "https://amosquety.github.io/PyCodeCommenter/"
 Repository = "https://github.com/AmosQuety/PyCodeCommenter"
 "Bug Tracker" = "https://github.com/AmosQuety/PyCodeCommenter/issues"
 
