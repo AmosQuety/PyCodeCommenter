@@ -1,0 +1,15 @@
+v2.1.0 — Safety & Trust · Jun 10 → Jun 30
+This is the "stop scaring users" release. All four items are independent so you can ship them in any order.
+--dry-run and --backup first — they're the most urgent. Dry-run prints a unified diff to stdout. Backup simply does shutil.copy(path, path + ".bak") before any in-place write. Maybe 2 days each.
+Config loader next. Add a config.py module that walks up the directory tree looking for .pycodecommenter.yaml and loads it with ruamel.yaml. Wire the values to the existing hard-coded defaults. A week's work max.
+Smarter parameter inference is also v2.1 — see the dedicated audit prompt below.
+Test rewrite is ongoing across all phases but the baseline pass (assertions on critical paths) should land here.
+
+v2.2.0 — Accuracy & Output · Jul 1 → Aug 15
+This is the "be correct and be composable" release. Decorator awareness cleans up the false-positive noise. JSON output unlocks every downstream integration — make it a flag on both validate and coverage. The Sphinx :raises: fix is a targeted one-liner in validator.py.
+
+v3.0.0 — Safe, Configurable, Extensible · Aug 16 → Nov 1
+The big one. The merge algorithm is the hardest item in the entire roadmap — budget 3–4 weeks for it alone. The approach: parse the existing docstring into sections, generate fresh sections, then do a section-by-section merge where any section with human content that doesn't match the auto-generated template is preserved. Multi-style support travels alongside — once the generator is style-aware, NumPy and Sphinx become config flags.
+
+v3.1.0 — Integrations · Nov 2, 2026 → Mar 1, 2027
+VS Code extension, GitHub Action for PR automation, SARIF output. These all depend on the v3.0 foundation being solid. Don't start them until merge and JSON output are stable.

@@ -1,6 +1,6 @@
 """Comprehensive test suite for all validation checks."""
 # -*- coding: utf-8 -*-
-from validator import DocstringValidator, Severity
+from PyCodeCommenter.validator import DocstringValidator, Severity
 import json
 
 print("="*80)

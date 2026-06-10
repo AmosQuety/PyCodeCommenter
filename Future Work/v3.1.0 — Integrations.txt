@@ -1,0 +1,139 @@
+# PyCodeCommenter — v3.1.0 Integrations Implementation
+
+## MANDATORY FIRST STEP — READ BEFORE WRITING ANY CODE
+
+v3.1.0 depends entirely on v3.0.0 being complete and stable. Before starting
+any work, verify:
+
+1. Read PyCodeCommenter/merger.py — confirm DocstringMerger exists and is
+   exported from __init__.py
+2. Read PyCodeCommenter/cli.py — confirm --output-format json exists on both
+   validate and coverage subcommands (added in v2.2.0)
+3. Read PyCodeCommenter/config.py — confirm load_config exists (added in
+   v2.1.0)
+4. Read .github/workflows/ — list every existing workflow file and what it does
+5. Read pyproject.toml — confirm current version, dependencies, and entry points
+
+If any of the above are missing, STOP and report what is absent. Do not
+proceed until the v3.0.0 foundation is confirmed present.
+
+---
+
+## Feature 1: SARIF output for validate
+
+### What to build
+Add `sarif` as a third option for `--output-format` on the `validate`
+subcommand. SARIF (Static Analysis Results Interchange Format) v2.1.0 is
+the format used by GitHub Code Scanning.
+
+The SARIF output must conform to the minimum schema needed for GitHub to
+display results in the Security tab:
+
+```json
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": {
+      "driver": {
+        "name": "pycodecommenter",
+        "version": "<current version from pyproject.toml>",
+        "rules": []
+      }
+    },
+    "results": [
+      {
+        "ruleId": "<check name>",
+        "level": "error|warning|note",
+        "message": { "text": "<message>" },
+        "locations": [{
+          "physicalLocation": {
+            "artifactLocation": { "uri": "<relative file path>" },
+            "region": { "startLine": <line> }
+          }
+        }]
+      }
+    ]
+  }]
+}
+```
+
+Severity mapping: ERROR → "error", WARNING → "warning", INFO → "note".
+Read the exact Severity enum values from validator.py before mapping.
+Read the current version string from pyproject.toml before hardcoding.
+
+### Constraints
+- Use Python's built-in `json` module only.
+- Do not touch validator.py — serialize from the existing ValidationReport.
+- Add one test in `test_sarif.py` that validates the output is valid JSON
+  and contains the expected top-level keys.
+
+---
+
+## Feature 2: GitHub Actions workflow for documentation checks
+
+### What to build
+Add `.github/workflows/docs-check.yml` — a reusable workflow that runs
+`pycodecommenter validate` on push and pull_request, and uploads a SARIF
+report to GitHub Code Scanning.
+
+The workflow must:
+1. Check out the repo
+2. Set up Python (matrix: 3.9, 3.11, 3.12)
+3. Install pycodecommenter from PyPI (`pip install pycodecommenter`)
+4. Run: `pycodecommenter validate . --output-format sarif > results.sarif`
+5. Upload results.sarif using `github/codeql-action/upload-sarif@v3`
+
+Read the existing `.github/workflows/` files before writing this — match
+the existing indentation style, Python setup action version, and
+checkout action version already in use.
+
+### Constraints
+- Do not modify the existing publish workflow.
+- The workflow must have `continue-on-error: true` on the validate step so
+  that a documentation failure does not block the build by default. Add a
+  comment explaining this choice.
+- Use `ubuntu-latest` as the runner.
+
+---
+
+## Feature 3: VS Code extension scaffold
+
+### What to build
+Create a `vscode-extension/` directory at the project root containing a
+minimal VS Code extension that:
+
+1. Adds a command `pycodecommenter.generateForFile` that runs
+   `pycodecommenter generate <current file> --dry-run` and shows the diff
+   in a VS Code output channel
+2. Adds a command `pycodecommenter.validateFile` that runs
+   `pycodecommenter validate <current file> --output-format json`, parses
+   the JSON, and populates VS Code's diagnostic collection with the issues
+
+### What to read before building
+- Run `code --version` or check if a `.vscode/` directory exists to confirm
+  the developer has VS Code available
+- Read `PyCodeCommenter/cli.py` to confirm the exact command syntax for
+  --dry-run and --output-format json before hardcoding them in the extension
+- Confirm the JSON output shape from v2.2.0 by reading cli.py or the
+  validation report serialization
+
+### Scaffold files to create
+
+vscode-extension/
+package.json        (extension manifest, publisher placeholder)
+tsconfig.json       (target ES2020, module commonjs)
+src/
+extension.ts      (activate(), register both commands)
+runner.ts         (spawns CLI subprocess, returns stdout)
+diagnostics.ts    (parses JSON issues, maps to vscode.Diagnostic)
+README.md           (install instructions, assumes pycodecommenter in PATH)
+
+### Constraints
+- This is a scaffold, not a production extension — mark it clearly in
+  package.json with `"preview": true` and version `"0.1.0"`.
+- Do not implement auto-run on save in this version — commands only.
+- TypeScript only — no JavaScript files.
+- Do not add vscode as a runtime dependency to pyproject.toml.
+- The extension must handle the case where pycodecommenter is not in PATH
+  gracefully — show a VS Code error message, do not crash.

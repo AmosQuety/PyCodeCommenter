@@ -18,6 +18,7 @@ from typing import Union, Dict, Any, Optional, List
 try:
     from .templates import get_function_description
     from .parameter_descriptions import parameter_descriptions
+    from .inference import infer_description
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
 except (ImportError, ValueError):
@@ -192,7 +193,15 @@ class PyCodeCommenter:
                 found_args = True
                 inferred_type = self._infer_type(arg)
                 # Use parser to get existing parameter description
-                param_desc = parsed_info.get("params", {}).get(arg.arg) or self._get_parameter_description(func_node.name, arg.arg)
+                sibling_params = [a.arg for a in func_node.args.args if a.arg != 'self']
+                default_str = self._get_default_value(default) if default is not None else None
+                param_desc = parsed_info.get("params", {}).get(arg.arg) or self._get_parameter_description(
+                    func_name=func_node.name,
+                    param_name=arg.arg,
+                    inferred_type=inferred_type,
+                    default_value=default_str,
+                    sibling_params=sibling_params
+                )
                 
                 arg_line = f"    {arg.arg} ({inferred_type}): {param_desc}"
                 if not any(param_desc.endswith(p) for p in {'.', '!', '?'}):
@@ -248,18 +257,36 @@ class PyCodeCommenter:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
             return '"""Error generating docstring."""'
 
-    def _get_parameter_description(self, func_name: str, param_name: str) -> str:
-        """
-        Retrieves a default or predefined description for a parameter.
-        
+    def _get_parameter_description(self, func_name: str, param_name: str, inferred_type: str = None, default_value: str = None, sibling_params: list = None) -> str:
+        """Retrieve a description for a parameter, using static dict as fallback and rule‑based inference as primary source.
+
         Args:
-            func_name (str): The name of the function.
-            param_name (str): The name of the parameter.
-            
+            func_name (str): Name of the function containing the parameter.
+            param_name (str): Parameter name.
+            inferred_type (str, optional): Inferred type hint for the parameter.
+            default_value (str, optional): String representation of the default value.
+            sibling_params (list, optional): List of other parameter names in the same function.
+
         Returns:
-            str: The description of the parameter.
+            str: Description of the parameter.
         """
-        return parameter_descriptions.get(func_name, {}).get(param_name, f"{param_name.replace('_', ' ').capitalize()} of the {func_name.replace('_', ' ')}.")
+        # First, try the static dictionary for explicit overrides.
+        static_desc = parameter_descriptions.get(func_name, {}).get(param_name)
+        if static_desc:
+            return static_desc
+        # Use rule‑based inference when possible.
+        try:
+            return infer_description(
+                param_name=param_name,
+                type_hint=inferred_type,
+                default_value=default_value,
+                function_name=func_name,
+                sibling_params=sibling_params or []
+            )
+        except Exception as e:
+            # Fallback to a generic description on unexpected errors.
+            logger.warning(f"Inference failed for {func_name}.{param_name}: {e}")
+            return f"{param_name.replace('_', ' ').capitalize()} of the {func_name.replace('_', ' ')}."
 
     def _get_class_attributes(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """

@@ -1,0 +1,126 @@
+# PyCodeCommenter — v2.2.0 Accuracy & Output Implementation
+
+## MANDATORY FIRST STEP — READ BEFORE WRITING ANY CODE
+
+Before proposing or implementing anything, read the following files in full:
+- PyCodeCommenter/validator.py          (entire file)
+- PyCodeCommenter/commenter.py          (entire file)
+- PyCodeCommenter/cli.py                (entire file)
+- PyCodeCommenter/docstring_parser.py   (entire file)
+- PyCodeCommenter/__init__.py
+- pyproject.toml
+
+For each file confirm:
+1. The exact class and method names you will touch for each feature
+2. Whether any JSON output, decorator detection, or Sphinx raise handling
+   already exists anywhere — search before assuming it is absent
+3. The exact Severity enum values and ValidationIssue field names
+4. What arguments `DocstringValidator.__init__` and `validate()` currently
+   accept
+
+Report a short inventory of findings before writing any code.
+
+---
+
+## Feature 1: Decorator and method-type awareness in validator
+
+### What to build
+Update `DocstringValidator` in `validator.py` to detect and handle these
+decorator types:
+- `@property` — skip return-doc check on setter/deleter variants; getter
+  should still have a return doc
+- `@classmethod` — treat `cls` the same as `self` (already excluded from
+  param checks, but verify this is actually the case by reading the code)
+- `@staticmethod` — no `self`/`cls` at all; ensure the heuristic that
+  detects methods does not misfire on static methods with a non-self first arg
+
+### How to detect decorators
+Read `func_node.decorator_list` from the AST node. Each decorator is an
+`ast.Name` or `ast.Attribute`. Match on `.id` for simple decorators
+(`@property`, `@staticmethod`, `@classmethod`).
+
+### Constraints
+- Read the current method-detection heuristic in validator.py first and
+  document exactly what it does before changing it.
+- Do not change the public API of `DocstringValidator` — no new constructor
+  arguments.
+- Do not touch commenter.py, coverage.py, or cli.py.
+- Add test cases for each decorator type to `test_validation.py` (rewrite
+  it in place, do not create a new file).
+
+---
+
+## Feature 2: Structured JSON output for validate and coverage
+
+### What to build
+Add `--output-format` flag to both `validate` and `coverage` subcommands
+in cli.py. Accepted values: `text` (default, existing behavior) and `json`.
+
+When `--output-format json`:
+- For `validate`: serialize the ValidationReport to JSON and print to stdout.
+  The JSON shape must be:
+```json
+  {
+    "file": "<path>",
+    "stats": {
+      "total": 0,
+      "errors": 0,
+      "warnings": 0,
+      "info": 0,
+      "coverage_percentage": 0.0
+    },
+    "issues": [
+      {
+        "line": 0,
+        "severity": "ERROR|WARNING|INFO",
+        "check": "<check name>",
+        "message": "<message>"
+      }
+    ]
+  }
+```
+- For `coverage`: serialize ProjectCoverage to JSON. The shape must match
+  whatever `to_json()` already returns — read coverage.py first to confirm
+  this method exists and what it returns before adding anything.
+
+### Constraints
+- Use Python's built-in `json` module only — no third-party serializers.
+- If ValidationReport does not have a `to_dict()` method, add one to
+  validator.py. Read the full class first to check.
+- If ValidationIssue is a dataclass, use `dataclasses.asdict`. Verify this
+  before assuming it.
+- The Severity enum must serialize to its string name (e.g., `"ERROR"` not
+  `<Severity.ERROR: 1>`). Handle this explicitly.
+- Do not change text output behavior in any way — json mode is additive only.
+- Do not touch commenter.py or coverage.py beyond what is needed for
+  to_dict()/to_json() additions.
+
+---
+
+## Feature 3: Sphinx :raises: detection fix
+
+### What to build
+Update the exception documentation check in `validator.py` so that it
+recognises Sphinx-style raises syntax (`:raises ExcType:`) in addition to
+the existing Google-style (`Raises:` section header).
+
+### How to find the current check
+Search validator.py for the string `'Raises'` and `raises`. Read the full
+method that performs this check before touching it. Document exactly what
+substring/regex it currently uses.
+
+### What to change
+The check for whether a "Raises" section exists should match any of:
+- `Raises:` (Google style — already works, do not break it)
+- `:raises ` (Sphinx style — note the trailing space to avoid false matches)
+- `Raises\n` or `Raises\r\n` (bare header variant)
+
+Do this with a helper function `_has_raises_section(docstring: str) -> bool`
+added to validator.py. Replace all existing inline checks with calls to this
+helper.
+
+### Constraints
+- Read the entire exception-check method before writing the helper.
+- Do not use a third-party regex library — use the `re` module from stdlib.
+- Write one test case for Sphinx-style raises in `test_validation.py`.
+- Do not touch any other file.

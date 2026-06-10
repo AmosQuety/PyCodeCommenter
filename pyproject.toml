@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "2.0.3"
+version = "2.1.0"
 description = "Automatically generate, validate, and maintain Google-style docstrings for Python code"
 readme = "README.md"
 authors = [
@@ -26,7 +26,7 @@ classifiers = [
 ]
 keywords = ["documentation", "docstring", "validation", "coverage", "python"]
 requires-python = ">=3.8"
-dependencies = []
+dependencies = ["ruamel.yaml>=0.17"]
 
 [project.optional-dependencies]
 dev = [

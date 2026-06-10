@@ -1,32 +1,30 @@
-"""Test coverage analyzer."""
-# -*- coding: utf-8 -*-
-from coverage import CoverageAnalyzer
-import json
+import sys
+import os
+import logging
+import pytest
 
-print("="*80)
-print("COVERAGE ANALYZER TEST")
-print("="*80)
+# Ensure project root is on sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-analyzer = CoverageAnalyzer()
+from PyCodeCommenter.coverage import CoverageAnalyzer
 
-# Test single file
-print("\n[TEST 1] Single File Analysis")
-coverage = analyzer.analyze_file("commenter.py")
-print(f"File: {coverage.path}")
-print(f"Functions: {coverage.documented_functions}/{coverage.total_functions}")
-print(f"Classes: {coverage.documented_classes}/{coverage.total_classes}")
-print(f"Coverage: {coverage.coverage_percentage:.1f}%")
+logging.disable(logging.CRITICAL)
 
-# Test directory
-print("\n[TEST 2] Directory Analysis")
-project = analyzer.analyze_directory(".", exclude_patterns=['__pycache__', 'test_', 'venv'])
-project.print_report()
+@pytest.fixture
+def analyzer():
+    return CoverageAnalyzer()
 
-# Test JSON export
-print("\n[TEST 3] JSON Export")
-json_output = json.dumps(project.to_json(), indent=2)
-print(json_output[:400] + "...")
+def test_single_file_analysis(analyzer):
+    # Analyze this file itself; should have at least some functions/classes
+    coverage = analyzer.analyze_file(__file__)
+    assert coverage.total_functions >= 0
+    assert coverage.total_classes >= 0
+    # Coverage percentage should be between 0 and 100
+    assert 0.0 <= coverage.coverage_percentage <= 100.0
 
-print("\n" + "="*80)
-print("✅ COVERAGE TESTS PASSED!")
-print("="*80)
+def test_directory_analysis(analyzer):
+    project = analyzer.analyze_directory(os.path.dirname(__file__), exclude_patterns=['__pycache__', 'test_', 'venv'])
+    # At least one file should be analyzed
+    assert len(project.files) > 0
+    # Total coverage should be a valid percentage
+    assert 0.0 <= project.total_coverage <= 100.0

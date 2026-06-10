@@ -1,28 +1,32 @@
 import os
 import sys
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(parent_dir)
+import logging
+import pytest
 
-import ast
+# Ensure repository root is on sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from PyCodeCommenter.type_analyzer import TypeAnalyzer
 
-def test():
-    analyzer = TypeAnalyzer()
-    
-    # Test Constant
-    print(f"int: {analyzer.infer_expr_type(ast.parse('1').body[0].value)}")
-    print(f"str: {analyzer.infer_expr_type(ast.parse(\"'s'\").body[0].value)}")
-    
-    # Test List
-    print(f"list: {analyzer.infer_expr_type(ast.parse('[]').body[0].value)}")
-    
-    # Test Annotation
-    ann = ast.parse("x: int | str").body[0].annotation
-    print(f"Union: {analyzer.get_annotation_type(ann)}")
-    
-    # Test list[int]
-    ann2 = ast.parse("x: list[int]").body[0].annotation
-    print(f"Generic: {analyzer.get_annotation_type(ann2)}")
+logging.disable(logging.CRITICAL)
 
-if __name__ == "__main__":
-    test()
+@pytest.fixture
+def analyzer():
+    return TypeAnalyzer()
+
+def test_constant(analyzer):
+    assert analyzer.infer_expr_type(ast.parse('1').body[0].value) == 'int'
+
+def test_string(analyzer):
+    assert analyzer.infer_expr_type(ast.parse("'s'").body[0].value) == 'str'
+
+def test_list(analyzer):
+    assert analyzer.infer_expr_type(ast.parse('[]').body[0].value) == 'list'
+
+def test_union_annotation(analyzer):
+    ann = ast.parse('x: int | str').body[0].annotation
+    assert analyzer.get_annotation_type(ann) == 'Union[int, str]'
+
+def test_generic_annotation(analyzer):
+    ann = ast.parse('x: list[int]').body[0].annotation
+    assert analyzer.get_annotation_type(ann) == 'list[int]'

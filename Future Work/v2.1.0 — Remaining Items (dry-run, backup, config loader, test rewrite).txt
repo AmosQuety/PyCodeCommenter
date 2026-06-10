@@ -1,0 +1,143 @@
+# PyCodeCommenter — v2.1.0 Safety & Trust Implementation
+
+## MANDATORY FIRST STEP — READ BEFORE WRITING ANY CODE
+
+Before proposing or implementing anything, you must read and cross-check
+the following files. Do not assume anything about how they work. If a file
+does not exist, say so explicitly before continuing.
+
+Files to read in full:
+- PyCodeCommenter/cli.py
+- PyCodeCommenter/commenter.py
+- PyCodeCommenter/__init__.py
+- pyproject.toml
+- All existing test_*.py files at the project root
+
+For each file, confirm:
+1. The exact function/class names involved in the feature you are about to touch
+2. The exact argument names and defaults for the CLI subcommands
+3. Whether any config-loading code already exists anywhere (search for
+   "yaml", "config", "load", "settings" across all files before assuming
+   config is absent)
+4. What testing library is currently used and whether conftest.py exists
+
+Report your findings as a short inventory before writing a single line of code.
+
+---
+
+## Feature 1: --dry-run flag for `generate`
+
+### What to build
+Add a `--dry-run` flag to the `generate` CLI subcommand. When set:
+- Generate the patched code in memory (do not write to disk)
+- Print a unified diff between the original file content and the patched
+  content to stdout using Python's built-in `difflib.unified_diff`
+- Exit with code 0 if no changes would be made, code 1 if changes exist
+  (allows CI to detect undocumented files)
+
+### Constraints
+- The flag must be `--dry-run` (hyphenated), stored as `dry_run` in argparse
+- Do not modify any file on disk when --dry-run is active
+- The diff output must be human-readable (use `lineterm=""` in unified_diff)
+- Only touch cli.py and commenter.py. Do not touch validator.py, coverage.py,
+  or any test file for this feature.
+- If commenter.py's generate/patch flow writes to disk inside the class rather
+  than in cli.py, identify exactly where and adjust accordingly — do not guess.
+
+---
+
+## Feature 2: --backup flag for `generate`
+
+### What to build
+Add a `--backup` flag to the `generate` CLI subcommand. When set alongside
+`-i` / `--inplace`:
+- Before writing the patched file, copy the original to `{original_path}.bak`
+  using `shutil.copy2` (preserves metadata)
+- Print a confirmation line: `Backup saved: {path}.bak`
+- If the .bak file already exists, overwrite it (do not prompt)
+
+### Constraints
+- `--backup` has no effect unless `--inplace` is also set; if --backup is
+  passed without --inplace, print a warning and continue normally
+- Only touch cli.py. Do not touch commenter.py or any other module.
+- Use shutil.copy2, not shutil.copy or manual file reads.
+- Do not modify the behavior of --inplace in any way other than inserting
+  the backup step before the write.
+
+---
+
+## Feature 3: Config file loader
+
+### What to build
+Create a new file `PyCodeCommenter/config.py` containing a `load_config`
+function that:
+
+1. Accepts an optional `start_path: str | None = None` parameter (defaults
+   to `os.getcwd()` if None)
+2. Walks UP the directory tree from start_path looking for
+   `.pycodecommenter.yaml`
+3. Returns the parsed config as a plain Python dict on success
+4. Returns an empty dict `{}` if no config file is found anywhere in the tree
+5. Raises `ConfigError` (a custom exception defined in the same file) with
+   a clear message if the file is found but cannot be parsed
+
+The config dict must support these keys (with these exact names and types):
+
+style: str                    # "google" | "numpy" | "sphinx", default "google"
+validation:
+level: str                  # "strict" | "moderate" | "lenient", default "moderate"
+check_types: bool           # default true
+check_exceptions: bool      # default true
+coverage:
+threshold: float            # default 80.0
+fail_below: bool            # default true
+exclude:
+
+str                       # list of exclusion patterns, default []
+
+5. After loading raw YAML, validate the keys against the schema above.
+   Unknown keys should log a warning but not raise.
+6. Wire `load_config` into cli.py so that every subcommand loads config at
+   startup and passes relevant values to the underlying classes.
+
+### Constraints
+- Use `ruamel.yaml` for YAML parsing. If it is not in pyproject.toml,
+  add it to the [dependencies] section before implementing.
+- Do not use PyYAML — check pyproject.toml first to see what is available.
+- Do not modify commenter.py, validator.py, or coverage.py to accept config
+  directly — pass values through the existing constructor/method arguments
+  that already exist. If an argument does not exist, check before adding one.
+- The function must never crash on a missing file — only on a malformed one.
+
+---
+
+## Feature 4: Test suite rewrite
+
+### What to build
+Rewrite all existing `test_*.py` files at the project root to use proper
+pytest assertions. Do not delete any existing test file — rewrite each one
+in place.
+
+### Rules
+- Read every existing test_*.py file before touching any of them.
+- For each test that currently just prints or runs code without asserting,
+  add explicit `assert` statements that verify:
+  - The number of issues found matches an expected count
+  - The severity of each issue matches (use the actual Severity enum values
+    from validator.py — read the file to get exact names)
+  - The message text contains expected substrings where relevant
+- Do not change what is being tested — only add assertions to what already
+  runs.
+- If a test currently catches an exception silently, make it assert the
+  exception is raised using `pytest.raises`.
+- Add a `conftest.py` at the project root with any shared fixtures (e.g.,
+  a helper that creates a temporary Python file from a string).
+- Do not add new test cases in this pass — only harden existing ones.
+  New test cases belong in test_inference.py (already planned).
+
+### Constraints
+- Read validator.py's Severity enum and ValidationIssue dataclass before
+  writing any assertion — use the exact field names.
+- Read coverage.py's FileCoverage and ProjectCoverage before asserting
+  coverage values — use the exact attribute names.
+- Do not add imports that are not already available in the project.

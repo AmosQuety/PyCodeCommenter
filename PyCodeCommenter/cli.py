@@ -4,6 +4,8 @@ CLI entry point for PyCodeCommenter.
 import sys
 import argparse
 import os
+import difflib
+import shutil
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
 from .coverage import CoverageAnalyzer
@@ -17,6 +19,8 @@ def main():
     generate_parser.add_argument("file", help="Python file to process")
     generate_parser.add_argument("-i", "--inplace", action="store_true", help="Modify file in place")
     generate_parser.add_argument("-o", "--output", help="Output file path")
+    generate_parser.add_argument("--dry-run", action="store_true", help="Show diff without writing any files")
+    generate_parser.add_argument("--backup", action="store_true", help="Create a .bak backup before inplace modification")
 
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate docstrings for a file")
@@ -36,8 +40,33 @@ def main():
             sys.exit(1)
         
         patched_code = commenter.get_patched_code()
-        
+
+        if args.backup and not args.inplace:
+            print("Warning: --backup has no effect without --inplace")
+
+        # Dry-run: show diff and exit without writing
+        if args.dry_run:
+            with open(args.file, 'r', encoding='utf-8') as f:
+                original_code = f.read()
+            diff_lines = list(difflib.unified_diff(
+                original_code.splitlines(),
+                patched_code.splitlines(),
+                fromfile=args.file,
+                tofile=args.file,
+                lineterm=''
+            ))
+            if diff_lines:
+                print("\n".join(diff_lines))
+                # Exit with code 1 to indicate there are changes
+                sys.exit(1)
+            else:
+                print("No changes detected.")
+                sys.exit(0)
+
         if args.inplace:
+            # Backup if requested
+            if args.backup:
+                shutil.copy2(args.file, args.file + ".bak")
             with open(args.file, 'w', encoding='utf-8') as f:
                 f.write(patched_code)
             print(f"Successfully patched {args.file}")

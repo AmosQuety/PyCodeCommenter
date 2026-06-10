@@ -1,0 +1,132 @@
+# PyCodeCommenter — v3.0.0 Smart Merge & Multi-Style Implementation
+
+## MANDATORY FIRST STEP — READ BEFORE WRITING ANY CODE
+
+This is the most complex release. More than any other phase, the risk is
+building on wrong assumptions. You must read and fully understand the
+existing code before designing anything.
+
+Read these files in full before writing a single line:
+- PyCodeCommenter/commenter.py          (entire file — this is the core)
+- PyCodeCommenter/docstring_parser.py   (entire file)
+- PyCodeCommenter/templates.py          (entire file)
+- PyCodeCommenter/parameter_descriptions.py
+- PyCodeCommenter/inference.py          (added in v2.1.0 — confirm it exists)
+- PyCodeCommenter/config.py             (added in v2.1.0 — confirm it exists)
+- PyCodeCommenter/cli.py
+- PyCodeCommenter/__init__.py
+- pyproject.toml
+
+For each file, document:
+1. Exactly how `generate_docstrings()` produces and inserts docstring text
+2. Whether `get_patched_code()` does string manipulation or AST rewriting
+3. How `DocstringParser` breaks a docstring into sections — what the output
+   structure looks like (dict? dataclass? list?)
+4. Whether the parser already handles NumPy or Sphinx style, or only Google
+5. How the config system (from v2.1.0) passes `style` to the generator —
+   if it does not yet, document the gap
+
+Report this inventory before proceeding. Do not design the merge algorithm
+until you understand exactly how the current insertion works.
+
+---
+
+## Feature 1: Smart docstring merge algorithm
+
+### What to build
+Today, `generate_docstrings()` replaces any existing docstring entirely.
+Change this so that when a docstring already exists:
+
+1. Parse the existing docstring into sections using `DocstringParser`
+2. Generate a fresh docstring for the same function
+3. Merge: for each section in the generated docstring, check if the
+   corresponding section in the existing docstring was human-written
+   (i.e., its content does not match what the generator would have
+   auto-produced)
+4. If the section is human-written → keep the existing content
+5. If the section is missing in existing → insert the generated version
+6. If the section matches the auto-generated template exactly → replace
+   with the freshly generated version (it may now be more accurate)
+
+### Defining "auto-generated content"
+A section is considered auto-generated if it matches a template from
+`templates.py` or `inference.py` (from v2.1.0). Read these files and
+define the exact matching criteria before implementing.
+
+### Where to implement
+Add a `DocstringMerger` class to a new file `PyCodeCommenter/merger.py`.
+It must have this interface:
+
+```python
+class DocstringMerger:
+    def merge(
+        self,
+        existing_docstring: str,
+        generated_docstring: str,
+        function_name: str,
+        param_names: list[str],
+    ) -> str:
+        """Return the merged docstring string, ready to insert."""
+```
+
+Integrate it into `commenter.py` by calling `DocstringMerger().merge()`
+wherever an existing docstring would currently be replaced.
+
+### Constraints
+- Read exactly how commenter.py currently detects and replaces an existing
+  docstring before writing any merger logic.
+- The merger must never produce an invalid docstring — if merging fails for
+  any reason, fall back to the existing docstring unchanged and log a warning.
+- Do not change the public API of `PyCodeCommenter` — no new constructor
+  arguments required for basic usage.
+- Export `DocstringMerger` from `__init__.py`.
+- Write tests in `test_merger.py` covering:
+  - A function with no existing docstring (merger is not called)
+  - A function with a fully auto-generated docstring (gets replaced)
+  - A function with a human-written summary (summary preserved)
+  - A function with human-written Args entries (entries preserved)
+  - A function where the signature changed (new param added to Args)
+
+---
+
+## Feature 2: NumPy and Sphinx style generation
+
+### What to build
+Make the generator emit NumPy or Sphinx style docstrings when configured.
+The `style` config key (added in v2.1.0 config.py) controls this.
+
+### Step 1: Extend the parser
+Read `docstring_parser.py` in full. Document which styles it currently
+handles. Extend `DocstringParser.parse()` to fully handle:
+- **NumPy style**: `Parameters\n----------\nparam_name : type\n    description`
+- **Sphinx style**: `:param name: description\n:type name: type\n:returns:`
+
+The parse output structure must be identical regardless of input style —
+the validator and merger must not need to know which style was parsed.
+
+### Step 2: Add style templates
+Add NumPy and Sphinx output formatters alongside the existing Google formatter.
+Structure them as separate functions or a class with a `format(style)` method
+— read `templates.py` first to see the existing pattern, then extend it
+consistently.
+
+### Step 3: Wire to config
+In `commenter.py`, read the `style` value from the loaded config and pass it
+to the formatter. Default to `"google"` if not set.
+
+### Constraints
+- Google style must remain the default and must be completely unaffected.
+- The `DocstringParser` output structure must not change — keep the same
+  dict/dataclass keys. Add new keys only if absolutely necessary, and document
+  each addition.
+- Do not touch `validator.py` — validation is style-agnostic at this stage.
+- Write tests in `test_styles.py` covering generation and parsing round-trips
+  for all three styles.
+
+---
+
+## Integration requirement
+After both features are implemented, run the full test suite. Every existing
+test must still pass. If any test fails due to the merge algorithm changing
+generated output, update the test's expected value — do not suppress the
+failure.

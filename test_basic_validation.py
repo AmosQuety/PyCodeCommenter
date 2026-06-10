@@ -1,19 +1,26 @@
-from validator import DocstringValidator, Severity
+import pytest
 
-# Test 1: Missing docstring detection
-code_missing = """
+try:
+    from PyCodeCommenter import PyCodeCommenter
+except ImportError:
+    from commenter import PyCodeCommenter
+
+from PyCodeCommenter.validator import DocstringValidator, Severity
+
+
+def test_missing_docstring():
+    code_missing = """\
 def add(a, b):
-    return a + b
+    return a + b\
 """
+    validator = DocstringValidator(code_string=code_missing)
+    report = validator.validate_all()
+    # Expect at least one error for missing docstring
+    assert any(issue.severity == Severity.ERROR for issue in report.issues)
 
-validator = DocstringValidator(code_string=code_missing)
-report = validator.validate_all()
-print(f"Test 1 - Missing docstring issues: {len(report.issues)}")
-for issue in report.issues:
-    print(issue)
 
-# Test 2: Signature mismatch
-code_mismatch = """
+def test_signature_mismatch():
+    code_mismatch = """\
 def multiply(x, y):
     '''Multiply two numbers.
     
@@ -24,17 +31,16 @@ def multiply(x, y):
     Returns:
         int: Product
     '''
-    return x * y
+    return x * y\
 """
+    validator = DocstringValidator(code_string=code_mismatch)
+    report = validator.validate_all()
+    # Should contain an error for the mismatched parameter 'z'
+    assert any(issue.category == "signature" and "z" in issue.message for issue in report.issues)
 
-validator2 = DocstringValidator(code_string=code_mismatch)
-report2 = validator2.validate_all()
-print(f"\nTest 2 - Signature mismatch issues: {len(report2.issues)}")
-for issue in report2.issues:
-    print(issue)
 
-# Test 3: Order mismatch
-code_order = """
+def test_order_mismatch():
+    code_order = """\
 def subtract(a, b):
     '''Subtract.
     
@@ -42,10 +48,9 @@ def subtract(a, b):
         b (int): Second
         a (int): First
     '''
-    return a - b
+    return a - b\
 """
-validator3 = DocstringValidator(code_string=code_order)
-report3 = validator3.validate_all()
-print(f"\nTest 3 - Order mismatch issues: {len(report3.issues)}")
-for issue in report3.issues:
-    print(issue)
+    validator = DocstringValidator(code_string=code_order)
+    report = validator.validate_all()
+    # Should contain an error for the parameter order
+    assert any(issue.category == "order" for issue in report.issues)
