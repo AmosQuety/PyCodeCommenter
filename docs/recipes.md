@@ -38,46 +38,49 @@ From now on, every `git commit` will run `pycodecommenter validate` on each stag
 
 ---
 
-## Recipe 2: GitHub Actions CI/CD Integration
+## Recipe 2: The CI Configurator
 
-Run a documentation quality check on every push and pull request.
+Run a documentation quality check on every push and pull request. Use the configurator below to generate the exact YAML snippet for your provider and package manager.
 
-```yaml
-# .github/workflows/docs-check.yml
+<div class="pcc-ci-widget">
+  <div class="pcc-ci-controls">
+    <label for="ci-provider">Provider:</label>
+    <select id="ci-provider">
+      <option value="github">GitHub Actions</option>
+      <option value="gitlab">GitLab CI</option>
+    </select>
+
+    <label for="ci-manager">Package Manager:</label>
+    <select id="ci-manager">
+      <option value="pip">pip</option>
+      <option value="poetry">Poetry</option>
+      <option value="uv">uv</option>
+    </select>
+    
+    <label for="ci-level">Enforcement Level:</label>
+    <select id="ci-level">
+      <option value="block">Block PRs on Error</option>
+      <option value="warn">Warn Only (Dry Run)</option>
+    </select>
+  </div>
+
+  <pre><code id="ci-output" class="language-yaml"># .github/workflows/docs-check.yml
 name: Documentation Check
-
 on: [push, pull_request]
-
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install PyCodeCommenter
         run: pip install pycodecommenter
-
       - name: Check for documentation issues
-        run: pycodecommenter validate src/mymodule.py
-        # Exits 0 if no ERRORs, exits 1 if any ERRORs — fails the CI job
-```
-
-**Using `--dry-run` in CI to check for missing docstrings:**
-
-If you want CI to fail when any function is missing a docstring (i.e., when `generate` would produce changes), use `--dry-run`:
-
-```yaml
-      - name: Ensure all functions are documented
-        run: pycodecommenter generate src/mymodule.py --dry-run
-        # Exits 1 if there are missing docstrings, 0 if all are present
-```
-
-This is stricter than `validate`: it flags *any* undocumented function, not just ones with structural issues.
+        run: pycodecommenter validate src/</code></pre>
+</div>
 
 ---
 
