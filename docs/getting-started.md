@@ -29,13 +29,13 @@ You don't need to configure anything to run PyCodeCommenter. Point it at a Pytho
 We recommend running it in **dry-run** mode first so you can preview the changes without modifying your files:
 
 ```bash
-pycodecommenter generate . --dry-run
+pycodecommenter generate src/mymodule.py --dry-run
 ```
 
 Once you've reviewed the proposed docstrings, write the changes to your files:
 
 ```bash
-pycodecommenter generate . --inplace
+pycodecommenter generate src/mymodule.py --inplace
 ```
 
 ---
@@ -78,13 +78,13 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
 PyCodeCommenter includes three primary subcommands.
 
 ### Generate Documentation
-Generate or update docstrings for a file or directory.
+Generate or update docstrings for a Python file.
 ```bash
 # Create backups before modifying
-pycodecommenter generate src/ --inplace --backup
+pycodecommenter generate src/mymodule.py --inplace --backup
 
-# Exclude specific directories
-pycodecommenter generate . --exclude tests/ vendor/
+# Exclude specific functions (if supported by CLI) or write to output
+pycodecommenter generate src/mymodule.py --output src/mymodule_new.py
 ```
 
 ### Validate Documentation
