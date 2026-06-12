@@ -6,7 +6,7 @@ Welcome to PyCodeCommenter. This guide will get you from zero to fully documente
 
 ## 1. Install
 
-Install PyCodeCommenter directly via pip:
+We recommend installing PyCodeCommenter inside an active virtual environment so it doesn't conflict with system packages.
 
 ```bash
 pip install pycodecommenter
@@ -24,18 +24,21 @@ pycodecommenter --version
 
 ## 2. Run
 
-You don't need to configure anything to run PyCodeCommenter. Point it at a Python file or directory. 
+You don't need to configure anything to run PyCodeCommenter. You just need to point it at a specific Python file.
 
-We recommend running it in **dry-run** mode first so you can preview the changes without modifying your files:
+We recommend running it in **dry-run** mode first. This allows you to preview the changes safely in your terminal without modifying your actual files:
 
 ```bash
-pycodecommenter generate src/mymodule.py --dry-run
+pycodecommenter generate <path/to/your_file.py> --dry-run
 ```
 
-Once you've reviewed the proposed docstrings, write the changes to your files:
+> [!TIP]
+> **Important:** Replace `<path/to/your_file.py>` with the actual name and location of the file you want to document (for example, `main.py` or `src/utils.py`). You can use relative or absolute paths.
+
+Once you've reviewed the proposed docstrings and are happy with them, tell PyCodeCommenter to write the changes directly into your file:
 
 ```bash
-pycodecommenter generate src/mymodule.py --inplace
+pycodecommenter generate <path/to/your_file.py> --inplace
 ```
 
 ---
@@ -81,10 +84,10 @@ PyCodeCommenter includes three primary subcommands.
 Generate or update docstrings for a Python file.
 ```bash
 # Create backups before modifying
-pycodecommenter generate src/mymodule.py --inplace --backup
+pycodecommenter generate <path/to/your_file.py> --inplace --backup
 
-# Exclude specific functions (if supported by CLI) or write to output
-pycodecommenter generate src/mymodule.py --output src/mymodule_new.py
+# Write the result to a new file instead of modifying the original
+pycodecommenter generate <path/to/your_file.py> --output <path/to/new_file.py>
 ```
 
 ### Validate Documentation

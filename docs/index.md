@@ -18,7 +18,7 @@ def process_data(items, strict=False):
     # Missing 'strict' in docstring. No return type documented.
 ```
 
-**After PyCodeCommenter:** Run `$ pycodecommenter generate src/mymodule.py` to instantly sync them.
+**After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to instantly sync them.
 ```python
 def process_data(items, strict=False):
     """
@@ -48,13 +48,13 @@ pip install pycodecommenter
 Preview the changes PyCodeCommenter will make to your project without writing to disk:
 
 ```bash
-pycodecommenter generate src/mymodule.py --dry-run
+pycodecommenter generate <path/to/your_file.py> --dry-run
 ```
 
 Ready to format? Apply the changes:
 
 ```bash
-pycodecommenter generate src/mymodule.py --inplace
+pycodecommenter generate <path/to/your_file.py> --inplace
 ```
 
 ---
