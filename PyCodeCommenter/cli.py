@@ -2,6 +2,7 @@
 CLI entry point for PyCodeCommenter.
 """
 import sys
+import json
 import argparse
 import os
 import difflib
@@ -25,11 +26,25 @@ def main():
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate docstrings for a file")
     validate_parser.add_argument("file", help="Python file to validate")
+    validate_parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        metavar="FORMAT",
+        help="Output format: 'text' (default) or 'json'",
+    )
 
     # Coverage command
     coverage_parser = subparsers.add_parser("coverage", help="Analyze documentation coverage")
     coverage_parser.add_argument("path", help="Directory or file to analyze")
     coverage_parser.add_argument("-e", "--exclude", nargs="*", help="Patterns to exclude")
+    coverage_parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        metavar="FORMAT",
+        help="Output format: 'text' (default) or 'json'",
+    )
 
     args = parser.parse_args()
 
@@ -80,7 +95,10 @@ def main():
     elif args.command == "validate":
         validator = DocstringValidator(file_path=args.file)
         report = validator.validate_all()
-        report.print_summary()
+        if args.output_format == "json":
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            report.print_summary()
         if report.stats.errors > 0:
             sys.exit(1)
 
@@ -88,11 +106,22 @@ def main():
         analyzer = CoverageAnalyzer()
         if os.path.isdir(args.path):
             result = analyzer.analyze_directory(args.path, exclude_patterns=args.exclude)
-            result.print_report()
+            if args.output_format == "json":
+                print(json.dumps(result.to_json(), indent=2))
+            else:
+                result.print_report()
         else:
             result = analyzer.analyze_file(args.path)
-            # FileCoverage doesn't have a print_report method in the same way, but we can print its stats
-            print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
+            if args.output_format == "json":
+                file_dict = {
+                    "file": args.path,
+                    "coverage_percentage": round(result.coverage_percentage, 2),
+                    "functions": f"{result.documented_functions}/{result.total_functions}",
+                    "classes": f"{result.documented_classes}/{result.total_classes}",
+                }
+                print(json.dumps(file_dict, indent=2))
+            else:
+                print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
 
     else:
         parser.print_help()

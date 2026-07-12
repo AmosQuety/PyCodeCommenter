@@ -13,6 +13,7 @@ Classes:
     DocstringValidator: Main validator class for checking documentation quality
 """
 import ast
+import re
 import logging
 from typing import List, Dict, Optional, Set, Any, Union
 from dataclasses import dataclass, field
@@ -23,6 +24,52 @@ except (ImportError, ValueError):
     from docstring_parser import DocstringParser
 
 logger = logging.getLogger(__name__)
+
+
+def _get_decorators(func_node: Any) -> set:
+    """Return the set of simple decorator names on an AST function node.
+
+    Handles both plain decorators (``@property``) and attribute decorators
+    (``@name.setter``, ``@name.deleter``).
+
+    Args:
+        func_node (Any): An ast.FunctionDef or ast.AsyncFunctionDef node.
+
+    Returns:
+        set: Set of decorator name strings found on the node.
+    """
+    names = set()
+    for d in func_node.decorator_list:
+        if isinstance(d, ast.Name):
+            names.add(d.id)
+        elif isinstance(d, ast.Attribute):
+            # e.g. @myprop.setter → attr is "setter"
+            names.add(d.attr)
+    return names
+
+
+def _has_raises_section(docstring: str) -> bool:
+    """Return True if *docstring* contains any recognised Raises section.
+
+    Recognised patterns:
+
+    * ``Raises:`` — Google style (already worked before)
+    * ``Raises\\n`` / ``Raises\\r\\n`` — bare header variant
+    * ``:raises `` — Sphinx style (trailing space avoids false matches
+      on substrings like ``:raisesome``)
+
+    Args:
+        docstring (str): The raw docstring text to inspect.
+
+    Returns:
+        bool: True if a Raises section is present in any recognised style.
+    """
+    return bool(
+        re.search(r'Raises:', docstring)
+        or re.search(r'Raises\r?\n', docstring)
+        or re.search(r':raises ', docstring)
+    )
+
 
 class Severity(Enum):
     ERROR = "error"      # Must fix (missing required docs)
@@ -98,26 +145,63 @@ class ValidationReport:
                     print(f"  → Suggestion: {issue.suggestion}")
     
     def to_dict(self) -> dict:
-        """Convert to dictionary for JSON export."""
+        """Convert to dictionary for JSON export.
+
+        The returned shape is:
+
+        .. code-block:: json
+
+            {
+              "file": "<path>",
+              "stats": {
+                "total": 0,
+                "errors": 0,
+                "warnings": 0,
+                "info": 0,
+                "coverage_percentage": 0.0
+              },
+              "issues": [
+                {
+                  "line": 0,
+                  "severity": "ERROR|WARNING|INFO",
+                  "check": "<category>",
+                  "message": "<message>"
+                }
+              ]
+            }
+
+        Returns:
+            dict: Spec-compliant dictionary representation of this report.
+        """
+        def _parse_line(location: str) -> int:
+            """Extract line number from 'file:line:func' location string."""
+            parts = location.split(":")
+            # location format: "<file>:<line>:<func>"
+            # The file part may contain a drive letter on Windows (e.g. C:),
+            # so iterate from the end to find the first numeric part.
+            for part in reversed(parts):
+                if part.isdigit():
+                    return int(part)
+            return 0
+
         return {
             "file": self.file_path,
             "stats": {
-                "coverage": self.stats.coverage_percentage,
-                "total_issues": self.stats.total_issues,
+                "total": self.stats.total_issues,
                 "errors": self.stats.errors,
                 "warnings": self.stats.warnings,
-                "infos": self.stats.infos
+                "info": self.stats.infos,
+                "coverage_percentage": round(self.stats.coverage_percentage, 2),
             },
             "issues": [
                 {
-                    "severity": issue.severity.value,
-                    "category": issue.category,
-                    "location": issue.location,
+                    "line": _parse_line(issue.location),
+                    "severity": issue.severity.value.upper(),
+                    "check": issue.category,
                     "message": issue.message,
-                    "suggestion": issue.suggestion
                 }
                 for issue in self.issues
-            ]
+            ],
         }
     
     def to_markdown(self) -> str:
@@ -192,14 +276,26 @@ class DocstringValidator:
     def _validate_function(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], report: ValidationReport) -> None:
         """
         Validate a single function.
-        
+
+        Decorator-aware: ``@property`` setters and deleters skip the return
+        documentation check (they write to a property but never return a
+        meaningful value, so the check would produce a false positive).
+        ``@classmethod`` and ``@staticmethod`` are already handled correctly
+        by the signature-match heuristic and need no special casing here.
+
         Args:
             func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node to validate.
             report (ValidationReport): The report to add issues to.
         """
         docstring = ast.get_docstring(func_node)
         location = f"{self.file_path or 'code'}:{func_node.lineno}:{func_node.name}"
-        
+
+        # Inspect decorators once for all downstream checks.
+        decorators = _get_decorators(func_node)
+        # A setter or deleter is decorated with @<prop>.setter / @<prop>.deleter.
+        # _get_decorators returns the *attr* part, so we check for "setter"/"deleter".
+        is_setter_or_deleter = bool(decorators & {"setter", "deleter"})
+
         # Check if documented
         if not docstring:
             report.add_issue(ValidationIssue(
@@ -210,18 +306,22 @@ class DocstringValidator:
                 suggestion="Add a docstring with at minimum a summary line"
             ))
             return
-        
+
         report.stats.documented_functions += 1
-        
+
         # Run all checks
         issues = []
         issues.extend(self.check_signature_match(func_node, docstring, location))
         issues.extend(self.check_type_consistency(func_node, docstring, location))
         issues.extend(self.check_exception_documentation(func_node, docstring, location))
-        issues.extend(self.check_return_documentation(func_node, docstring, location))
+        # Setters and deleters assign to a property — they do not have a
+        # meaningful return value, so skip the return-doc check to avoid
+        # false-positive warnings.
+        if not is_setter_or_deleter:
+            issues.extend(self.check_return_documentation(func_node, docstring, location))
         issues.extend(self.check_format_compliance(docstring, location))
         issues.extend(self.check_content_quality(docstring, location))
-        
+
         for issue in issues:
             report.add_issue(issue)
     
@@ -394,8 +494,8 @@ class DocstringValidator:
                     elif isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name):
                         raised_exceptions.add(node.exc.func.id)
         
-        # Check if docstring has Raises section
-        has_raises_section = 'Raises:' in docstring or 'Raises\n' in docstring or ':raises' in docstring.lower()
+        # Check if docstring has Raises section (Google or Sphinx style)
+        has_raises_section = _has_raises_section(docstring)
         
         if raised_exceptions and not has_raises_section:
             issues.append(ValidationIssue(

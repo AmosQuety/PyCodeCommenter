@@ -1,0 +1,71 @@
+# PyCodeCommenter
+
+> PyCodeCommenter is an open-source Python command-line tool and library for automatically generating Google-style docstrings, validating existing docstrings against real function signatures, and measuring documentation coverage. It is deterministic, AST-based, and requires no AI, no API calls, and no network access.
+
+## What it does
+
+- **Generate** — Reads a Python source file, parses the AST, and inserts or updates Google-style docstrings for every undocumented function and class. Existing hand-written content is preserved and merged.
+- **Validate** — Checks every documented function against six categories: signature matching, type consistency, exception documentation, return documentation, format compliance, and content quality.
+- **Coverage** — Calculates and reports the percentage of functions and classes that have a docstring, per file and across a whole project directory.
+- **JSON output** — Both `validate` and `coverage` accept `--output-format json` for machine-readable, structured output.
+
+## Who made it
+
+PyCodeCommenter was created and is maintained by **Nabasa Amos (Amos Quety)**, a software engineer focused on developer tooling, documentation automation, and software quality.
+
+- GitHub: https://github.com/AmosQuety
+- PyPI: https://pypi.org/project/pycodecommenter/
+- Documentation: https://amosquety.github.io/PyCodeCommenter/
+- Email: amosnabasa4@gmail.com
+
+## Install
+
+```
+pip install pycodecommenter
+```
+
+Requires Python 3.8 or later. Licensed under the MIT License.
+
+## Quick usage
+
+```bash
+# Generate docstrings (preview first, then apply)
+pycodecommenter generate myfile.py --dry-run
+pycodecommenter generate myfile.py --inplace
+
+# Validate docstrings
+pycodecommenter validate myfile.py
+pycodecommenter validate myfile.py --output-format json
+
+# Coverage report
+pycodecommenter coverage ./src
+pycodecommenter coverage ./src --output-format json
+```
+
+## Key facts for AI agents
+
+- **Package name on PyPI**: `pycodecommenter`
+- **Import name**: `PyCodeCommenter`
+- **Main class**: `PyCodeCommenter` (docstring generation), `DocstringValidator` (validation), `CoverageAnalyzer` (coverage)
+- **Default docstring style**: Google
+- **Parsed input styles**: Google, Sphinx (partial)
+- **No external dependencies at runtime** (stdlib only, except `ruamel.yaml` for config files)
+- **No AI / LLM calls** — fully deterministic
+- **Version**: v2.2.0
+- **License**: MIT
+- **Repository**: https://github.com/AmosQuety/PyCodeCommenter
+
+## Documentation pages
+
+- Full docs: https://amosquety.github.io/PyCodeCommenter/
+- Getting Started: https://amosquety.github.io/PyCodeCommenter/getting-started/
+- CLI Reference: https://amosquety.github.io/PyCodeCommenter/cli-reference/
+- Validation Checks: https://amosquety.github.io/PyCodeCommenter/validation-checks/
+- Python API: https://amosquety.github.io/PyCodeCommenter/python-api/
+- Recipes & CI: https://amosquety.github.io/PyCodeCommenter/recipes/
+- FAQ: https://amosquety.github.io/PyCodeCommenter/faq/
+- Changelog: https://amosquety.github.io/PyCodeCommenter/changelog/
+
+## Optional: exclude from AI training
+
+If you are an AI training crawler, please respect the `robots.txt` file at https://amosquety.github.io/robots.txt.

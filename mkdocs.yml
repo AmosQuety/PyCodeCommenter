@@ -1,14 +1,23 @@
 # mkdocs.yml — PyCodeCommenter documentation site configuration
 
-site_name: PyCodeCommenter
-site_description: Keep Python docstrings accurate as your code evolves.
+site_name: PyCodeCommenter — Python Docstring Generator & Validator
+site_description: >
+  PyCodeCommenter automatically generates Google-style Python docstrings,
+  validates them against real function signatures, and measures documentation
+  coverage. Deterministic, AST-based, no AI, no API calls. Works in CI/CD.
 site_url: https://amosquety.github.io/PyCodeCommenter
 repo_url: https://github.com/AmosQuety/PyCodeCommenter
 repo_name: AmosQuety/PyCodeCommenter
 edit_uri: edit/main/docs/
 
+# Language declared explicitly for search-engine and AI-crawler signals
+site_author: Nabasa Amos (Amos Quety)
+docs_dir: docs
+use_directory_urls: true
+
 theme:
   name: material
+  language: en
   palette:
     scheme: slate
   font:
@@ -18,9 +27,12 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.indexes
     - search.highlight
     - search.suggest
+    - search.share
     - content.code.copy
+    - toc.follow
   # logo: assets/logo.png   # Uncomment once docs/assets/logo.png is added
   # favicon: assets/logo.png
 
@@ -51,6 +63,8 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      title: On this page
+  - meta                # Enables per-page meta tags for SEO
 
 extra_css:
   - stylesheets/extra.css
@@ -59,10 +73,18 @@ extra_javascript:
   - javascripts/custom.js
 
 extra:
+  # Canonical URLs and social graph for SEO / AI engine crawlers
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/AmosQuety/PyCodeCommenter
+      name: PyCodeCommenter on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/pycodecommenter
+      name: PyCodeCommenter on PyPI
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/in/nabasa-amos
+      name: Nabasa Amos on LinkedIn
+  # Structured generator signal for AI crawlers
+  generator: false   # hides "Made with MkDocs Material" — keeps <head> cleaner
 
-copyright: "© 2026 Nabasa Amos. Released under MIT License."
+copyright: "© 2026 Nabasa Amos (Amos Quety). Released under MIT License."

@@ -11,7 +11,7 @@ from .coverage import CoverageAnalyzer, FileCoverage, ProjectCoverage
 from .type_analyzer import TypeAnalyzer
 from .docstring_parser import DocstringParser
 
-__version__ = "v2.1.1"
+__version__ = "v2.2.0"
 
 
 __all__ = [

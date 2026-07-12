@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "v2.1.1"
+version = "v2.2.0"
 
-description = "Automatically generate, validate, and maintain Google-style docstrings for Python code"
+description = "Automatically generate, validate, and measure Google-style Python docstrings. Deterministic AST-based docstring generator and validator with CI/CD integration, coverage reporting, and JSON output."
 readme = "README.md"
 authors = [
     {name = "Nabasa Amos(Amos Quety)", email = "amosnabasa4@gmail.com"}
@@ -24,8 +24,36 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Documentation",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Documentation",
+    "Topic :: Utilities",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
-keywords = ["documentation", "docstring", "validation", "coverage", "python"]
+keywords = [
+    "docstring",
+    "docstring-generator",
+    "docstring-validator",
+    "documentation",
+    "documentation-coverage",
+    "google-style-docstrings",
+    "python-documentation",
+    "ast",
+    "static-analysis",
+    "code-quality",
+    "developer-tools",
+    "ci-cd",
+    "pre-commit",
+    "validation",
+    "coverage",
+    "type-hints",
+    "linter",
+    "automation",
+    "python",
+    "cli",
+]
 requires-python = ">=3.8"
 dependencies = ["ruamel.yaml>=0.17"]
 

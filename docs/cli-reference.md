@@ -1,3 +1,9 @@
+---
+title: CLI Reference — PyCodeCommenter generate, validate, coverage
+description: Complete CLI reference for PyCodeCommenter. Documents every flag for the generate, validate, and coverage subcommands including --output-format json for machine-readable output.
+keywords: pycodecommenter cli, python docstring cli, validate docstrings command line, documentation coverage cli, json output
+---
+
 # CLI Reference
 
 The PyCodeCommenter command-line interface provides three subcommands: `generate`, `validate`, and `coverage`. This page documents every argument and flag for each, derived directly from `cli.py`.
@@ -89,7 +95,9 @@ pycodecommenter validate <file>
 
 ### Options / Flags
 
-The `validate` subcommand has no additional flags.
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--output-format` | `text` \| `json` | `text` | Output format. `text` prints the human-readable report (default). `json` prints a machine-readable JSON object to stdout. |
 
 ### What the validator checks
 
@@ -97,13 +105,14 @@ Six categories of checks are run on every documented function:
 
 1. **Signature matching** — every parameter in the function signature must appear in the `Args:` section, and vice versa.
 2. **Type consistency** — if a parameter has a type annotation and is not in the docstring, that is flagged.
-3. **Exception documentation** — if the function body contains `raise` statements, a `Raises:` section is expected.
+3. **Exception documentation** — if the function body contains `raise` statements, a `Raises:` section is expected (Google or Sphinx style).
 4. **Return documentation** — if the function has a `return <value>` statement, a `Returns:` section is expected, and vice versa.
 5. **Format compliance** — the docstring must have a summary line; non-standard section headers are flagged.
 6. **Content quality** — placeholder text (`TODO`, `FIXME`, `Description of`, etc.), very short summaries, and duplicate parameter descriptions are flagged.
 
 ### Output format
 
+**Text mode (default):**
 ```
 ============================================================
 VALIDATION REPORT
@@ -119,12 +128,28 @@ ISSUES:
 
 [ERROR] mymodule.py:12:process_data: Parameter 'timeout' is not documented in docstring
   → Suggestion: Add 'timeout' to the Args section
+```
 
-[WARNING] mymodule.py:12:process_data: Function returns a value but has no Returns section in docstring
-  → Suggestion: Add a Returns section documenting the return value
-
-[WARNING] mymodule.py:5:connect: Placeholder text 'Description of' found in docstring
-  → Suggestion: Replace placeholder with actual documentation
+**JSON mode (`--output-format json`):**
+```json
+{
+  "file": "mymodule.py",
+  "stats": {
+    "total": 3,
+    "errors": 1,
+    "warnings": 2,
+    "info": 0,
+    "coverage_percentage": 75.0
+  },
+  "issues": [
+    {
+      "line": 12,
+      "severity": "ERROR",
+      "check": "signature",
+      "message": "Parameter 'timeout' is not documented in docstring"
+    }
+  ]
+}
 ```
 
 ### Examples
@@ -168,7 +193,8 @@ pycodecommenter coverage <path> [options]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `-e`, `--exclude` | list | none | One or more glob-style patterns to exclude. Paths containing any of these strings are skipped. When not provided, the analyzer's built-in defaults apply: `__pycache__`, `.git`, `venv`, `tests`, `test_` |
+| `-e`, `--exclude` | list | none | One or more patterns to exclude. Paths containing any of these strings are skipped. Built-in defaults when not provided: `__pycache__`, `.git`, `venv`, `tests`, `test_` |
+| `--output-format` | `text` \| `json` | `text` | Output format. `text` prints the human-readable coverage table. `json` prints a machine-readable JSON object to stdout. |
 
 > **Note:** The `--exclude` patterns are matched by checking whether the pattern string appears anywhere in the file path. They are not full glob expressions — they are simple substring matches.
 

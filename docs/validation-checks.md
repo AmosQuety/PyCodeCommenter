@@ -1,3 +1,9 @@
+---
+title: Validation Checks Reference — PyCodeCommenter
+description: Complete reference for all PyCodeCommenter validation checks. Covers signature matching, type consistency, exception documentation, return documentation, format compliance, and content quality checks with examples.
+keywords: python docstring validation, docstring checks, signature mismatch, missing docstring, documentation quality, pycodecommenter checks
+---
+
 # Validation Checks Reference
 
 The validator (`DocstringValidator`) runs six categories of checks whenever `validate_all()` is called. Each check may produce issues at one of three severity levels:
@@ -253,7 +259,13 @@ def get_name() -> str:
 **Severity:** WARNING
 **Category:** `exceptions`
 
-**What it checks:** If the function body contains any `raise` statements and the docstring has no `Raises:` section, this fires. The validator looks for `Raises:` or `Raises\n` or `:raises` in the docstring text.
+**What it checks:** If the function body contains any `raise` statements and the docstring has no `Raises:` section, this fires.
+
+Recognised Raises patterns (as of v2.2.0):
+
+- `Raises:` — Google style
+- `Raises\n` / `Raises\r\n` — bare header
+- `:raises ` — Sphinx style (trailing space prevents false matches)
 
 **Example violation:**
 ```python

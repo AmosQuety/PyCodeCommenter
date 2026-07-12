@@ -1,0 +1,23 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "PyCodeCommenter",
+  "name_for_model": "pycodecommenter",
+  "description_for_human": "Python docstring generator and validator. Generates Google-style docstrings from AST, validates them against real function signatures, and measures documentation coverage.",
+  "description_for_model": "PyCodeCommenter is a deterministic, AST-based Python tool. It can: (1) generate Google-style docstrings for undocumented Python functions and classes from their AST, (2) validate existing docstrings against real function signatures across six check categories, (3) measure documentation coverage per file or project, and (4) export structured JSON reports. It requires no AI, no network access, and no API keys. Install with 'pip install pycodecommenter'. Main classes: PyCodeCommenter (generation), DocstringValidator (validation), CoverageAnalyzer (coverage).",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "none"
+  },
+  "logo_url": "https://amosquety.github.io/PyCodeCommenter/assets/logo.png",
+  "contact_email": "amosnabasa4@gmail.com",
+  "legal_info_url": "https://github.com/AmosQuety/PyCodeCommenter/blob/main/LICENSE",
+  "homepage": "https://amosquety.github.io/PyCodeCommenter/",
+  "repository": "https://github.com/AmosQuety/PyCodeCommenter",
+  "pypi": "https://pypi.org/project/pycodecommenter/",
+  "install_command": "pip install pycodecommenter",
+  "version": "2.2.0",
+  "license": "MIT",
+  "author": "Nabasa Amos (Amos Quety)"
+}

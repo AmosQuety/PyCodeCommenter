@@ -1,12 +1,35 @@
-# PyCodeCommenter
+---
+title: PyCodeCommenter — Python Docstring Generator & Validator
+description: >
+  PyCodeCommenter automatically generates Google-style Python docstrings,
+  validates them against real function signatures, and measures documentation
+  coverage. Deterministic, AST-based, no AI. Works in CI/CD pipelines.
+keywords: python docstring generator, docstring validator, documentation coverage, google style docstrings, python documentation tool, AST parser, CI/CD documentation
+---
+
+# PyCodeCommenter — Python Docstring Generator & Validator
 
 <div class="pcc-hero">
-  <div class="pcc-hero__logo">&lt;/&gt;</div>
+  <div class="pcc-hero__logo"></></div>
   <h2>Keep Python docstrings accurate as your code evolves.</h2>
   <p class="pcc-hero__tagline">
-    Deterministic docstring generation and validation for production Python. No AI guesswork—just reliable, rule-based inference that syncs your docs with your AST.
+    Deterministic docstring generation and validation for production Python.
+    No AI guesswork — just reliable, rule-based inference that syncs your docs with your AST.
   </p>
 </div>
+
+---
+
+## What is PyCodeCommenter?
+
+**PyCodeCommenter** is an open-source Python tool that:
+
+1. **Generates** Google-style docstrings from your code's AST — no AI, no guesswork.
+2. **Validates** existing docstrings against real function signatures across six check categories.
+3. **Measures** documentation coverage per file and across entire projects.
+4. **Exports** structured JSON for integration with any downstream tooling.
+
+Install with: `pip install pycodecommenter` · Requires Python 3.8+
 
 ---
 
@@ -21,8 +44,7 @@ def process_data(items, strict=False):
 **After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to instantly sync them.
 ```python
 def process_data(items, strict=False):
-    """
-    Process data.
+    """Process data.
 
     Args:
         items: The items to process.
@@ -51,10 +73,16 @@ Preview the changes PyCodeCommenter will make to your project without writing to
 pycodecommenter generate <path/to/your_file.py> --dry-run
 ```
 
-Ready to format? Apply the changes:
+Ready to apply? Write docstrings directly into the file:
 
 ```bash
 pycodecommenter generate <path/to/your_file.py> --inplace
+```
+
+Validate and get a JSON report:
+
+```bash
+pycodecommenter validate <path/to/your_file.py> --output-format json
 ```
 
 ---
@@ -70,20 +98,46 @@ pycodecommenter generate <path/to/your_file.py> --inplace
 
 <a class="pcc-card" href="validation-checks/">
   <span class="pcc-card__title">Validation Checks</span>
-  <span class="pcc-card__desc">All 18 checks — severity, violation examples, and how to fix each one.</span>
+  <span class="pcc-card__desc">All checks — severity levels, violation examples, and how to fix each one.</span>
 </a>
 
 <a class="pcc-card" href="recipes/">
   <span class="pcc-card__title">Recipes & CI</span>
-  <span class="pcc-card__desc">Pre-commit hooks, GitHub Actions, and coverage gating.</span>
+  <span class="pcc-card__desc">Pre-commit hooks, GitHub Actions, and coverage gating patterns.</span>
 </a>
 
-<a class="pcc-card" href="configuration/">
-  <span class="pcc-card__title">Configuration</span>
-  <span class="pcc-card__desc">.pycodecommenter.yaml key reference and auto-discovery behaviour.</span>
+<a class="pcc-card" href="cli-reference/">
+  <span class="pcc-card__title">CLI Reference</span>
+  <span class="pcc-card__desc">Every flag and argument for generate, validate, and coverage — derived directly from the source.</span>
+</a>
+
+<a class="pcc-card" href="python-api/">
+  <span class="pcc-card__title">Python API</span>
+  <span class="pcc-card__desc">Use PyCodeCommenter programmatically: PyCodeCommenter, DocstringValidator, CoverageAnalyzer.</span>
+</a>
+
+<a class="pcc-card" href="faq/">
+  <span class="pcc-card__title">FAQ</span>
+  <span class="pcc-card__desc">Common questions answered directly from the source code.</span>
 </a>
 
 </div>
+
+---
+
+## Key Facts
+
+| Property | Value |
+|---|---|
+| PyPI package | `pycodecommenter` |
+| Import name | `PyCodeCommenter` |
+| Python support | 3.8, 3.9, 3.10, 3.11, 3.12 |
+| Output docstring style | Google |
+| Input parsing | Google (full), Sphinx (partial) |
+| AI / LLM dependency | None — fully deterministic |
+| Runtime dependencies | stdlib + `ruamel.yaml` (config only) |
+| License | MIT |
+| Version | v2.2.0 |
 
 ---
 
@@ -92,3 +146,40 @@ pycodecommenter generate <path/to/your_file.py> --inplace
 - **PyPI**: [pypi.org/project/pycodecommenter](https://pypi.org/project/pycodecommenter/)
 - **GitHub**: [github.com/AmosQuety/PyCodeCommenter](https://github.com/AmosQuety/PyCodeCommenter)
 - **Issues**: [github.com/AmosQuety/PyCodeCommenter/issues](https://github.com/AmosQuety/PyCodeCommenter/issues)
+- **Creator**: [Nabasa Amos (Amos Quety)](https://nabasa-amos.netlify.app)
+
+<!-- JSON-LD structured data for AI engines and search crawlers -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "PyCodeCommenter",
+  "alternateName": "pycodecommenter",
+  "description": "Open-source Python tool for automatically generating Google-style docstrings, validating docstrings against real function signatures, and measuring documentation coverage. Deterministic, AST-based, no AI required.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "url": "https://amosquety.github.io/PyCodeCommenter/",
+  "downloadUrl": "https://pypi.org/project/pycodecommenter/",
+  "codeRepository": "https://github.com/AmosQuety/PyCodeCommenter",
+  "version": "2.2.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "programmingLanguage": "Python",
+  "runtimePlatform": "Python 3.8+",
+  "keywords": "python, docstring, documentation, validation, coverage, google-style, AST, CI/CD",
+  "author": {
+    "@type": "Person",
+    "name": "Nabasa Amos",
+    "alternateName": "Amos Quety",
+    "url": "https://nabasa-amos.netlify.app",
+    "sameAs": [
+      "https://github.com/AmosQuety",
+      "https://linkedin.com/in/nabasa-amos"
+    ]
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>

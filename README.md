@@ -1,97 +1,139 @@
-# PyCodeCommenter
+# PyCodeCommenter — Python Docstring Generator & Validator
 
 [![PyPI version](https://badge.fury.io/py/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
 [![Documentation](https://img.shields.io/badge/docs-amosquety.github.io%2FPyCodeCommenter-blue)](https://amosquety.github.io/PyCodeCommenter/)
 [![Python Support](https://img.shields.io/pypi/pyversions/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub](https://img.shields.io/github/stars/AmosQuety/PyCodeCommenter?style=social)](https://github.com/AmosQuety/PyCodeCommenter)
+[![GitHub Stars](https://img.shields.io/github/stars/AmosQuety/PyCodeCommenter?style=social)](https://github.com/AmosQuety/PyCodeCommenter)
 
-PyCodeCommenter is a Python docstring generator and documentation validation tool for teams that want accurate, maintainable, Google-style docstrings.
+**PyCodeCommenter** is an open-source Python docstring generator and documentation validator. It automatically generates Google-style docstrings from Python AST, validates existing docstrings against real function signatures, measures documentation coverage, and integrates with CI/CD pipelines — all with zero network calls and zero AI dependency.
 
-Created and maintained by Nabasa Amos (Amos Quety), PyCodeCommenter helps Python developers automate documentation, measure documentation coverage, and keep code documentation aligned with evolving code signatures.
+> **Install:** `pip install pycodecommenter` · **Python 3.8+** · **MIT License**
 
-Unlike AI-based documentation tools, PyCodeCommenter uses deterministic, rule-based validation to catch documentation issues that are easy to miss in day-to-day development. It is built for Python developer tools workflows, CI/CD documentation validation, and long-term documentation quality.
+---
 
-## Why I Built PyCodeCommenter
+## What PyCodeCommenter Does
 
-I built PyCodeCommenter because documentation drift is a common problem in Python projects. Code changes quickly, but docstrings often lag behind, become inconsistent, or stop matching the actual function signature.
+| Task | Command |
+|---|---|
+| Generate missing docstrings | `pycodecommenter generate myfile.py --inplace` |
+| Validate docstrings vs code | `pycodecommenter validate myfile.py` |
+| Measure documentation coverage | `pycodecommenter coverage ./src` |
+| JSON output for downstream tools | `pycodecommenter validate myfile.py --output-format json` |
 
-The goal was to create a practical code documentation tool that could:
+**PyCodeCommenter** solves *documentation drift* — the common Python project problem where code changes but docstrings don't. It catches undocumented parameters, missing `Returns:` sections, orphaned docstring entries, and mismatched type hints before they reach production.
 
-- Generate clear Google-style docstrings from Python code.
-- Validate existing documentation against real function and method signatures.
-- Improve documentation coverage without adding heavy workflow overhead.
-- Fit naturally into documentation automation and CI/CD documentation validation pipelines.
+---
 
-PyCodeCommenter is meant to be useful for individual developers, open-source maintainers, and teams that want a reliable Python docstring generator with documentation validation built in.
+## Quick Start
 
-## Project Story
+```bash
+pip install pycodecommenter
 
-PyCodeCommenter started as a simple docstring generator. Early versions focused on turning Python functions into readable Google-style docstrings with minimal friction.
+# Preview what will be added (safe, no writes)
+pycodecommenter generate main.py --dry-run
 
-As the project evolved, Nabasa Amos (Amos Quety) expanded it into a broader documentation validation and coverage platform. That change made the tool more useful in real projects, where generated docs are only part of the problem and the larger challenge is keeping documentation accurate over time.
+# Apply docstrings in place
+pycodecommenter generate main.py --inplace
 
-Today, PyCodeCommenter combines docstring generation, documentation validation, documentation coverage reporting, and CI/CD-ready checks in a single Python package.
+# Validate accuracy
+pycodecommenter validate main.py
+
+# Check project coverage
+pycodecommenter coverage ./src
+```
+
+---
 
 ## Why PyCodeCommenter?
 
 ### The Problem
-- AI tools generate inconsistent documentation.
-- There is no easy way to validate existing docstrings against code.
-- Documentation drifts as code evolves.
-- Many projects lack coverage metrics for documentation quality.
+
+- Code changes quickly; docstrings lag behind and become stale.
+- No easy way to validate existing docstrings against real signatures.
+- AI tools generate inconsistent or hallucinated documentation.
+- Most Python projects have no coverage metric for documentation quality.
 
 ### The Solution
-- Generate professional docstrings automatically.
-- Validate existing docs against actual code signatures.
-- Track documentation coverage across projects.
-- Integrate with CI/CD pipelines.
 
-### Terminal Usage
-```bash
-# Generate docstrings for a file
-pycodecommenter generate main.py -i
+PyCodeCommenter uses **deterministic, AST-based analysis** — not AI — to:
 
-# Validate documentation
-pycodecommenter validate main.py
+- Generate structurally correct Google-style docstrings from your code's own AST.
+- Validate parameter names, type hints, exception documentation, and return values.
+- Measure and enforce documentation coverage across an entire project.
+- Export structured JSON reports for integration with any downstream tooling.
 
-# Check project coverage
-pycodecommenter coverage .
-```
+---
 
 ## Features
 
-### Comprehensive Validation
-Six types of validation checks:
-- **Signature Matching**: Params in code match docstring.
-- **Type Consistency**: Type hints match documented types.
-- **Exception Documentation**: Raised exceptions are documented.
-- **Return Documentation**: Return values are properly documented.
-- **Format Compliance**: Follows Google-style guidelines.
-- **Content Quality**: No placeholders or TODOs.
+### Six Validation Checks
 
-### Coverage Reporting
-- Per-file coverage metrics.
-- Project-wide statistics.
-- Export to JSON, Markdown, or console.
-- CI/CD integration ready.
+Every documented function is checked for:
+
+1. **Signature Matching** — every parameter in the function signature must appear in `Args:`, and vice versa.
+2. **Type Consistency** — type annotations must match documented types.
+3. **Exception Documentation** — `raise` statements require a `Raises:` section (Google or Sphinx style).
+4. **Return Documentation** — `return <value>` requires a `Returns:` section.
+5. **Format Compliance** — docstring must have a summary line; non-standard section headers are flagged.
+6. **Content Quality** — placeholder text (`TODO`, `FIXME`, `Description of`), short summaries, and duplicate descriptions are caught.
+
+### Decorator-Aware Validation (v2.2.0)
+
+- `@property` getter — return check fires as normal.
+- `@property` setter / deleter — return check is skipped (no false-positive warnings).
+- `@classmethod` — `cls` is excluded from parameter checks.
+- `@staticmethod` — no self/cls stripping; all parameters validated.
+
+### Structured JSON Output (v2.2.0)
+
+Both `validate` and `coverage` support `--output-format json` for machine-readable output:
+
+```bash
+pycodecommenter validate src/api.py --output-format json
+```
+
+```json
+{
+  "file": "src/api.py",
+  "stats": {
+    "total": 3,
+    "errors": 1,
+    "warnings": 2,
+    "info": 0,
+    "coverage_percentage": 85.0
+  },
+  "issues": [
+    {
+      "line": 42,
+      "severity": "ERROR",
+      "check": "signature",
+      "message": "Parameter 'timeout' is not documented in docstring"
+    }
+  ]
+}
+```
 
 ### Modern Python Support
-- Python 3.8+ support.
-- Async functions (`async def`).
-- Complex type hints (`Union`, `Optional`, `Generic`).
-- PEP 604 unions (`int | str`).
-- PEP 585 generics (`list[int]`).
 
-### Developer-Friendly
-- Beautiful console output.
-- Actionable error messages.
-- Multiple export formats.
-- Fast AST-based analysis with no API calls.
+- Python 3.8, 3.9, 3.10, 3.11, 3.12.
+- `async def` functions.
+- Complex type hints: `Union`, `Optional`, `Generic`, `list[int]`, `int | str`.
+- PEP 604 unions, PEP 585 generics.
+
+### Coverage Reporting
+
+- Per-file coverage percentages.
+- Project-wide totals.
+- JSON, Markdown, and console output.
+- CI/CD integration with exit codes.
+
+---
 
 ## Usage Examples
 
-### Example 1: Basic Generation
+### Example 1: Generate Docstrings
+
 ```python
 from PyCodeCommenter import PyCodeCommenter
 
@@ -101,7 +143,6 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
 """
 
 commenter = PyCodeCommenter().from_string(code)
-docstrings = commenter.generate_docstrings()
 print(commenter.get_patched_code())
 ```
 
@@ -109,22 +150,20 @@ print(commenter.get_patched_code())
 ```python
 def calculate_discount(price: float, rate: float = 0.1) -> float:
     """Calculate discount.
-    
-    Calculates the discount.
-    
+
     Args:
-        price (float): Price of the object.
-        rate (float): Rate of the object. (default: 0.1)
-    
+        price (float): Price of the product.
+        rate (float): Discount rate to apply. (default: 0.1)
+
     Returns:
-        float: Description of the return value.
+        float: Discounted price after applying the rate.
     """
     return price * (1 - rate)
 ```
 
-### Example 2: Validation in CI/CD
+### Example 2: Validate in CI/CD
+
 ```python
-# validate_docs.py
 import sys
 from PyCodeCommenter import PyCodeCommenter
 
@@ -133,27 +172,29 @@ report = commenter.validate()
 
 if report.stats.errors > 0:
     report.print_summary()
-    sys.exit(1)  # Fail CI build
+    sys.exit(1)  # Fail the CI build
 
 print(f"✓ Documentation validated: {report.stats.coverage_percentage:.1f}% coverage")
 ```
 
-### Example 3: Coverage Enforcement
+### Example 3: Enforce Coverage Threshold
+
 ```python
 from PyCodeCommenter import CoverageAnalyzer
 
 analyzer = CoverageAnalyzer()
-project = analyzer.analyze_directory("./src", exclude_patterns=['tests'])
+project = analyzer.analyze_directory("./src", exclude_patterns=["tests"])
 
 if project.total_coverage < 80.0:
-    print(f"❌ Coverage {project.total_coverage:.1f}% below threshold 80%")
+    print(f"❌ Coverage {project.total_coverage:.1f}% is below the 80% threshold")
     project.print_report()
     sys.exit(1)
 
-print(f"✓ Coverage {project.total_coverage:.1f}% meets threshold")
+print(f"✓ Coverage {project.total_coverage:.1f}% meets the threshold")
 ```
 
-### Example 4: Export Reports
+### Example 4: JSON Export
+
 ```python
 import json
 from PyCodeCommenter import PyCodeCommenter
@@ -161,21 +202,86 @@ from PyCodeCommenter import PyCodeCommenter
 commenter = PyCodeCommenter().from_file("mycode.py")
 report = commenter.validate()
 
-# JSON export
 with open("validation_report.json", "w") as f:
     json.dump(report.to_dict(), f, indent=2)
-
-# Markdown export
-with open("validation_report.md", "w") as f:
-    f.write(report.to_markdown())
 ```
 
-## Configuration
-Create `.pycodecommenter.yaml` in your project root:
+---
+
+## CI/CD Integration
+
+### GitHub Actions
+
 ```yaml
-style: google  # or 'numpy', 'sphinx'
+# .github/workflows/docs.yml
+name: Documentation Check
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pycodecommenter
+      - run: pycodecommenter validate src/
+```
+
+### Pre-commit Hook
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: validate-docstrings
+        name: Validate Docstrings
+        entry: pycodecommenter validate
+        language: system
+        types: [python]
+```
+
+---
+
+## Frequently Asked Questions
+
+**What is PyCodeCommenter?**
+PyCodeCommenter is a Python command-line tool and library for automatically generating Google-style docstrings and validating existing docstrings against real function signatures.
+
+**How do I install PyCodeCommenter?**
+Run `pip install pycodecommenter`. Python 3.8 or later is required.
+
+**Does PyCodeCommenter use AI or LLMs?**
+No. PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse code and generate documentation. There are no API calls, no network requests, and no rate limits.
+
+**Does PyCodeCommenter overwrite my hand-written docstrings?**
+No. Existing summaries, parameter descriptions, and return descriptions are preserved and merged. Only missing sections are filled in automatically.
+
+**What docstring styles does PyCodeCommenter support?**
+PyCodeCommenter generates Google-style docstrings. It can parse both Google-style and Sphinx-style (`:param:`, `:returns:`, `:raises:`) as input.
+
+**Can I use PyCodeCommenter in CI/CD?**
+Yes. The `validate` subcommand exits with code `1` when any ERROR-level issue is found, making it suitable for blocking CI builds. The `--output-format json` flag enables integration with any downstream tooling.
+
+**What is documentation drift?**
+Documentation drift is when code is updated but the corresponding docstrings are not. Parameters get added or renamed, return types change, and exceptions get added — but the docstring stays the same. PyCodeCommenter detects and fixes this.
+
+**How does PyCodeCommenter measure documentation coverage?**
+Coverage is `(documented_functions + documented_classes) / (total_functions + total_classes) × 100`. A function counts as documented if its first body statement is a non-empty string literal.
+
+---
+
+## Configuration
+
+Create `.pycodecommenter.yaml` in your project root:
+
+```yaml
+style: google
 validation:
-  level: strict  # or 'moderate', 'lenient'
+  level: strict
   check_types: true
   check_exceptions: true
 coverage:
@@ -187,106 +293,73 @@ exclude:
   - "*/__pycache__/*"
 ```
 
-## Use Cases
-### For Individual Developers
-- Generate documentation for new functions quickly.
-- Validate docs before committing.
-- Track documentation coverage.
-
-### For Teams
-- Enforce documentation standards in CI/CD.
-- Prevent PRs with undocumented code.
-- Maintain consistent documentation style.
-
-### For Open Source Projects
-- Welcome contributors with clear doc requirements.
-- Run automated documentation checks in PRs.
-- Publish public coverage badges.
-
-## Integration
-
-### Pre-commit Hook
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: local
-    hooks:
-      - id: validate-docstrings
-        name: Validate Docstrings
-        entry: pycodecommenter validate .
-        language: system
-        types: [python]
-```
-
-### GitHub Actions
-```yaml
-# .github/workflows/docs.yml
-name: Documentation Check
-
-on: [push, pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
-      - name: Install dependencies
-        run: pip install pycodecommenter
-      - name: Validate documentation
-        run: pycodecommenter validate .
-```
+---
 
 ## Documentation
 
-Full documentation is available at: **[https://amosquety.github.io/PyCodeCommenter/](https://amosquety.github.io/PyCodeCommenter/)**
+Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amosquety.github.io/PyCodeCommenter/)**
 
-- [User Guide](https://amosquety.github.io/PyCodeCommenter/user-guide)
-- [API Reference](https://amosquety.github.io/PyCodeCommenter/api)
-- [Examples](https://amosquety.github.io/PyCodeCommenter/examples)
+- [Getting Started](https://amosquety.github.io/PyCodeCommenter/getting-started/)
+- [Validation Checks](https://amosquety.github.io/PyCodeCommenter/validation-checks/)
+- [CLI Reference](https://amosquety.github.io/PyCodeCommenter/cli-reference/)
+- [Python API](https://amosquety.github.io/PyCodeCommenter/python-api/)
+- [Recipes & CI](https://amosquety.github.io/PyCodeCommenter/recipes/)
+- [FAQ](https://amosquety.github.io/PyCodeCommenter/faq/)
+
+---
+
+## Supported Platforms & Environments
+
+- **OS**: Linux, macOS, Windows
+- **Python**: 3.8, 3.9, 3.10, 3.11, 3.12
+- **Environments**: local, CI/CD (GitHub Actions, GitLab CI, Jenkins), pre-commit hooks
+- **Dependencies**: stdlib only (no third-party runtime dependencies beyond `ruamel.yaml` for config)
+
+---
 
 ## Known Limitations
-- Does not support Python 2.x (EOL).
-- Match statements (Python 3.10+) have basic support.
-- Complex decorators may affect docstring placement.
+
+- Python 2.x is not supported (EOL).
+- `match` statements (Python 3.10+) have basic support.
+- NumPy-style docstrings are not parsed as input.
+
+---
 
 ## Roadmap
+
 - [ ] VS Code extension
-- [ ] Smart docstring updates that preserve human content
-- [ ] AI-powered generation (optional)
-- [ ] NumPy and Sphinx style support
-- [ ] GitHub Action for automated PRs
+- [ ] Smart docstring updates that preserve human-written content
+- [ ] Optional AI-powered description generation
+- [ ] NumPy and full Sphinx style support
+- [ ] GitHub Action for automated documentation PRs
+- [ ] `--fail-below` flag for coverage threshold enforcement in CLI
+
+---
 
 ## Creator
 
-PyCodeCommenter was created and is actively maintained by **Nabasa Amos (Amos Quety)**, a software engineer focused on developer tooling, AI systems, and software quality.
+PyCodeCommenter was created and is actively maintained by **Nabasa Amos (Amos Quety)**, a software engineer focused on developer tooling, documentation automation, and software quality.
 
-The project was built to solve a common problem in Python development: keeping documentation accurate as code evolves.
-
-What started as a simple docstring generator has evolved into a documentation validation and coverage platform for Python projects.
-
-PyCodeCommenter -> Creator -> Nabasa Amos (Amos Quety)
-
-## Connect With the Creator
-
-- **Portfolio**: [Projects and work](https://nabasa-amos.netlify.app)
+- **Portfolio**: [nabasa-amos.netlify.app](https://nabasa-amos.netlify.app)
 - **GitHub**: [AmosQuety](https://github.com/AmosQuety)
 - **LinkedIn**: [Nabasa Amos](https://linkedin.com/in/nabasa-amos)
 - **Contact**: amosnabasa4@gmail.com
 
+---
+
 ## License
-MIT License - see [LICENSE](LICENSE) file for details.
+
+MIT License — see [LICENSE](LICENSE) for details.
 
 ## Contributing
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
-## Show Your Support
-If PyCodeCommenter helps your workflow, please star the repo. It helps other developers discover the project.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
 
-## Contact
-- **Issues**: [GitHub Issues](https://github.com/AmosQuety/PyCodeCommenter/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/AmosQuety/PyCodeCommenter/discussions)
+## Issues & Discussions
 
+- **Bug reports**: [GitHub Issues](https://github.com/AmosQuety/PyCodeCommenter/issues)
+- **Questions & ideas**: [GitHub Discussions](https://github.com/AmosQuety/PyCodeCommenter/discussions)
+
+---
+
+*If PyCodeCommenter is useful in your workflow, a ⭐ on GitHub helps other Python developers discover it.*

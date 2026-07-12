@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use PyCodeCommenter in your research or project, please cite it using this metadata."
+type: software
+title: PyCodeCommenter
+abstract: >
+  PyCodeCommenter is an open-source Python tool for automatically generating
+  Google-style docstrings from Python AST, validating existing docstrings
+  against real function signatures, and measuring documentation coverage.
+  It is deterministic, rule-based, and requires no AI or network access.
+authors:
+  - family-names: Amos
+    given-names: Nabasa
+    alias: Amos Quety
+    email: amosnabasa4@gmail.com
+    website: https://nabasa-amos.netlify.app
+    orcid: ""
+version: 2.2.0
+date-released: "2026-07-12"
+license: MIT
+repository-code: https://github.com/AmosQuety/PyCodeCommenter
+url: https://amosquety.github.io/PyCodeCommenter/
+keywords:
+  - python
+  - docstring
+  - documentation
+  - validation
+  - coverage
+  - google-style
+  - ast
+  - developer-tools
+  - ci-cd
+  - static-analysis

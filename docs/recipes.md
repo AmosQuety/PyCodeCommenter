@@ -1,3 +1,9 @@
+---
+title: Recipes & CI/CD Workflows — PyCodeCommenter
+description: Copy-paste CI/CD recipes for PyCodeCommenter. Covers pre-commit hooks, GitHub Actions, GitLab CI, coverage gating, batch generation, and JSON output integration.
+keywords: pycodecommenter ci/cd, github actions docstring validation, pre-commit docstring hook, python documentation coverage gating, documentation automation
+---
+
 # Recipes & Common Workflows
 
 This page provides complete, copy-paste-ready examples for the most common PyCodeCommenter use cases. Every command and code snippet has been verified against the actual source code.

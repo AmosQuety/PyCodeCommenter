@@ -1,3 +1,9 @@
+---
+title: Configuration Reference — PyCodeCommenter
+description: Configure PyCodeCommenter with a .pycodecommenter.yaml file. Documents all keys, auto-discovery behaviour, and programmatic config loading via the Python API.
+keywords: pycodecommenter configuration, pycodecommenter yaml, python docstring tool config, documentation tool configuration
+---
+
 # Configuration Reference
 
 PyCodeCommenter can be configured with a YAML file that is discovered automatically by walking up the directory tree from wherever you run the tool.

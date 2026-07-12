@@ -1,3 +1,9 @@
+---
+title: Getting Started — PyCodeCommenter Python Docstring Generator
+description: Install PyCodeCommenter and generate your first Google-style Python docstrings in under two minutes. Step-by-step guide for generate, validate, and coverage commands.
+keywords: install pycodecommenter, python docstring generator tutorial, how to generate docstrings python, getting started
+---
+
 # Getting Started
 
 Welcome to PyCodeCommenter. This guide will get you from zero to fully documented code in under two minutes.

@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+
+# Allow all AI crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+Sitemap: https://amosquety.github.io/PyCodeCommenter/sitemap.xml
