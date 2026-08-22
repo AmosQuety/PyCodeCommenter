@@ -15,6 +15,8 @@ import tokenize
 import io
 import logging
 from typing import Union, Dict, Any, Optional, List
+import libcst as cst
+from libcst.metadata import PositionProvider
 try:
     from .templates import get_function_description
     from .parameter_descriptions import parameter_descriptions
@@ -112,57 +114,36 @@ class PyCodeCommenter:
         return self.comments
 
     def get_patched_code(self) -> str:
-        """Returns the code with generated docstrings inserted or updated."""
+        """Returns the code with generated docstrings inserted or updated.
+
+        Uses libcst to apply edits at the concrete-syntax-tree level rather
+        than by line-number arithmetic on the raw source text, so untouched
+        code (including formatting, blank lines, and comments elsewhere in
+        the file) round-trips unchanged and one-line definitions
+        (e.g. ``def foo(): return 1``) are safely converted to a proper
+        indented block instead of having the docstring inserted before the
+        definition.
+        """
         if not self.code or not self.parsed_code:
             return self.code
-
-        lines = self.code.splitlines()
-        changes = []
 
         visitor = DocstringVisitor(self)
         visitor.visit(self.parsed_code)
 
-        for node, docstring in visitor.results:
-            existing_doc = ast.get_docstring(node, clean=False)
-            
-            # Find the line with 'def' or 'class' or 'async def'
-            target_line_idx = node.lineno - 1
-            while target_line_idx < len(lines):
-                curr_line = lines[target_line_idx].strip()
-                if curr_line.startswith(('def ', 'class ', 'async def ')):
-                    break
-                target_line_idx += 1
-            
-            if target_line_idx >= len(lines):
-                continue
-                
-            line = lines[target_line_idx]
-            indent = line[:len(line) - len(line.lstrip())]
-            reindented_doc = self._indent_text(docstring, len(indent) + 4)
+        if not visitor.results:
+            return self.code
 
-            if existing_doc:
-                # Replace existing docstring
-                doc_node = node.body[0]
-                if isinstance(doc_node, ast.Expr) and isinstance(doc_node.value, ast.Constant) and isinstance(doc_node.value.value, str):
-                    start = doc_node.lineno - 1
-                    end = doc_node.end_lineno - 1 if hasattr(doc_node, 'end_lineno') else start
-                    changes.append((start, end, reindented_doc))
-            else:
-                # Insert after the definition line(s)
-                if node.body:
-                    insert_pos = node.body[0].lineno - 1
-                    changes.append((insert_pos, insert_pos - 1, reindented_doc))
+        edits = {(node.lineno, node.col_offset): docstring for node, docstring in visitor.results}
 
-        # Sort changes in reverse order
-        changes.sort(key=lambda x: x[0], reverse=True)
-        
-        for start, end, content in changes:
-            if start <= end:
-                lines[start:end+1] = [content]
-            else:
-                lines.insert(start, content)
-        
-        return "\n".join(lines)
+        try:
+            module = cst.parse_module(self.code)
+        except cst.ParserSyntaxError as e:
+            logger.error(f"libcst failed to parse code for patching: {e}")
+            return self.code
+
+        wrapper = cst.MetadataWrapper(module)
+        patched_module = wrapper.visit(_DocstringCSTPatcher(edits))
+        return patched_module.code
 
     def _generate_function_docstring(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> str:
         """Generates a Google-style docstring for a function node, merging existing info."""
@@ -486,4 +467,82 @@ class DocstringVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         self.results.append((node, self.commenter._generate_class_docstring(node)))
         self.generic_visit(node)
+
+
+class _DocstringCSTPatcher(cst.CSTTransformer):
+    """Applies generated/updated docstrings to a libcst tree.
+
+    Edits are keyed by the (line, column) of the def/class keyword, as
+    reported by ast for the same source - this lets get_patched_code()
+    keep reusing the existing ast-based DocstringVisitor to decide *what*
+    docstring text each node needs, while this transformer handles *where*
+    and *how* to apply it at the concrete-syntax-tree level.
+    """
+
+    METADATA_DEPENDENCIES = (PositionProvider,)
+
+    def __init__(self, edits: Dict[Any, str]):
+        self._edits = edits
+
+    @staticmethod
+    def _is_docstring_stmt(stmt) -> bool:
+        return (
+            isinstance(stmt, cst.SimpleStatementLine)
+            and len(stmt.body) == 1
+            and isinstance(stmt.body[0], cst.Expr)
+            and isinstance(stmt.body[0].value, cst.SimpleString)
+        )
+
+    @staticmethod
+    def _reindent_continuation_lines(text: str, spaces: int) -> str:
+        # The first line is placed by libcst's own block indentation; only
+        # continuation lines need their indentation baked into the string
+        # literal's content.
+        lines = text.splitlines()
+        if len(lines) <= 1:
+            return text
+        indent = " " * spaces
+        return "\n".join([lines[0]] + [indent + line if line.strip() else line for line in lines[1:]])
+
+    def _patch(self, original_node, updated_node):
+        pos = self.get_metadata(PositionProvider, original_node).start
+        docstring = self._edits.get((pos.line, pos.column))
+        if docstring is None:
+            return updated_node
+
+        reindented = self._reindent_continuation_lines(docstring, pos.column + 4)
+        doc_line = cst.SimpleStatementLine(
+            body=[cst.Expr(value=cst.SimpleString(value=reindented))]
+        )
+
+        body = updated_node.body
+        if isinstance(body, cst.SimpleStatementSuite):
+            # One-liner definition (e.g. `def foo(): return 1`) - convert
+            # to an indented block so the docstring has its own line
+            # instead of being inserted before the definition.
+            original_stmt_line = cst.SimpleStatementLine(
+                body=list(body.body),
+                trailing_whitespace=body.trailing_whitespace,
+            )
+            new_body = cst.IndentedBlock(body=[doc_line, original_stmt_line])
+            return updated_node.with_changes(body=new_body)
+
+        stmts = list(body.body)
+        if stmts and self._is_docstring_stmt(stmts[0]):
+            old_line = stmts[0]
+            stmts[0] = old_line.with_changes(
+                body=[old_line.body[0].with_changes(value=cst.SimpleString(value=reindented))]
+            )
+        else:
+            stmts.insert(0, doc_line)
+        return updated_node.with_changes(body=body.with_changes(body=stmts))
+
+    def leave_FunctionDef(self, original_node, updated_node):
+        return self._patch(original_node, updated_node)
+
+    def leave_AsyncFunctionDef(self, original_node, updated_node):
+        return self._patch(original_node, updated_node)
+
+    def leave_ClassDef(self, original_node, updated_node):
+        return self._patch(original_node, updated_node)
 
