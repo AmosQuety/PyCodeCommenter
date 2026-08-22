@@ -108,7 +108,7 @@ class DocstringParser:
             if match:
                 current_arg = match.group(1)
                 self.params[current_arg] = match.group(3).strip()
-            elif current_arg and line.startswith('        '): # Continuation line
+            elif current_arg and line.strip(): # Continuation line, any indentation
                 self.params[current_arg] += " " + line.strip()
 
     def get_info(self) -> Dict[str, Any]:
