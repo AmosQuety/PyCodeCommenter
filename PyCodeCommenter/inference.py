@@ -16,6 +16,22 @@ import re
 from typing import List, Optional
 
 
+def humanize_identifier(name: str) -> str:
+    """Strip leading/trailing underscores and collapse any remaining run of
+    underscores to a single space.
+
+    Unlike a naive ``name.replace('_', ' ')``, this handles dunder methods
+    (``__init__`` -> ``init``, not ``"  init  "`` with stray leading/
+    trailing spaces) and names with multiple consecutive underscores.
+
+    >>> humanize_identifier('__init__')
+    'init'
+    >>> humanize_identifier('file_path')
+    'file path'
+    """
+    return re.sub(r'_+', ' ', name.strip('_'))
+
+
 def _human_readable(name: str) -> str:
     """Convert ``snake_case`` or ``camelCase`` identifiers to a readable phrase.
 
@@ -24,8 +40,8 @@ def _human_readable(name: str) -> str:
     >>> _human_readable('maxRetries')
     'max retries'
     """
-    # Replace underscores with spaces and split camel case boundaries.
-    name = name.replace('_', ' ')
+    # Replace underscores with spaces (dunder-safe) and split camel case boundaries.
+    name = humanize_identifier(name)
     # Insert spaces before capital letters that follow a lowercase letter.
     name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name)
     return name.lower()
@@ -142,9 +158,9 @@ def infer_description(
         return f"{default_desc}."
 
     # 4. Generic fallback.
-    func_part = f" of the {function_name.replace('_', ' ')}" if function_name else ""
+    func_part = f" of the {humanize_identifier(function_name)}" if function_name else ""
     readable = _human_readable(param_name)
     return f"{readable.capitalize()}{func_part}."
 
 
-__all__ = ["infer_description"]
+__all__ = ["infer_description", "humanize_identifier"]

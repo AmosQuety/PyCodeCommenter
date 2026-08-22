@@ -20,12 +20,13 @@ from libcst.metadata import PositionProvider
 try:
     from .templates import get_function_description
     from .parameter_descriptions import parameter_descriptions
-    from .inference import infer_description
+    from .inference import infer_description, humanize_identifier
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
 except (ImportError, ValueError):
     from templates import get_function_description
     from parameter_descriptions import parameter_descriptions
+    from inference import infer_description, humanize_identifier
     from type_analyzer import TypeAnalyzer
     from docstring_parser import DocstringParser
 
@@ -152,7 +153,7 @@ class PyCodeCommenter:
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
             
-            summary = parsed_info.get("summary") or (func_node.name.replace('_', ' ').capitalize() + ".")
+            summary = parsed_info.get("summary") or (humanize_identifier(func_node.name).capitalize() + ".")
             
             if func_node.name == "__init__":
                 summary = "Initialize the class."
@@ -175,7 +176,13 @@ class PyCodeCommenter:
                 if arg.arg == 'self':
                     continue
                 found_args = True
-                inferred_type = self._infer_type(arg)
+                # A real static type annotation is provably correct from
+                # the code and always wins. Only fall back to a type
+                # documented in an existing docstring when static
+                # inference has nothing to offer ("any").
+                static_type = self._infer_type(arg)
+                docstring_type = parsed_info.get("param_types", {}).get(arg.arg)
+                inferred_type = static_type if static_type != "any" else (docstring_type or static_type)
                 # Use parser to get existing parameter description
                 sibling_params = [a.arg for a in func_node.args.args if a.arg != 'self']
                 default_str = self._get_default_value(default) if default is not None else None
@@ -279,7 +286,7 @@ class PyCodeCommenter:
         except Exception as e:
             # Fallback to a generic description on unexpected errors.
             logger.warning(f"Inference failed for {func_name}.{param_name}: {e}")
-            return f"{param_name.replace('_', ' ').capitalize()} of the {func_name.replace('_', ' ')}."
+            return f"{humanize_identifier(param_name).capitalize()} of the {humanize_identifier(func_name)}."
 
     def _get_class_attributes(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """

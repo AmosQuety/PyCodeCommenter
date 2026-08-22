@@ -227,3 +227,108 @@ class C:
         "# comment before method",
     ]:
         assert expected_comment in patched, f"comment lost: {expected_comment!r}"
+
+def test_type_preserved_from_existing_docstring_when_unannotated(commenter):
+    """Regression test for Phase 6 bug 6a: a parameter's documented type
+    must not be silently downgraded to 'any' when static inference has
+    nothing to work with (no annotation on an untyped parameter).
+    """
+    code = '''def with_doc(x):
+    """Custom summary.
+
+    Args:
+        x (int): custom description that should survive.
+    """
+    return None
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "x (int): custom description that should survive." in patched
+    assert "x (any)" not in patched
+
+def test_static_annotation_wins_over_stale_docstring_type(commenter):
+    """6a precedence: a real type annotation must always beat a stale
+    type documented in an existing docstring.
+    """
+    code = '''def with_doc(x: str):
+    """Custom summary.
+
+    Args:
+        x (int): stale type from a prior edit.
+    """
+    return None
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "x (str):" in patched
+    assert "x (int):" not in patched
+
+def test_numpy_docstring_not_duplicated_on_regeneration(commenter):
+    """Regression test for Phase 6 bug 6b, using config.py's real
+    load_config() signature+docstring verbatim. Before the fix, an
+    unrecognized NumPy Returns section meant the whole body was folded
+    into 'description', and a second, auto-generated Google-style
+    Returns: section was appended - documenting the return value twice.
+    """
+    code = '''from typing import Dict, Any, Optional
+
+def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
+    """Load configuration for PyCodeCommenter.
+
+    Parameters
+    ----------
+    start_path: str | None, optional
+        Directory to start the search from.  Defaults to the current working
+        directory.
+
+    Returns
+    -------
+    dict
+        Parsed configuration dictionary.  Returns an empty dictionary if no
+        ``.pycodecommenter.yaml`` file is discovered.
+
+    Raises
+    ------
+    ConfigError
+        If a config file is discovered but parsing fails.
+    """
+    return {}
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    ast.parse(patched)
+    # The description text (not the bare identifier, which legitimately
+    # appears once in the signature and once in the docstring even when
+    # correct) must appear exactly once - proof there is no second,
+    # auto-generated Args/Returns entry duplicating the original.
+    assert patched.count("Directory to start the search from.") == 1
+    assert patched.count("Parsed configuration dictionary.") == 1
+    assert "start_path (Optional[str]): Directory to start the search from." in patched
+
+def test_dunder_init_parameter_description_not_garbled(commenter):
+    """Regression test for Phase 6 bug 6c, using ConfigError.__init__'s
+    real (undocumented) signature from config.py.
+    """
+    code = '''class ConfigError(Exception):
+    """Raised when config parsing fails."""
+    def __init__(self, message: str, original: Exception | None = None):
+        self.original = original
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "   init   " not in patched
+    assert "of the   init  " not in patched
+    assert "of the init." in patched
+
+def test_dunder_summary_not_garbled_for_non_init_dunders(commenter):
+    """6c also affects the summary line for dunders other than __init__,
+    which is separately special-cased.
+    """
+    code = '''class C:
+    def __repr__(self):
+        return "C()"
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert '"""  repr  .' not in patched
+    assert '"""Repr.' in patched
