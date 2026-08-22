@@ -14,19 +14,58 @@ from .coverage import CoverageAnalyzer
 from .config import load_config, ConfigError
 
 # Directories that are never treated as source when recursively collecting
-# .py files for `generate`/`validate` on a directory target.
-DEFAULT_DIRECTORY_EXCLUDES = ['__pycache__', '.git', '.venv', 'venv', 'env', '.eggs']
+# .py files for `generate`/`validate` on a directory target. These are all
+# directories that can hold complete vendored/installed dependency trees or
+# build output - the risk isn't wasted effort, it's `--inplace` writing
+# generated docstrings into code the user doesn't own or care about.
+DEFAULT_DIRECTORY_EXCLUDES = [
+    '__pycache__',      # bytecode cache
+    '.git',              # VCS metadata
+    '.venv', 'venv', 'env',  # common virtualenv directory names
+    '.tox',              # tox per-environment venvs (full vendored deps)
+    '.nox',              # nox per-session venvs, same risk as .tox
+    '__pypackages__',    # PEP 582 local package installs
+    'site-packages',     # installed-package dir name, catches venvs with a
+                          # naming scheme not covered above
+    'build',             # setuptools/build-backend output
+    'dist',               # sdist/wheel output
+    '.eggs',             # setuptools .eggs cache
+    '.egg-info',          # <package-name>.egg-info metadata dirs
+    '.mypy_cache',       # mypy cache
+    '.pytest_cache',     # pytest cache
+    'node_modules',       # JS/npm dependencies (hybrid-language repos)
+]
+
+def _path_is_excluded(py_file, patterns):
+    """A path is excluded if one of its directory/file name components
+    exactly equals an exclude pattern, or - for a dot-prefixed pattern like
+    '.egg-info' - a component ends with it (covers the <name>.egg-info
+    convention, where <name> varies per package).
+
+    Exact-component matching, rather than a raw substring check against the
+    whole path, avoids excluding legitimate files that merely contain a
+    pattern as a substring - e.g. rebuild_index.py must not be skipped just
+    because it contains "build", and environment_config.py must not be
+    skipped just because it contains "env".
+    """
+    parts = py_file.parts
+    for pattern in patterns:
+        for part in parts:
+            if part == pattern:
+                return True
+            if pattern.startswith('.') and part.endswith(pattern):
+                return True
+    return False
 
 def _collect_py_files(directory, exclude_patterns=None):
-    """Recursively collect .py files under directory, skipping any whose
-    path contains one of exclude_patterns (substring match, consistent with
-    CoverageAnalyzer.analyze_directory) in addition to the always-skipped
-    DEFAULT_DIRECTORY_EXCLUDES.
+    """Recursively collect .py files under directory, skipping any path
+    matched by _path_is_excluded() against DEFAULT_DIRECTORY_EXCLUDES plus
+    exclude_patterns.
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
     return [
         str(py_file) for py_file in sorted(Path(directory).rglob("*.py"))
-        if not any(pattern in str(py_file) for pattern in patterns)
+        if not _path_is_excluded(py_file, patterns)
     ]
 
 def main():

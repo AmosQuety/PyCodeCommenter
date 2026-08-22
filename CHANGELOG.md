@@ -3,6 +3,79 @@
 All notable changes to PyCodeCommenter will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+Follow-up work from an internal engineering audit (`Future Work/Vulnerabilties.md`).
+Not yet merged to `main` — see branch `fix/audit-phase5`.
+
+### Breaking Changes
+- **Minimum Python version raised from 3.8 to 3.9.** `pyproject.toml`'s
+  `requires-python` is now `>=3.9`; the `Programming Language :: Python :: 3.8`
+  classifier was removed. This was forced by the new `libcst` dependency (see
+  below), whose current release requires Python >=3.9. **Any user still on
+  Python 3.8 will no longer be able to install new releases of this package.**
+
+### Added
+- **New runtime dependency: `libcst>=1.1`.** `get_patched_code()` (the code
+  that inserts/updates generated docstrings) was rewritten to apply edits via
+  libcst's concrete syntax tree instead of line-number arithmetic on raw
+  source text. This is a hard dependency, not optional — installing
+  `pycodecommenter` now also installs `libcst`.
+- `generate` and `validate` CLI commands now accept a directory as well as a
+  single file, recursively collecting `.py` files (mirroring `coverage`'s
+  existing directory support).
+- `--fail-below THRESHOLD` flag on the `coverage` CLI command; exits 1 when
+  coverage is below the threshold.
+- `.pycodecommenter.yaml` config is now actually read by the CLI: its
+  top-level `exclude` list defaults `-e/--exclude` on all three subcommands,
+  and `coverage.threshold` defaults `--fail-below`. Both remain overridable
+  by explicit CLI flags. (Previously `config.py` existed but nothing called it.)
+
+### Fixed
+- **One-line function/class definitions could corrupt the file when patched.**
+  `def foo(): return 1` (body on the same physical line as the `def`) would
+  have its generated docstring inserted *before* the `def` line instead of
+  inside the function, producing a `SyntaxError`. Every one-liner shape
+  reproduced this: `pass`, `return`, multiple `;`-separated statements,
+  `async def`, and one-line `class` bodies. Fixed by the libcst rewrite above,
+  which converts a one-liner body to a proper indented block before inserting.
+  (This is a different, narrower bug than the "multi-line signature
+  corruption" originally suspected from the audit — see Notes below.)
+- `PyCodeCommenter.validate()` now passes the real file path to the validator
+  instead of a hardcoded `None`, so validation report locations show the
+  actual file (e.g. `src/api.py:12:my_func`) instead of `code:12:my_func`.
+- `PyCodeCommenter.check_coverage()` now uses the real file path instead of
+  the leaked `"<string>"` placeholder.
+- `docstring_parser.py`: multi-line `Args:` parameter descriptions in an
+  *existing* docstring being re-parsed were silently truncated unless the
+  continuation line was indented by exactly 8 spaces. Any other indentation
+  (including 4 spaces — the same indent this project's own generator uses)
+  lost the continuation text on merge. Now any non-blank continuation line is
+  recognized regardless of indentation depth.
+
+### Changed
+- `ValidationStats.infos` renamed to `.info` (matches the existing `"info"`
+  key in JSON/markdown output). `.infos` remains available as a
+  backward-compatible property alias.
+
+### Notes
+- Two "CRITICAL" bugs originally suspected from the audit — corruption on
+  multi-line function signatures, and a line-shift bug when patching multiple
+  functions in one file — were investigated and do not reproduce against this
+  version or the pre-libcst version; both were verified directly against the
+  audit's own examples plus additional stress tests. No code changes were
+  made for either.
+- A third suspected bug — `ast.walk()` double-counting nested
+  functions/classes in `validate_all()`'s stats — also does not reproduce;
+  `ast.walk()` visits every node exactly once regardless of nesting depth.
+  `validator.py`'s counting logic is unchanged.
+- PEP 604 union rendering (`int | str` currently renders as `Union[int, str]`
+  in generated docstrings, per `type_analyzer.py`) was identified as a real,
+  minor issue but deliberately deferred: fixing it breaks
+  `test_type_analyzer.py::test_union_annotation`, which asserts the old
+  `Union[...]` output, and no test-file changes were in scope for that part
+  of the work.
+
 ## [2.2.0] - 2026-07-12
 
 ### Added

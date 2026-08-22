@@ -22,6 +22,38 @@ from dataclasses import dataclass, field
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Mirrors cli.py's _path_is_excluded / DEFAULT_DIRECTORY_EXCLUDES. Duplicated
+# rather than imported: cli.py imports from this module, so importing the
+# other way would be a circular import. Includes the same
+# vendored-dependency/build-output directories cli.py excludes, plus
+# 'tests'/'test_' - coverage-specific, since coverage measures documentation
+# of source code, not test code.
+DEFAULT_COVERAGE_EXCLUDES = [
+    '__pycache__', '.git', '.venv', 'venv', 'env',
+    '.tox', '.nox', '__pypackages__', 'site-packages',
+    'build', 'dist', '.eggs', '.egg-info', '.mypy_cache', '.pytest_cache',
+    'node_modules', 'tests', 'test_',
+]
+
+def _path_is_excluded(py_file: Path, patterns) -> bool:
+    """A path is excluded if one of its directory/file name components
+    exactly equals a pattern; a dot-prefixed pattern (e.g. '.egg-info')
+    matches a component it's a suffix of; and an underscore-suffixed
+    pattern (e.g. 'test_', matching pytest's file naming convention)
+    matches a component it's a prefix of. See cli.py's _path_is_excluded
+    for the equivalent used by generate/validate.
+    """
+    parts = py_file.parts
+    for pattern in patterns:
+        for part in parts:
+            if part == pattern:
+                return True
+            if pattern.startswith('.') and part.endswith(pattern):
+                return True
+            if pattern.endswith('_') and part.startswith(pattern):
+                return True
+    return False
+
 @dataclass
 class FileCoverage:
     """Coverage statistics for a single file."""
@@ -103,12 +135,12 @@ class CoverageAnalyzer:
     
     def analyze_directory(self, directory: str, exclude_patterns: List[str] = None) -> ProjectCoverage:
         """Analyze all Python files in a directory."""
-        exclude_patterns = exclude_patterns or ['__pycache__', '.git', 'venv', 'tests', 'test_']
+        patterns = list(DEFAULT_COVERAGE_EXCLUDES) + list(exclude_patterns or [])
         project = ProjectCoverage()
-        
+
         for py_file in Path(directory).rglob('*.py'):
             # Skip excluded paths
-            if any(pattern in str(py_file) for pattern in exclude_patterns):
+            if _path_is_excluded(py_file, patterns):
                 continue
             
             try:
