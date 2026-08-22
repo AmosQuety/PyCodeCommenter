@@ -3,10 +3,10 @@
 All notable changes to PyCodeCommenter will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [2.3.0] - 2026-08-22
 
-Follow-up work from an internal engineering audit (`Future Work/Vulnerabilties.md`).
-Not yet merged to `main` — see branch `fix/audit-phase5`.
+Follow-up work from an internal engineering audit (`Future Work/Vulnerabilties.md`),
+plus a documentation-fidelity pass (Phase 6) found during pre-release review.
 
 ### Breaking Changes
 - **Minimum Python version raised from 3.8 to 3.9.** `pyproject.toml`'s
@@ -30,6 +30,9 @@ Not yet merged to `main` — see branch `fix/audit-phase5`.
   top-level `exclude` list defaults `-e/--exclude` on all three subcommands,
   and `coverage.threshold` defaults `--fail-below`. Both remain overridable
   by explicit CLI flags. (Previously `config.py` existed but nothing called it.)
+- NumPy-style docstrings (`Parameters`/`Returns`/`Raises` with dash-underlined
+  headers) are now parsed as input, alongside Google and Sphinx style.
+  Sphinx-style input also gained `:type name: TYPE` support.
 
 ### Fixed
 - **One-line function/class definitions could corrupt the file when patched.**
@@ -52,6 +55,34 @@ Not yet merged to `main` — see branch `fix/audit-phase5`.
   (including 4 spaces — the same indent this project's own generator uses)
   lost the continuation text on merge. Now any non-blank continuation line is
   recognized regardless of indentation depth.
+- `generate`/`validate` directory mode's default exclude list
+  (`__pycache__`, `.git`, `.venv`, `venv`, `env`, `.eggs`) missed common
+  vendor/build directories and used raw substring matching, causing two real
+  problems: `environment_config.py` was silently skipped (`"env"` is a
+  substring of `"environment"`), and files inside `.tox/.../site-packages/`
+  were *not* skipped — with `generate --inplace`, writing generated
+  docstrings into vendored third-party source. Expanded the default list
+  (added `.tox`, `.nox`, `__pypackages__`, `site-packages`, `build`, `dist`,
+  `.egg-info`, `.mypy_cache`, `.pytest_cache`, `node_modules`) and switched
+  to exact-path-component matching. `coverage`'s directory mode had the same
+  two problems independently (a separate, duplicated exclude list) and is
+  fixed the same way, plus a related bug: passing any custom `--exclude`
+  pattern previously replaced its default list entirely rather than adding
+  to it, silently losing `.venv`/`.git` protection.
+- A parameter's documented type (e.g. `x (int):`) was silently downgraded to
+  `x (any):` on regeneration whenever static type inference had nothing to
+  work with (no annotation on the parameter) — the type was parsed out of
+  the existing docstring but never stored or consulted. A real static
+  annotation still always wins; the docstring-parsed type is now used as a
+  fallback instead of being discarded.
+- An existing NumPy-style docstring was not recognized as such, so its
+  entire body was treated as free-text and a fresh, auto-generated
+  Google-style `Args:`/`Returns:` section was appended underneath it —
+  documenting the same parameter twice, in two styles, in one docstring.
+- Generated filler text for dunder methods (e.g. `__init__`) rendered with
+  broken spacing — `"Original of the   init  ."` — because
+  `name.replace('_', ' ')` turns every underscore into a space, including
+  the leading/trailing pair(s) dunder names have.
 
 ### Changed
 - `ValidationStats.infos` renamed to `.info` (matches the existing `"info"`

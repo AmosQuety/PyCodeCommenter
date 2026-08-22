@@ -17,7 +17,7 @@
   "repository": "https://github.com/AmosQuety/PyCodeCommenter",
   "pypi": "https://pypi.org/project/pycodecommenter/",
   "install_command": "pip install pycodecommenter",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "license": "MIT",
   "author": "Nabasa Amos (Amos Quety)"
 }

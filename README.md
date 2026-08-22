@@ -8,7 +8,7 @@
 
 **PyCodeCommenter** is an open-source Python docstring generator and documentation validator. It automatically generates Google-style docstrings from Python AST, validates existing docstrings against real function signatures, measures documentation coverage, and integrates with CI/CD pipelines — all with zero network calls and zero AI dependency.
 
-> **Install:** `pip install pycodecommenter` · **Python 3.8+** · **MIT License**
+> **Install:** `pip install pycodecommenter` · **Python 3.9+** · **MIT License**
 
 ---
 
@@ -116,7 +116,7 @@ pycodecommenter validate src/api.py --output-format json
 
 ### Modern Python Support
 
-- Python 3.8, 3.9, 3.10, 3.11, 3.12.
+- Python 3.9, 3.10, 3.11, 3.12.
 - `async def` functions.
 - Complex type hints: `Union`, `Optional`, `Generic`, `list[int]`, `int | str`.
 - PEP 604 unions, PEP 585 generics.
@@ -252,7 +252,7 @@ repos:
 PyCodeCommenter is a Python command-line tool and library for automatically generating Google-style docstrings and validating existing docstrings against real function signatures.
 
 **How do I install PyCodeCommenter?**
-Run `pip install pycodecommenter`. Python 3.8 or later is required.
+Run `pip install pycodecommenter`. Python 3.9 or later is required.
 
 **Does PyCodeCommenter use AI or LLMs?**
 No. PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse code and generate documentation. There are no API calls, no network requests, and no rate limits.
@@ -261,7 +261,7 @@ No. PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` modu
 No. Existing summaries, parameter descriptions, and return descriptions are preserved and merged. Only missing sections are filled in automatically.
 
 **What docstring styles does PyCodeCommenter support?**
-PyCodeCommenter generates Google-style docstrings. It can parse both Google-style and Sphinx-style (`:param:`, `:returns:`, `:raises:`) as input.
+PyCodeCommenter generates Google-style docstrings. It can parse Google-style, Sphinx-style (`:param:`, `:type:`, `:returns:`, `:raises:`), and NumPy-style (`Parameters`/`Returns`/`Raises` with dash-underlined headers) as input.
 
 **Can I use PyCodeCommenter in CI/CD?**
 Yes. The `validate` subcommand exits with code `1` when any ERROR-level issue is found, making it suitable for blocking CI builds. The `--output-format json` flag enables integration with any downstream tooling.
@@ -311,9 +311,9 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 ## Supported Platforms & Environments
 
 - **OS**: Linux, macOS, Windows
-- **Python**: 3.8, 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.9, 3.10, 3.11, 3.12
 - **Environments**: local, CI/CD (GitHub Actions, GitLab CI, Jenkins), pre-commit hooks
-- **Dependencies**: stdlib only (no third-party runtime dependencies beyond `ruamel.yaml` for config)
+- **Dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching) — no AI/LLM dependency
 
 ---
 
@@ -321,7 +321,6 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 
 - Python 2.x is not supported (EOL).
 - `match` statements (Python 3.10+) have basic support.
-- NumPy-style docstrings are not parsed as input.
 
 ---
 
@@ -330,9 +329,9 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 - [ ] VS Code extension
 - [ ] Smart docstring updates that preserve human-written content
 - [ ] Optional AI-powered description generation
-- [ ] NumPy and full Sphinx style support
+- [x] NumPy and full Sphinx style support (v2.3.0)
 - [ ] GitHub Action for automated documentation PRs
-- [ ] `--fail-below` flag for coverage threshold enforcement in CLI
+- [x] `--fail-below` flag for coverage threshold enforcement in CLI (v2.3.0)
 
 ---
 
