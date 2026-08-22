@@ -7,25 +7,54 @@ import argparse
 import os
 import difflib
 import shutil
+from pathlib import Path
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
 from .coverage import CoverageAnalyzer
+from .config import load_config, ConfigError
+
+# Directories that are never treated as source when recursively collecting
+# .py files for `generate`/`validate` on a directory target.
+DEFAULT_DIRECTORY_EXCLUDES = ['__pycache__', '.git', '.venv', 'venv', 'env', '.eggs']
+
+def _collect_py_files(directory, exclude_patterns=None):
+    """Recursively collect .py files under directory, skipping any whose
+    path contains one of exclude_patterns (substring match, consistent with
+    CoverageAnalyzer.analyze_directory) in addition to the always-skipped
+    DEFAULT_DIRECTORY_EXCLUDES.
+    """
+    patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
+    return [
+        str(py_file) for py_file in sorted(Path(directory).rglob("*.py"))
+        if not any(pattern in str(py_file) for pattern in patterns)
+    ]
 
 def main():
+    try:
+        config = load_config()
+    except ConfigError as e:
+        print(f"Warning: {e}", file=sys.stderr)
+        config = {}
+
+    config_exclude = config.get("exclude")
+    config_fail_below = (config.get("coverage") or {}).get("threshold")
+
     parser = argparse.ArgumentParser(description="PyCodeCommenter CLI - Automatic docstring generation and validation.")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Generate command
-    generate_parser = subparsers.add_parser("generate", help="Generate docstrings for a file")
-    generate_parser.add_argument("file", help="Python file to process")
-    generate_parser.add_argument("-i", "--inplace", action="store_true", help="Modify file in place")
-    generate_parser.add_argument("-o", "--output", help="Output file path")
+    generate_parser = subparsers.add_parser("generate", help="Generate docstrings for a file or directory")
+    generate_parser.add_argument("file", help="Python file or directory to process")
+    generate_parser.add_argument("-i", "--inplace", action="store_true", help="Modify file(s) in place")
+    generate_parser.add_argument("-o", "--output", help="Output file path (single-file targets only)")
     generate_parser.add_argument("--dry-run", action="store_true", help="Show diff without writing any files")
     generate_parser.add_argument("--backup", action="store_true", help="Create a .bak backup before inplace modification")
+    generate_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude (directory targets only)")
 
     # Validate command
-    validate_parser = subparsers.add_parser("validate", help="Validate docstrings for a file")
-    validate_parser.add_argument("file", help="Python file to validate")
+    validate_parser = subparsers.add_parser("validate", help="Validate docstrings for a file or directory")
+    validate_parser.add_argument("file", help="Python file or directory to validate")
+    validate_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude (directory targets only)")
     validate_parser.add_argument(
         "--output-format",
         choices=["text", "json"],
@@ -37,7 +66,7 @@ def main():
     # Coverage command
     coverage_parser = subparsers.add_parser("coverage", help="Analyze documentation coverage")
     coverage_parser.add_argument("path", help="Directory or file to analyze")
-    coverage_parser.add_argument("-e", "--exclude", nargs="*", help="Patterns to exclude")
+    coverage_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude")
     coverage_parser.add_argument(
         "--output-format",
         choices=["text", "json"],
@@ -45,15 +74,84 @@ def main():
         metavar="FORMAT",
         help="Output format: 'text' (default) or 'json'",
     )
+    coverage_parser.add_argument(
+        "--fail-below",
+        type=float,
+        default=config_fail_below,
+        metavar="THRESHOLD",
+        help="Exit with code 1 if coverage is below THRESHOLD "
+             "(default: coverage.threshold from .pycodecommenter.yaml, if set)",
+    )
 
     args = parser.parse_args()
 
     if args.command == "generate":
+        if os.path.isdir(args.file):
+            if args.output:
+                print("Error: --output cannot be used with a directory target.")
+                sys.exit(1)
+
+            targets = _collect_py_files(args.file, args.exclude)
+            if not targets:
+                print(f"No Python files found in {args.file}")
+                sys.exit(0)
+
+            if args.backup and not args.inplace:
+                print("Warning: --backup has no effect without --inplace")
+
+            any_changed = False
+            any_failed = False
+            for target in targets:
+                commenter = PyCodeCommenter().from_file(target)
+                if not commenter.parsed_code:
+                    print(f"Error: Could not parse {target}")
+                    any_failed = True
+                    continue
+
+                patched_code = commenter.get_patched_code()
+
+                if args.dry_run:
+                    with open(target, 'r', encoding='utf-8') as f:
+                        original_code = f.read()
+                    diff_lines = list(difflib.unified_diff(
+                        original_code.splitlines(),
+                        patched_code.splitlines(),
+                        fromfile=target,
+                        tofile=target,
+                        lineterm=''
+                    ))
+                    if diff_lines:
+                        print("\n".join(diff_lines))
+                        any_changed = True
+                    continue
+
+                if args.inplace:
+                    with open(target, 'r', encoding='utf-8') as f:
+                        original_code = f.read()
+                    if patched_code != original_code:
+                        if args.backup:
+                            shutil.copy2(target, target + ".bak")
+                        with open(target, 'w', encoding='utf-8') as f:
+                            f.write(patched_code)
+                        print(f"Successfully patched {target}")
+                        any_changed = True
+                else:
+                    print(f"# File: {target}")
+                    print(patched_code)
+
+            if args.dry_run:
+                if not any_changed:
+                    print("No changes detected.")
+                sys.exit(1 if any_changed else 0)
+            if any_failed:
+                sys.exit(1)
+            return
+
         commenter = PyCodeCommenter().from_file(args.file)
         if not commenter.parsed_code:
             print(f"Error: Could not parse {args.file}")
             sys.exit(1)
-        
+
         patched_code = commenter.get_patched_code()
 
         if args.backup and not args.inplace:
@@ -93,6 +191,30 @@ def main():
             print(patched_code)
 
     elif args.command == "validate":
+        if os.path.isdir(args.file):
+            targets = _collect_py_files(args.file, args.exclude)
+            if not targets:
+                print(f"No Python files found in {args.file}")
+                sys.exit(0)
+
+            any_errors = False
+            json_reports = []
+            for target in targets:
+                validator = DocstringValidator(file_path=target)
+                report = validator.validate_all()
+                if report.stats.errors > 0:
+                    any_errors = True
+                if args.output_format == "json":
+                    json_reports.append(report.to_dict())
+                else:
+                    report.print_summary()
+
+            if args.output_format == "json":
+                print(json.dumps(json_reports, indent=2))
+            if any_errors:
+                sys.exit(1)
+            return
+
         validator = DocstringValidator(file_path=args.file)
         report = validator.validate_all()
         if args.output_format == "json":
@@ -106,12 +228,14 @@ def main():
         analyzer = CoverageAnalyzer()
         if os.path.isdir(args.path):
             result = analyzer.analyze_directory(args.path, exclude_patterns=args.exclude)
+            coverage_percentage = result.total_coverage
             if args.output_format == "json":
                 print(json.dumps(result.to_json(), indent=2))
             else:
                 result.print_report()
         else:
             result = analyzer.analyze_file(args.path)
+            coverage_percentage = result.coverage_percentage
             if args.output_format == "json":
                 file_dict = {
                     "file": args.path,
@@ -122,6 +246,10 @@ def main():
                 print(json.dumps(file_dict, indent=2))
             else:
                 print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
+
+        if args.fail_below is not None and coverage_percentage < args.fail_below:
+            print(f"Coverage {coverage_percentage:.1f}% is below the {args.fail_below}% threshold", file=sys.stderr)
+            sys.exit(1)
 
     else:
         parser.print_help()
