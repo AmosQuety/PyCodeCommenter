@@ -40,9 +40,11 @@ class PyCodeCommenter:
         self.comments = []
         self.tokenized_comments = []
         self.type_analyzer = TypeAnalyzer()
+        self.file_path = None
 
     def from_string(self, code_string: str) -> 'PyCodeCommenter':
         """Initializes the commenter from a string of code."""
+        self.file_path = None
         try:
             if code_string is None or code_string.strip() == "":
                 logger.warning("No code provided. Proceeding with an empty string.")
@@ -74,6 +76,7 @@ class PyCodeCommenter:
 
     def from_file(self, file_path: str) -> 'PyCodeCommenter':
         """Initializes the commenter from a file path."""
+        self.file_path = file_path
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 self.code = file.read()
@@ -431,7 +434,7 @@ class PyCodeCommenter:
             empty_report.file_path = None
             return empty_report
         
-        validator = DocstringValidator(code_string=self.code, file_path=None)
+        validator = DocstringValidator(code_string=self.code, file_path=self.file_path)
         report = validator.validate_all()
         
         return report
@@ -453,7 +456,7 @@ class PyCodeCommenter:
             # Return empty coverage instead of None
             return FileCoverage(path="<no code>")
         
-        coverage = FileCoverage(path="<string>")
+        coverage = FileCoverage(path=self.file_path or "<string>")
         
         for node in ast.walk(self.parsed_code):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

@@ -98,8 +98,17 @@ class ValidationStats:
     total_issues: int = 0
     errors: int = 0
     warnings: int = 0
-    infos: int = 0
-    
+    info: int = 0
+
+    @property
+    def infos(self) -> int:
+        """Deprecated alias for ``info``, kept for backward compatibility."""
+        return self.info
+
+    @infos.setter
+    def infos(self, value: int) -> None:
+        self.info = value
+
     @property
     def coverage_percentage(self) -> float:
         total = self.total_functions + self.total_classes
@@ -123,7 +132,7 @@ class ValidationReport:
         elif issue.severity == Severity.WARNING:
             self.stats.warnings += 1
         else:
-            self.stats.infos += 1
+            self.stats.info += 1
     
     def print_summary(self):
         """Print human-readable summary to console."""
@@ -135,7 +144,7 @@ class ValidationReport:
         print(f"Total Issues: {self.stats.total_issues}")
         print(f"  - Errors: {self.stats.errors}")
         print(f"  - Warnings: {self.stats.warnings}")
-        print(f"  - Info: {self.stats.infos}")
+        print(f"  - Info: {self.stats.info}")
         
         if self.issues:
             print("\nISSUES:")
@@ -190,7 +199,7 @@ class ValidationReport:
                 "total": self.stats.total_issues,
                 "errors": self.stats.errors,
                 "warnings": self.stats.warnings,
-                "info": self.stats.infos,
+                "info": self.stats.info,
                 "coverage_percentage": round(self.stats.coverage_percentage, 2),
             },
             "issues": [
@@ -213,7 +222,7 @@ class ValidationReport:
         md += f"- **Total Issues:** {self.stats.total_issues}\n"
         md += f"  - Errors: {self.stats.errors}\n"
         md += f"  - Warnings: {self.stats.warnings}\n"
-        md += f"  - Info: {self.stats.infos}\n\n"
+        md += f"  - Info: {self.stats.info}\n\n"
         
         if self.issues:
             md += f"## Issues\n\n"
