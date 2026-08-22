@@ -183,3 +183,47 @@ def d(
         "c": "return x",
         "d": "return a",
     }
+
+def test_get_patched_code_preserves_comments(commenter):
+    """Phase 3 deliverable: verify whether comments in the source file
+    survive get_patched_code() now that it is libcst-based.
+
+    Result: yes, they do. libcst is a lossless concrete syntax tree, and
+    the patcher only replaces/inserts the specific docstring statement for
+    each function/class - it never reconstructs surrounding code - so
+    every comment shown below (module-level, inline-on-an-import,
+    trailing-on-a-def-line, a standalone comment inside a body, an inline
+    comment on a statement, and a trailing comment on a one-liner
+    definition) is asserted to survive verbatim.
+    """
+    code = '''# Module comment
+import os  # inline import comment
+
+def foo(x, y):  # trailing comment on def line
+    # leading comment inside body
+    z = x + y  # inline comment on statement
+    return z  # trailing return comment
+
+def bar(): return 1  # trailing comment on one-liner
+
+class C:
+    # comment before method
+    def method(self):
+        return 1
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+
+    ast.parse(patched)  # must remain syntactically valid
+
+    for expected_comment in [
+        "# Module comment",
+        "# inline import comment",
+        "# trailing comment on def line",
+        "# leading comment inside body",
+        "# inline comment on statement",
+        "# trailing return comment",
+        "# trailing comment on one-liner",
+        "# comment before method",
+    ]:
+        assert expected_comment in patched, f"comment lost: {expected_comment!r}"
