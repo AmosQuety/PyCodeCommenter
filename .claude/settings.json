@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Bash(pytest*)",
+      "Bash(python -m pytest*)",
+      "Bash(python3 -m pytest*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(black*)",
+      "Bash(flake8*)",
+      "Read",
+      "Grep",
+      "Glob"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath'); if [ -f \"$f\" ] && grep -qE \"__version__|^[[:space:]]*version[[:space:]]*=[[:space:]]*[\\\"']\" \"$f\" 2>/dev/null; then printf '{\"systemMessage\": \"Version string edited in %s \\u2014 keep pyproject.toml ([project].version) and PyCodeCommenter/__init__.py (__version__) in sync.\"}' \"$f\"; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
