@@ -14,8 +14,8 @@ authors:
     email: amosnabasa4@gmail.com
     website: https://nabasa-amos.netlify.app
     orcid: ""
-version: 2.2.0
-date-released: "2026-07-12"
+version: 2.3.0
+date-released: "2026-08-22"
 license: MIT
 repository-code: https://github.com/AmosQuety/PyCodeCommenter
 url: https://amosquety.github.io/PyCodeCommenter/

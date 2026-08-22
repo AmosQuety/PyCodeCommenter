@@ -48,10 +48,10 @@ pycodecommenter coverage ./src --output-format json
 - **Import name**: `PyCodeCommenter`
 - **Main class**: `PyCodeCommenter` (docstring generation), `DocstringValidator` (validation), `CoverageAnalyzer` (coverage)
 - **Default docstring style**: Google
-- **Parsed input styles**: Google, Sphinx (partial)
-- **No external dependencies at runtime** (stdlib only, except `ruamel.yaml` for config files)
+- **Parsed input styles**: Google, Sphinx, NumPy (all full)
+- **Runtime dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching)
 - **No AI / LLM calls** — fully deterministic
-- **Version**: v2.2.0
+- **Version**: v2.3.0
 - **License**: MIT
 - **Repository**: https://github.com/AmosQuety/PyCodeCommenter
 
