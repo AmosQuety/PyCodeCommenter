@@ -43,11 +43,14 @@ pytest test_validation.py
 pytest test_validation.py::test_name -v
 ```
 
-There is no pytest config file (no `pytest.ini`/`setup.cfg`/`tox.ini`) and
-`conftest.py` is empty — tests run with plain `pytest` discovery from this
-directory. There is also no CI workflow that runs tests (`.github/workflows/`
-only has `docs.yml` for MkDocs and `publish.yml` for PyPI trusted publishing
-on release) — running `pytest` locally is the only test signal.
+There is no separate pytest config file (no `pytest.ini`/`setup.cfg`/
+`tox.ini`) and `conftest.py` is empty, but `pyproject.toml` does carry a
+`[tool.pytest.ini_options]` section (the `addopts` behind the `pytest .`
+note above) — that's the only pytest configuration in the repo.
+`.github/workflows/tests.yml` runs the suite (`pytest .`, matrix over Python
+3.9–3.12) on every push and pull request against `main`, alongside the
+pre-existing `docs.yml` (MkDocs) and `publish.yml` (PyPI trusted publishing
+on release) — so CI, not just a local run, is a test signal now.
 
 Formatting / linting (per CONTRIBUTING.md, use before submitting changes):
 ```bash
