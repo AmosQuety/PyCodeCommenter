@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/badge/docs-amosquety.github.io%2FPyCodeCommenter-blue)](https://amosquety.github.io/PyCodeCommenter/)
 [![Python Support](https://img.shields.io/pypi/pyversions/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docs Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AmosQuety/PyCodeCommenter/main/coverage_badge.json)](https://github.com/AmosQuety/PyCodeCommenter)
 [![GitHub Stars](https://img.shields.io/github/stars/AmosQuety/PyCodeCommenter?style=social)](https://github.com/AmosQuety/PyCodeCommenter)
 
 **PyCodeCommenter** is an open-source Python docstring generator and documentation validator. It automatically generates Google-style docstrings from Python AST, validates existing docstrings against real function signatures, measures documentation coverage, and integrates with CI/CD pipelines — all with zero network calls and zero AI dependency.
@@ -58,10 +59,14 @@ pycodecommenter coverage ./src
 
 PyCodeCommenter uses **deterministic, AST-based analysis** — not AI — to:
 
-- Generate structurally correct Google-style docstrings from your code's own AST.
+- Generate structurally correct Google-style docstrings from your code's own AST. The Args/Returns/Attributes *skeleton* (names, types, defaults) is always accurate, since it's extracted, not guessed — but prose PyCodeCommenter can't extract from the code itself (what a parameter or function actually *means*) is left as a marked placeholder, `TODO(pycodecommenter): describe`, for a human to fill in, not presented as finished documentation.
 - Validate parameter names, type hints, exception documentation, and return values.
 - Measure and enforce documentation coverage across an entire project.
 - Export structured JSON reports for integration with any downstream tooling.
+
+### Related Tools
+
+PyCodeCommenter isn't alone in this space. [pydoclint](https://github.com/jsh9/pydoclint) checks Args/Returns/Yields/Raises against the actual function signature across Google, NumPy, and Sphinx styles, is actively maintained, and is fast — if you only need validation, it's a strong choice. [interrogate](https://github.com/econchick/interrogate) measures presence-only documentation coverage, the same metric shape as `coverage.py` here. PyCodeCommenter's actual differentiator is breadth in one place: it's the only one of the three that generates a docstring skeleton *and* validates *and* measures coverage, all through one importable Python API — not just a CLI or pre-commit hook.
 
 ---
 
@@ -321,6 +326,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 
 - Python 2.x is not supported (EOL).
 - `match` statements (Python 3.10+) have basic support.
+- Generated prose that can't be extracted from the AST (what a parameter or function *means*, as opposed to its name/type/default) is a marked placeholder, `TODO(pycodecommenter): describe`, not finished documentation — running `generate --inplace` will leave these markers in place for a human to fill in.
 
 ---
 
@@ -328,7 +334,15 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 
 - [ ] VS Code extension
 - [ ] Smart docstring updates that preserve human-written content
-- [ ] Optional AI-powered description generation
+- [ ] ~~Optional AI-powered description generation~~
+  > **⚠️ CONSTRAINED — READ BEFORE TOUCHING.** A full cost/benefit review
+  > (money, hallucination risk, non-determinism, source-code privacy, brand
+  > cost) concluded this must NEVER be built as generate-and-write. If picked
+  > up: AI output must never be `--inplace`-writable — it may ONLY ever be
+  > emitted as a diff/preview a human deliberately applies, the same shape as
+  > Mintlify's Workflows agent (drafts, opens a PR, never publishes directly).
+  > A plain "generate docstrings with AI" implementation is explicitly the
+  > wrong shape and should be rejected in review, not merged and fixed later.
 - [x] NumPy and full Sphinx style support (v2.3.0)
 - [ ] GitHub Action for automated documentation PRs
 - [x] `--fail-below` flag for coverage threshold enforcement in CLI (v2.3.0)
