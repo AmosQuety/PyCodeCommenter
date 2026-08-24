@@ -26,7 +26,7 @@ It works entirely on your local machine — no AI, no API calls, no rate limits.
 pip install pycodecommenter
 ```
 
-Python 3.8 or later is required. After install, the `pycodecommenter` command is available on your PATH.
+Python 3.9 or later is required. After install, the `pycodecommenter` command is available on your PATH.
 
 ---
 
@@ -63,8 +63,10 @@ PyCodeCommenter excels at structural correctness — right parameters, right typ
 **Yes, fully.** Both `async def` and regular `def` functions are handled identically by the generator, validator, and coverage analyser.
 
 ```python
+code = """
 async def fetch_data(url: str) -> dict:
     ...
+"""
 
 commenter = PyCodeCommenter().from_string(code)
 patched = commenter.get_patched_code()
@@ -89,11 +91,13 @@ If you wrote a good summary and parameter descriptions, they will survive a re-r
 
 ## What Python versions does PyCodeCommenter support?
 
-**Python 3.8, 3.9, 3.10, 3.11, and 3.12.**
+**Python 3.9, 3.10, 3.11, and 3.12.**
 
 ```toml
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 ```
+
+(Python 3.8 support was dropped in v2.3.0, forced by the `libcst` dependency added that release — its current release requires Python ≥3.9.)
 
 Python 2.x is not supported and will not be.
 
@@ -116,15 +120,15 @@ PyCodeCommenter detects drift via six validation checks:
 
 ## Does it support NumPy or Sphinx style?
 
-**Sphinx: partially. NumPy: not yet.**
+**Both, as input, since v2.3.0. Output is always Google style.**
 
 | Style | Input (parsing) | Output (generation) |
 |---|---|---|
 | Google | Full | Full — the only output format |
-| Sphinx | Partial — extracts summary, `:param`, `:return:`, `:raises:` | Not generated |
-| NumPy | Not supported | Not generated |
+| Sphinx | Full — extracts summary, `:param`, `:type`, `:return:` (`:raises:` and other directives are ignored) | Not generated |
+| NumPy | Full — dash-underlined `Parameters`/`Returns`/`Raises` sections | Not generated |
 
-NumPy support is on the project roadmap.
+See [Docstring Styles](docstring-styles.md) for exactly what each parser extracts.
 
 ---
 
@@ -137,9 +141,9 @@ NumPy support is on the project roadmap.
 | `generate --dry-run` | Changes would be made | File is already fully documented |
 | `generate` | File cannot be parsed | Generation succeeded |
 | `validate` | Any ERROR-level issue is found | No ERRORs (warnings and info are allowed) |
-| `coverage` | Never | Always |
+| `coverage` | `--fail-below THRESHOLD` was given and coverage is below it | `--fail-below` not given, or coverage meets/exceeds it |
 
-`WARNING` and `INFO` issues from `validate` do **not** cause a non-zero exit. Only `Severity.ERROR` issues do.
+`WARNING` and `INFO` issues from `validate` do **not** cause a non-zero exit. Only `Severity.ERROR` issues do. `coverage`'s threshold gating (`--fail-below`, added in v2.3.0) can also come from `.pycodecommenter.yaml`'s `coverage.threshold` key — see [Configuration](configuration.md).
 
 ---
 
@@ -197,17 +201,17 @@ A function or class counts as **documented** if and only if its first body state
 
 ## Can I run PyCodeCommenter on a whole project at once?
 
-**Coverage analysis: yes.** `pycodecommenter coverage <directory>` and `CoverageAnalyzer.analyze_directory()` walk an entire directory tree recursively.
-
-**Generation: one file at a time via the CLI.** To batch-process a project:
+**Yes — all three subcommands accept a directory, since v2.3.0.** `generate`, `validate`, and `coverage` all recursively collect `.py` files when given a directory instead of a single file, skipping common vendor/build directories (`.git`, `.venv`, `__pycache__`, `node_modules`, etc. — see [CLI Reference](cli-reference.md) for the exact list) plus anything matched by `-e`/`--exclude`.
 
 ```bash
-for f in $(find ./src -name "*.py"); do
-    pycodecommenter generate "$f" --inplace
-done
+pycodecommenter generate ./src --inplace --backup
+pycodecommenter validate ./src
+pycodecommenter coverage ./src
 ```
 
-Or via the Python API:
+`generate`'s `-o`/`--output` flag is the one exception — it only makes sense for a single-file target, and errors out if given alongside a directory.
+
+The Python API doesn't have a built-in directory-walking helper of its own; if you need one for a script, use `pathlib.Path.rglob`:
 
 ```python
 from pathlib import Path
@@ -221,21 +225,21 @@ for py_file in Path("./src").rglob("*.py"):
 
 ---
 
-## Why does my `Returns:` always say "Description of the return value."?
+## Why does my `Returns:` (or an `Args:` entry, or a class docstring) say "TODO(pycodecommenter): describe"?
 
-This is a known placeholder. The rule-based engine can infer the **type** of the return value but cannot infer the **meaning** of what is returned.
+This is a deliberate placeholder marker, `GUESS_MARKER = "TODO(pycodecommenter): describe"`. The rule-based engine can extract the **type** of a return value or parameter from the AST — that's a fact — but it cannot infer the **meaning** of what's returned or what a parameter is for. Rather than fabricate a plausible-sounding sentence and present it as finished documentation, anything in this category (function/class descriptions, and any parameter description that doesn't match a lightweight name/type/default-based rule) is left as this marker.
 
-After running `generate --inplace`, search for `"Description of the return value."` and replace each instance with a real description. The validator's `check_content_quality` check will flag this text with a WARNING (because `"Description of"` is in its placeholder list).
+After running `generate --inplace`, search for `TODO(pycodecommenter): describe` and replace each instance with a real description. The validator's `check_content_quality` check will flag any left unresolved with a WARNING (`TODO` is in its placeholder list), so an incomplete pass is caught rather than silently shipped. See [Recipes: Documenting an Existing Codebase Safely](recipes.md#recipe-3-documenting-an-existing-codebase-safely) for the intended review workflow.
 
 ---
 
 ## Does PyCodeCommenter handle decorators correctly?
 
-**Yes, as of v2.2.0:**
+**Yes:**
 
-- `@property` getter — return check fires as normal.
-- `@property` setter / deleter — return check is skipped (no false-positive warning).
-- `@classmethod` — `cls` is excluded from parameter checks automatically.
+- `@property` getter — return check fires as normal (since v2.2.0).
+- `@property` setter / deleter — return check is skipped, no false-positive warning (since v2.2.0).
+- `@classmethod` — the validator has always excluded `cls` from parameter checks. `generate` only excluded `self` until the Unreleased fix that also excludes `cls`, so older versions would incorrectly document `cls` as an `Args:` entry in generated docstrings.
 - `@staticmethod` — all declared parameters are validated normally.
 
 ---

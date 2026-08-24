@@ -18,7 +18,7 @@ We recommend installing PyCodeCommenter inside an active virtual environment so 
 pip install pycodecommenter
 ```
 
-*Requires Python 3.8 or later.*
+*Requires Python 3.9 or later.*
 
 Verify the installation:
 
@@ -51,7 +51,7 @@ pycodecommenter generate <path/to/your_file.py> --inplace
 
 ## 3. Expected Output
 
-When you run the tool, PyCodeCommenter parses your AST (Abstract Syntax Tree), infers the intent from your parameter names and type hints, and generates perfect Google-style docstrings.
+When you run the tool, PyCodeCommenter parses your AST (Abstract Syntax Tree) and generates a Google-style docstring skeleton from what it can actually extract: parameter names, type hints, and default values. Anything it can't extract — what a parameter or function actually *means* — is left as an explicit `TODO(pycodecommenter): describe` marker for you to fill in, not guessed at.
 
 **Before:**
 ```python
@@ -62,23 +62,22 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
 **After:**
 ```python
 def calculate_discount(price: float, rate: float = 0.1) -> float:
-    """
-    Calculate discount.
+    """Calculate discount.
 
-    Calculates the discount.
+    TODO(pycodecommenter): describe
 
     Args:
         price (float): float value.
-        rate (float): float value. Default is 0.1.
+        rate (float): float value. (default: 0.1)
 
     Returns:
-        float: Description of the return value.
+        float: TODO(pycodecommenter): describe
     """
     return price * (1 - rate)
 ```
 
 > [!NOTE]
-> PyCodeCommenter is deterministic. It does not use AI or LLMs. It generates a structural starting point that guarantees you meet the syntax requirements of the Google docstring standard.
+> PyCodeCommenter is deterministic. It does not use AI or LLMs. The Args/Returns skeleton (names, types, defaults) is always accurate, since it's extracted, not guessed. The `TODO(pycodecommenter): describe` markers above are exactly that — a to-do list, not finished documentation — and `pycodecommenter validate` will flag any left unresolved (see [Recipes](recipes.md)).
 
 ---
 

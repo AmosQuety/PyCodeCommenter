@@ -100,7 +100,7 @@ When adding docstrings to a codebase that has none, use this three-step workflow
 pycodecommenter generate src/api.py --dry-run
 ```
 
-Read through the diff carefully. The generated docstrings will have placeholder `Returns:` descriptions (`"Description of the return value."`) that you will want to update.
+Read through the diff carefully. Any prose the tool can't extract from the AST — what a parameter or function actually *means* — is left as a placeholder marker (`TODO(pycodecommenter): describe`) that you will want to resolve.
 
 ### Step 2 — Back up, then apply
 
@@ -117,7 +117,7 @@ cp src/api.py.bak src/api.py
 ### Step 3 — Review and refine
 
 Open `src/api.py` and update the generated docstrings:
-- Replace `"Description of the return value."` with a real return description.
+- Replace every `TODO(pycodecommenter): describe` marker with a real description.
 - Check that parameter descriptions are accurate (the rule-based descriptions are starting points).
 - Verify class docstrings describe the actual purpose of the class.
 
@@ -127,7 +127,7 @@ Open `src/api.py` and update the generated docstrings:
 pycodecommenter validate src/api.py
 ```
 
-Fix any remaining WARNING or INFO issues, then commit.
+Fix any remaining WARNING or INFO issues, then commit. Step 4 will now also flag any unresolved `TODO(pycodecommenter): describe` markers you missed in Step 3 as a quality-category WARNING — the same placeholder check that already blacklists `TODO` catches leftover guess markers, so an unfinished Step 3 is surfaced here instead of silently passing.
 
 ---
 

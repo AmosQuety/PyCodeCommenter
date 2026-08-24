@@ -82,9 +82,7 @@ class DataProcessor:
 **Example of passing code:**
 ```python
 class DataProcessor:
-    """Processes data records.
-
-    DataProcessor class for [describe purpose].
+    """Processes data records, buffering them until flush() is called.
     """
     def __init__(self):
         self.data = []
@@ -427,7 +425,7 @@ def fetch(url):
 
 **What it checks:** The docstring contains any of these placeholder strings (case-insensitive): `TODO`, `FIXME`, `XXX`, `HACK`, `Description of`, `TBD`, `To be determined`.
 
-> **Note:** The generated starter docstring includes `"Description of the return value."` in the `Returns:` section. The validator will flag this if you validate without updating it first. This is by design — it encourages you to write a real description.
+> **Note:** Anywhere `generate` couldn't extract real content from the AST, it writes `TODO(pycodecommenter): describe` instead of guessing — e.g. in the `Returns:` section by default. The validator will flag this (via the `TODO` match above) if you validate without resolving it first. This is by design: it turns an unresolved guess into a build-breaking signal instead of documentation that only looks finished. See [Recipes: Documenting an Existing Codebase Safely](recipes.md#recipe-3-documenting-an-existing-codebase-safely) for the intended workflow.
 
 **How to fix:** Replace placeholder text with actual documentation.
 

@@ -29,7 +29,7 @@ keywords: python docstring generator, docstring validator, documentation coverag
 3. **Measures** documentation coverage per file and across entire projects.
 4. **Exports** structured JSON for integration with any downstream tooling.
 
-Install with: `pip install pycodecommenter` · Requires Python 3.8+
+Install with: `pip install pycodecommenter` · Requires Python 3.9+
 
 ---
 
@@ -38,21 +38,24 @@ Install with: `pip install pycodecommenter` · Requires Python 3.8+
 **Before PyCodeCommenter:** Code changes, but docstrings don't.
 ```python
 def process_data(items, strict=False):
-    # Missing 'strict' in docstring. No return type documented.
+    return items  # 'strict' isn't documented anywhere
 ```
 
-**After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to instantly sync them.
+**After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to instantly sync the skeleton — names, types, and defaults, always accurate because they're extracted, not guessed. What the tool can't extract (what `process_data` actually *means*) is left as an explicit `TODO(pycodecommenter): describe` marker for you to fill in, not a guessed sentence.
 ```python
 def process_data(items, strict=False):
     """Process data.
 
+    TODO(pycodecommenter): describe
+
     Args:
-        items: The items to process.
-        strict: Whether to use strict processing.
+        items (any): TODO(pycodecommenter): describe.
+        strict (any): Default is false. (default: False)
 
     Returns:
-        The processed data.
+        any: TODO(pycodecommenter): describe
     """
+    return items
 ```
 
 ---
@@ -131,7 +134,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
 |---|---|
 | PyPI package | `pycodecommenter` |
 | Import name | `PyCodeCommenter` |
-| Python support | 3.8, 3.9, 3.10, 3.11, 3.12 |
+| Python support | 3.9, 3.10, 3.11, 3.12 |
 | Output docstring style | Google |
 | Input parsing | Google (full), Sphinx (full), NumPy (full) |
 | AI / LLM dependency | None — fully deterministic |
@@ -164,7 +167,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
   "version": "2.3.0",
   "license": "https://opensource.org/licenses/MIT",
   "programmingLanguage": "Python",
-  "runtimePlatform": "Python 3.8+",
+  "runtimePlatform": "Python 3.9+",
   "keywords": "python, docstring, documentation, validation, coverage, google-style, AST, CI/CD",
   "author": {
     "@type": "Person",

@@ -8,7 +8,7 @@ keywords: pycodecommenter configuration, pycodecommenter yaml, python docstring 
 
 PyCodeCommenter can be configured with a YAML file that is discovered automatically by walking up the directory tree from wherever you run the tool.
 
-> **Important:** As of version 2.1.0, the configuration file is **loaded** but its keys are not yet consumed by the CLI or the core generation/validation logic. The `load_config()` function and `ConfigError` exception are part of the public API and are ready for programmatic use. Several keys documented in the README (such as `style`, `validation.level`, and `coverage.threshold`) are present in the README example but are not yet wired into any runtime behaviour. This page is honest about that distinction.
+> **Important:** As of version 2.3.0, two keys are actually consumed by the CLI: the top-level `exclude` list and `coverage.threshold` (see the "Key Reference" table below for exactly what they default). The other keys documented in the README example — `style`, `validation.level`, `validation.check_types`, `validation.check_exceptions`, and `coverage.fail_below` — are still loaded into the config dict by `load_config()` but not yet read by any runtime behaviour. This page is honest about that distinction, key by key.
 
 ---
 
@@ -93,11 +93,11 @@ exclude:
 | `validation.level` | `string` | `"strict"` | **Not yet implemented** | Intended validation strictness. The validator always runs all six checks |
 | `validation.check_types` | `bool` | `true` | **Not yet implemented** | Intended to toggle type-consistency checks |
 | `validation.check_exceptions` | `bool` | `true` | **Not yet implemented** | Intended to toggle exception-documentation checks |
-| `coverage.threshold` | `number` | `80` | **Not yet implemented** | Intended minimum coverage percentage for CI gating |
+| `coverage.threshold` | `number` | `80` | **Implemented (v2.3.0)** | Default value for `coverage`'s `--fail-below THRESHOLD` when the flag isn't passed on the command line. An explicit `--fail-below` on the CLI always overrides it. |
 | `coverage.fail_below` | `bool` | `true` | **Not yet implemented** | Intended to control whether failing the threshold causes a non-zero exit |
-| `exclude` | `list of strings` | `[]` | **Not yet implemented** — CLI `--exclude` works independently | Intended to be the persistent exclude list for `coverage` and `validate` commands |
+| `exclude` | `list of strings` | `[]` | **Implemented (v2.3.0)** | Default value for `-e`/`--exclude` on `generate`, `validate`, and `coverage` when the flag isn't passed on the command line. It's added to each command's built-in exclude defaults, same as an explicit `--exclude` would be; an explicit `--exclude` on the CLI overrides it (replaces it as the *additional* list, the built-ins still apply either way). |
 
-> All keys load cleanly via `load_config()` and are returned in the dictionary, but nothing in the CLI or core classes reads them at runtime yet. They are planned for a future release.
+> The two unimplemented `validation.*` keys and `style` still load cleanly via `load_config()` and are returned in the dictionary, but nothing in the CLI or core classes reads them at runtime yet. They are planned for a future release.
 
 ---
 
@@ -119,6 +119,6 @@ Config loading requires `ruamel.yaml >= 0.17`, which is declared as a runtime de
 
 ## Related
 
-- **[CLI Reference](cli-reference.md)** — current CLI flags for `--exclude` (works independently of the config file)
+- **[CLI Reference](cli-reference.md)** — current CLI flags; `--exclude` and `--fail-below` both fall back to this file's `exclude`/`coverage.threshold` when not passed explicitly
 - **[Recipes](recipes.md)** — project setup examples
 - **[FAQ](faq.md)** — questions about config support

@@ -44,8 +44,10 @@ Documentation fixes are always welcome — no discussion needed for small correc
 3. **Add tests** if you are adding new functionality. The test suite uses `pytest`:
 
    ```bash
-   pytest
+   pytest .
    ```
+
+   (The explicit `.` matters — see `CLAUDE.md`'s "Run the full test suite" note for why a bare `pytest` silently skips most of the suite in this repo.)
 
 4. **Ensure all tests pass** before opening a pull request.
 
@@ -64,7 +66,7 @@ Documentation fixes are always welcome — no discussion needed for small correc
 |------|-------|
 | [black](https://github.com/psf/black) | Code formatting — run `black .` before committing |
 | Google-style docstrings | All new functions and classes must have docstrings |
-| Python 3.8+ | Do not use syntax or stdlib features introduced after 3.8 |
+| Python 3.9+ | Do not use syntax or stdlib features introduced after 3.9 |
 
 Run PyCodeCommenter itself on any new code you write:
 
@@ -86,8 +88,8 @@ cd PyCodeCommenter
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# Run the test suite
-pytest
+# Run the test suite (the explicit "." matters -- see CLAUDE.md)
+pytest .
 
 # Run validation on the package itself
 pycodecommenter validate PyCodeCommenter/

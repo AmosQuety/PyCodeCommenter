@@ -1,6 +1,6 @@
 # Docstring Styles Guide
 
-PyCodeCommenter generates **Google-style** docstrings and can **parse** both Google-style and Sphinx-style docstrings when they already exist. This page explains what that means in practice.
+PyCodeCommenter generates **Google-style** docstrings and can **parse** Google-style, Sphinx-style, and NumPy-style docstrings when they already exist. This page explains what that means in practice.
 
 ---
 
@@ -9,10 +9,10 @@ PyCodeCommenter generates **Google-style** docstrings and can **parse** both Goo
 | Style | Generation | Parsing (input) | Notes |
 |-------|-----------|-----------------|-------|
 | Google | Yes — always | Yes — full | The only output format |
-| Sphinx (`:param:`, `:return:`) | No | Yes — partial | Summary, params, and return are extracted; other Sphinx directives are ignored |
-| NumPy | No | No | Not implemented; README roadmap item |
+| Sphinx (`:param:`, `:return:`) | No | Yes — full, including `:type name: TYPE` | Other Sphinx directives (e.g. `:raises ExcType:`) are silently ignored |
+| NumPy (dash-underlined `Parameters`/`Returns`/`Raises`) | No | Yes — full (since v2.3.0) | `Raises` has no dedicated field; its body is folded into `description` |
 
-> The README mentions `style: google`, `style: numpy`, and `style: sphinx` as config values, but the `style` key is **not yet wired into the runtime**. Regardless of any config value, the tool always generates Google-style docstrings and uses the auto-detect logic described below.
+> The README mentions `style: google`, `style: numpy`, and `style: sphinx` as config values, but the `style` key is **not yet wired into the runtime**. Regardless of any config value, the tool always generates Google-style docstrings; the auto-detect logic below governs *parsing* existing docstrings for the merge step, not generation.
 
 ---
 
@@ -57,6 +57,7 @@ The parser (`DocstringParser._parse_google`) splits on these headers:
 |--------|-------------|
 | `Args:` | `params` dict |
 | `Returns:` | `returns` string |
+| `Yields:` | `returns` string (shares the same slot — both describe what comes back out of the function) |
 | `Attributes:` | `description` block (not separately indexed) |
 | `Methods:` | `description` block (not separately indexed) |
 
@@ -73,7 +74,7 @@ The parser matches lines of the form:
     name: description
 ```
 
-The type in parentheses is optional. Continuation lines (indented by 8 or more spaces) are appended to the previous parameter's description.
+The type in parentheses is optional, and a leading `*`/`**` is recognised for `*args`/`**kwargs` entries. Any non-blank continuation line — regardless of indentation depth — is appended to the previous parameter's description. (Prior to a fix in v2.3.0, only continuation lines indented by exactly 8 spaces were recognised; any other indentation, including the 4-space indent this project's own generator uses, silently truncated the description on merge.)
 
 ### How to select Google style
 
@@ -100,17 +101,18 @@ def send_request(url: str, method: str = "GET") -> dict:
 
 ### What the parser extracts
 
-The parser (`DocstringParser._parse_sphinx`) is triggered when `:param` or `:return` appears in the docstring body. It extracts:
+The parser (`DocstringParser._parse_sphinx`) is triggered when `:param` or `:return` appears in the docstring body (and no NumPy-style dash-underlined header is present — NumPy detection runs first, see below). It extracts:
 
 | Field | Sphinx syntax | Extracted to |
 |-------|--------------|-------------|
 | Summary | First line | `summary` |
 | Parameters | `:param name: desc` | `params` dict |
+| Parameter types | `:type name: TYPE` | `param_types` dict |
 | Return | `:return: desc` or `:returns: desc` | `returns` string |
 
 Multi-line parameter descriptions (continuation lines not starting with `:`) are appended to the previous parameter.
 
-**What is not extracted:** `:type name:`, `:rtype:`, `:raises ExcType:`, and other Sphinx directives are silently ignored during parsing.
+**What is not extracted:** `:rtype:`, `:raises ExcType:`, and other Sphinx directives are silently ignored during parsing.
 
 ### Partial support note
 
@@ -120,24 +122,61 @@ Sphinx style is supported for **input only**. After `generate --inplace`, the ou
 
 ## NumPy Style
 
-NumPy style is **not implemented**. The parser does not detect or handle NumPy-style section headers (lines followed by a row of dashes). NumPy-style docstrings will be treated as a single `description` block with no structured parameter extraction.
+NumPy-style docstrings use section headers underlined with a row of three or more dashes. Support for parsing this style **as input** was added in v2.3.0.
 
-If you need NumPy support, this is on the project roadmap.
+### Example of a NumPy-style input docstring
+
+```python
+def send_request(url: str, method: str = "GET") -> dict:
+    """Send an HTTP request to the given URL.
+
+    Parameters
+    ----------
+    url : str
+        URL to send the request to.
+    method : str, optional
+        HTTP method (GET, POST, etc.).
+
+    Returns
+    -------
+    dict
+        Response data as a dictionary.
+    """
+    ...
+```
+
+### What the parser extracts
+
+The parser (`DocstringParser._parse_numpy`) is triggered by the dash-underlined header signature — it's checked *before* Sphinx or Google detection, since only NumPy style can produce it.
+
+| Field | NumPy syntax | Extracted to |
+|-------|-------------|-------------|
+| Parameters | `name : type` (or `name1, name2 : type` for a shared type), with the description on following indented lines | `params` dict, `param_types` dict |
+| Returns | A bare `type` or `name : type` header line, with the description on following indented lines | `returns` string, as `"<header line>: <description>"` |
+| Raises | Anything under a `Raises` header | Folded into `description` (there's no dedicated `raises` field, so this avoids silently dropping the text) |
+
+A trailing `, optional` on a parameter's type (NumPy's convention for a parameter with a default) is stripped before storing.
+
+### Partial support note
+
+NumPy style is supported for **input only**, same as Sphinx. After `generate --inplace`, the output is always Google style.
 
 ---
 
 ## How the Parser Chooses a Style
 
-Style detection is automatic, based on content:
+Style detection is automatic, based on content. NumPy's dash-underlined headers are the most specific signature — Google's `Args:`-on-one-line and Sphinx's `:param:` can't produce it — so it's checked first:
 
 ```python
-if ":param" in remaining_content or ":return" in remaining_content:
+if self._NUMPY_HEADER_RE.search(remaining_content):
+    self._parse_numpy(remaining_content)
+elif ":param" in remaining_content or ":return" in remaining_content:
     self._parse_sphinx(remaining_content)
 else:
     self._parse_google(remaining_content)
 ```
 
-There is no explicit style declaration needed — if `:param` or `:return` appears anywhere after the first line, Sphinx parsing is used; otherwise Google parsing is used.
+There is no explicit style declaration needed: a NumPy-style `Parameters`/`Returns`/`Raises` header underlined with three or more dashes is checked first; failing that, `:param`/`:return` anywhere after the first line selects Sphinx parsing; otherwise Google parsing is used.
 
 ---
 

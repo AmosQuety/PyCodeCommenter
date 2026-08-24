@@ -268,7 +268,7 @@ Check that annotated parameters and return types are reflected in the docstring.
 
 #### check_exception_documentation(func_node, docstring, location) -> List[ValidationIssue]
 
-Check that any `raise` statements in the function body are matched by a `Raises:` section in the docstring.
+Check that any `raise` statements in the function body are matched by a recognised Raises section in the docstring — Google-style `Raises:`, a bare `Raises` header, or Sphinx-style `:raises `.
 
 **Parameters:** Same structure as `check_signature_match`.
 
@@ -380,7 +380,7 @@ Dataclass holding aggregated counts from a validation run. Accessed via `report.
 | `total_issues` | `int` | Total issues found |
 | `errors` | `int` | ERROR-level issue count |
 | `warnings` | `int` | WARNING-level issue count |
-| `infos` | `int` | INFO-level issue count |
+| `info` | `int` | INFO-level issue count (renamed from `infos` in v2.3.0 to match the `"info"` key in JSON/Markdown output; `.infos` still works as a backward-compatible property alias) |
 | `coverage_percentage` | `float` (property) | `(documented / total) * 100` |
 
 ---
@@ -462,7 +462,7 @@ Recursively analyse all `.py` files in a directory.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `directory` | `str` | — | Path to the directory to analyse |
-| `exclude_patterns` | `List[str]` or `None` | `['__pycache__', '.git', 'venv', 'tests', 'test_']` | Patterns whose presence anywhere in a file path causes that file to be skipped |
+| `exclude_patterns` | `List[str]` or `None` | `None` | Extra patterns to exclude, added to the built-in defaults (`__pycache__`, `.git`, `.venv`, `venv`, `env`, `.tox`, `.nox`, `__pypackages__`, `site-packages`, `build`, `dist`, `.eggs`, `.egg-info`, `.mypy_cache`, `.pytest_cache`, `node_modules`, `tests`, `test_`) — never a replacement for them. A pattern matches a path component exactly, plus a dot-prefixed pattern (e.g. `.egg-info`) also matches a component it's a suffix of, and an underscore-suffixed pattern (e.g. `test_`) also matches a component it's a prefix of; it is not a substring match against the whole path |
 
 **Returns:** `ProjectCoverage`
 
@@ -522,6 +522,42 @@ import json
 data = project.to_json()
 with open("coverage.json", "w") as f:
     json.dump(data, f, indent=2)
+```
+
+---
+
+## shields_badge_dict
+
+A standalone function, not a class — imported from the `coverage` submodule directly (it isn't in the top-level `PyCodeCommenter` package `__all__`):
+
+```python
+from PyCodeCommenter.coverage import shields_badge_dict
+```
+
+#### shields_badge_dict(percentage, label="docs coverage") -> dict
+
+Build a [shields.io endpoint-badge](https://shields.io/badges/endpoint-badge) dict for a coverage percentage. This is what backs the `coverage` CLI command's `--badge-output` flag.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `percentage` | `float` | — | Coverage percentage, 0-100 |
+| `label` | `str` | `"docs coverage"` | Badge label text |
+
+**Returns:** `dict` with `schemaVersion`, `label`, `message`, and `color` keys. `color` is `brightgreen` at ≥90%, `green` at ≥75%, `yellow` at ≥50%, and `red` below that.
+
+**Example:**
+
+```python
+import json
+from PyCodeCommenter import CoverageAnalyzer
+from PyCodeCommenter.coverage import shields_badge_dict
+
+project = CoverageAnalyzer().analyze_directory("./src")
+badge = shields_badge_dict(project.total_coverage)
+with open("coverage_badge.json", "w") as f:
+    json.dump(badge, f, indent=2)
 ```
 
 ---
