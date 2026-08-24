@@ -27,6 +27,7 @@ page.
 - Guessed (as opposed to AST-extracted or preserved) docstring content is now marked with `GUESS_MARKER = "TODO(pycodecommenter): describe"` instead of being presented as finished prose. This string is already in `validator.py`'s placeholder blacklist, so generated output with unresolved guesses now fails the tool's own quality check instead of silently passing it.
 - `_get_class_attributes` now also picks up `self.x = ...` assignments anywhere in `__init__`'s body (not just `__init__`'s own parameters) and class-level `AnnAssign` fields (covers `@dataclass`-style classes with no `__init__` written in source).
 - `@classmethod`-decorated functions no longer document `cls` in the generated Args section (the generator only excluded `self`; the validator already excluded both).
+- **Python 3.9 import crash in `config.py`.** A live (non-deferred) `Exception | None` default-argument annotation needs Python >=3.10 — evaluating it at import time raised `TypeError` on 3.9, breaking `import PyCodeCommenter.cli`. Pre-existing since v2.1.0, roughly three months before this release — caught by this release's own new CI matrix on its first real run. Fixed with `Optional[Exception]` plus `from __future__ import annotations`.
 
 ---
 

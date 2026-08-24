@@ -47,6 +47,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `@classmethod`-decorated functions no longer document `cls` in the
   generated Args section (the generator only excluded `self`; the validator
   already excluded both).
+- **Python 3.9 import crash in `config.py`.** A live (non-deferred)
+  `Exception | None` default-argument annotation needs Python >=3.10 —
+  `type.__or__` for builtin/exception types doesn't exist on 3.9, so
+  evaluating it at class-definition time (import time) raised `TypeError:
+  unsupported operand type(s) for |: 'type' and 'NoneType'`. Since `cli.py`
+  imports `config.py`, this broke collection for the entire test suite on
+  3.9. Pre-existing since v2.1.0 (2026-06-10), roughly three months before
+  this release — caught by this release's own new CI matrix (see above) on
+  its first real run. Fixed with `Optional[Exception]` plus `from
+  __future__ import annotations`, matching the guard `inference.py` already
+  uses for its own `str | None` usage.
 
 ## [2.3.0] - 2026-08-22
 
