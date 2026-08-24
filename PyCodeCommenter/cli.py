@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
-from .coverage import CoverageAnalyzer
+from .coverage import CoverageAnalyzer, shields_badge_dict
 from .config import load_config, ConfigError
 
 # Directories that are never treated as source when recursively collecting
@@ -120,6 +120,11 @@ def main():
         metavar="THRESHOLD",
         help="Exit with code 1 if coverage is below THRESHOLD "
              "(default: coverage.threshold from .pycodecommenter.yaml, if set)",
+    )
+    coverage_parser.add_argument(
+        "--badge-output",
+        metavar="PATH",
+        help="Write a shields.io endpoint-badge JSON file for the coverage percentage to PATH",
     )
 
     args = parser.parse_args()
@@ -285,6 +290,10 @@ def main():
                 print(json.dumps(file_dict, indent=2))
             else:
                 print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
+
+        if args.badge_output:
+            with open(args.badge_output, "w") as f:
+                json.dump(shields_badge_dict(coverage_percentage), f, indent=2)
 
         if args.fail_below is not None and coverage_percentage < args.fail_below:
             print(f"Coverage {coverage_percentage:.1f}% is below the {args.fail_below}% threshold", file=sys.stderr)

@@ -110,6 +110,35 @@ class ProjectCoverage:
             }
         }
 
+
+def shields_badge_dict(percentage: float, label: str = "docs coverage") -> dict:
+    """Build a shields.io endpoint-badge dict for a coverage percentage.
+
+    See https://shields.io/badges/endpoint-badge for the schema.
+
+    Args:
+        percentage (float): Coverage percentage, 0-100.
+        label (str): Badge label text.
+
+    Returns:
+        dict: A shields.io endpoint-badge schema dict.
+    """
+    if percentage >= 90:
+        color = "brightgreen"
+    elif percentage >= 75:
+        color = "green"
+    elif percentage >= 50:
+        color = "yellow"
+    else:
+        color = "red"
+    return {
+        "schemaVersion": 1,
+        "label": label,
+        "message": f"{percentage:.0f}%",
+        "color": color,
+    }
+
+
 class CoverageAnalyzer:
     """Analyzes documentation coverage for files or projects."""
     
