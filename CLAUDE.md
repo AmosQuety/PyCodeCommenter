@@ -26,8 +26,16 @@ pip install -e ".[dev]"
 
 Run the full test suite:
 ```bash
-pytest
+pytest .
 ```
+(The explicit `.` matters: `pyproject.toml`'s `[tool.pytest.ini_options]`
+scopes `--doctest-modules` to the `PyCodeCommenter` package via a positional
+path in `addopts`, and pytest treats any positional path — from `addopts` or
+the command line — as the sole collection root when no other path is given.
+A bare `pytest` therefore silently collects only that package's 2 doctest
+items and skips all the `test_*.py` files at the repo root; `pytest .` adds
+the repo root back as a second collection root, which is why CI invokes
+`pytest .` too.)
 
 Run a single test file / test:
 ```bash

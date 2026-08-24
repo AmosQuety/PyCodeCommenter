@@ -75,3 +75,6 @@ packages = ["PyCodeCommenter"]
 
 [project.scripts]
 pycodecommenter = "PyCodeCommenter.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules PyCodeCommenter"
