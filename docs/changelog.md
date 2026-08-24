@@ -7,12 +7,20 @@ page.
 
 ---
 
-## Unreleased
+## v2.4.0
+
+*Released: 2026-08-24*
 
 ### Added
 
 - **Shared parameter-extraction primitive** (`param_utils.get_all_parameters`/`exclude_self_cls`) — fixes five independent blind spots where positional-only params, keyword-only params, `*args`/`**kwargs`, and dataclass/self-assigned class attributes were silently invisible to both docstring generation and validation. All three sites that inspected a function's parameters (the generator's Args-writer, and two validator checks) previously rebuilt that list from `func_node.args.args` alone.
 - Generator functions (containing a `yield`) now get a `Yields:` section instead of an incorrect `Returns: None`.
+- **`--badge-output PATH`** flag on `pycodecommenter coverage` (and the underlying `coverage.shields_badge_dict()`), emitting a [shields.io endpoint-badge](https://shields.io/badges/endpoint-badge) JSON file for the coverage percentage.
+- **CI now runs the full test suite** — including `inference.py`'s doctest examples — on every push/PR against `main`, across Python 3.9-3.12. There was previously no CI workflow that ran tests at all.
+
+### Changed
+
+- README repositioned to be explicit that generated prose the tool can't extract from the AST is a marked placeholder needing review, not finished documentation, and to name related tools (pydoclint, interrogate) instead of implying PyCodeCommenter is alone in this space. The Roadmap's AI-generation item was replaced with a struck-through line plus a warning block spelling out the draft-and-review-only constraint.
 
 ### Fixed
 

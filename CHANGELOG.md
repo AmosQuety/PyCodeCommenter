@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-24
+
 ### Added
 - New shared `PyCodeCommenter/param_utils.py` primitive
   (`get_all_parameters`/`exclude_self_cls`), fixing five independent blind
@@ -15,6 +17,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   checks) previously rebuilt that list from `func_node.args.args` alone.
 - Generator functions (containing a `yield`) now get a `Yields:` section
   instead of an incorrect `Returns: None`.
+- `--badge-output PATH` flag on `pycodecommenter coverage` (and the
+  underlying `coverage.shields_badge_dict()`), emitting a shields.io
+  endpoint-badge JSON file for the coverage percentage.
+- CI now runs the full test suite, including `inference.py`'s doctest
+  examples, on every push/PR against `main`
+  (`.github/workflows/tests.yml`, new; matrix over Python 3.9-3.12).
+
+### Changed
+- README repositioned to be explicit that generated prose the tool can't
+  extract from the AST is a marked placeholder needing review, not finished
+  documentation, and to name related tools (pydoclint, interrogate) instead
+  of implying PyCodeCommenter is alone in this space. The Roadmap's
+  AI-generation item was replaced with a struck-through line plus a warning
+  block spelling out the draft-and-review-only constraint, so it can't be
+  misread as an open, unclaimed feature.
 
 ### Fixed
 - Guessed (as opposed to AST-extracted or preserved) docstring content is now
