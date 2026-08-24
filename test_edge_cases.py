@@ -308,6 +308,14 @@ def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
 def test_dunder_init_parameter_description_not_garbled(commenter):
     """Regression test for Phase 6 bug 6c, using ConfigError.__init__'s
     real (undocumented) signature from config.py.
+
+    The parameter description that used to fall back to a
+    "{Param} of the {function}" sentence derived from the dunder name is now
+    a guess marker instead (Tier 1: guesses aren't presented as finished
+    prose) -- so nothing derived from humanize_identifier('__init__') is
+    rendered here at all any more. The negative assertions still guard
+    against the original bug (a naive, non-dunder-aware humanize) resurfacing
+    anywhere.
     """
     code = '''class ConfigError(Exception):
     """Raised when config parsing fails."""
@@ -318,7 +326,7 @@ def test_dunder_init_parameter_description_not_garbled(commenter):
     patched = commenter.get_patched_code()
     assert "   init   " not in patched
     assert "of the   init  " not in patched
-    assert "of the init." in patched
+    assert "TODO(pycodecommenter): describe" in patched
 
 def test_dunder_summary_not_garbled_for_non_init_dunders(commenter):
     """6c also affects the summary line for dunders other than __init__,
@@ -332,3 +340,204 @@ def test_dunder_summary_not_garbled_for_non_init_dunders(commenter):
     patched = commenter.get_patched_code()
     assert '"""  repr  .' not in patched
     assert '"""Repr.' in patched
+
+
+# ---------------------------------------------------------------------------
+# get_all_parameters() coverage: func_node.args.args alone is blind to
+# posonlyargs, kwonlyargs, vararg, and kwarg, and to self.x = ... class
+# attributes and class-level AnnAssign fields. These six tests mirror the
+# named cases in scratch/docstring_generation_fixture.py.
+# ---------------------------------------------------------------------------
+
+def test_generator_function_gets_yields_not_returns(commenter):
+    """A function with a yield is a generator; it should get a Yields
+    section, not a Returns: None section (fixture case #4).
+    """
+    code = '''def iter_batches(items, batch_size=10):
+    for i in range(0, len(items), batch_size):
+        yield items[i : i + batch_size]
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "Yields:" in patched
+    assert "Returns:" not in patched
+
+
+def test_yield_in_nested_function_not_attributed_to_outer(commenter):
+    """A yield inside a nested def must not make the *outer* function look
+    like a generator (the ast.walk nested-scope landmine called out for
+    _get_return_type).
+    """
+    code = '''def make_batcher(batch_size):
+    def batches(items):
+        yield items[:batch_size]
+
+    return batches
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    # Outer function returns a plain callable -- it must keep "Returns:".
+    assert '"""Make batcher.' in patched
+    outer_doc = patched.split('"""Make batcher.', 1)[1].split('"""', 1)[0]
+    assert "Returns:" in outer_doc
+    assert "Yields:" not in outer_doc
+    # Inner function is the actual generator.
+    assert '"""Batches.' in patched
+    inner_doc = patched.split('"""Batches.', 1)[1].split('"""', 1)[0]
+    assert "Yields:" in inner_doc
+
+
+def test_keyword_only_params_appear_in_args(commenter):
+    """Bare-`*` keyword-only parameters live in func_node.args.kwonlyargs,
+    not func_node.args.args (fixture case #6).
+    """
+    code = '''def build_report(*, title, sections, verbose=False):
+    return title
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "    title (" in patched
+    assert "    sections (" in patched
+    assert "    verbose (" in patched
+    assert "(default: False)" in patched
+    assert "Args:\n    None." not in patched
+
+
+def test_positional_only_params_appear_in_args(commenter):
+    """Params before a bare `/` live in func_node.args.posonlyargs, not
+    func_node.args.args (fixture case #7).
+    """
+    code = '''def clamp(value, low, /, high=1.0):
+    return max(low, min(value, high))
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "    value (" in patched
+    assert "    low (" in patched
+    assert "    high (" in patched
+
+
+def test_varargs_and_kwargs_appear_in_args(commenter):
+    """*args/**kwargs live in func_node.args.vararg/kwarg, not
+    func_node.args.args (fixture case #8).
+    """
+    code = '''def dispatch_event(event_name, *args, **kwargs):
+    print(event_name, args, kwargs)
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "    *args (tuple):" in patched
+    assert "    **kwargs (dict):" in patched
+
+
+def test_class_attributes_include_self_assign_and_exclude_cls(commenter):
+    """self.x = ... assignments beyond __init__'s own parameters must be
+    picked up as attributes, and a @classmethod's `cls` must not be
+    documented as an Args entry (fixture case #10).
+    """
+    code = '''class OrderProcessor:
+    def __init__(self, customer_id, items):
+        self.customer_id = customer_id
+        self.items = items
+        self.total = 0.0
+
+    @classmethod
+    def empty(cls, customer_id):
+        return cls(customer_id, [])
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "    total (float):" in patched
+    empty_doc = patched.split('"""Empty.', 1)[1].split('"""', 1)[0]
+    assert "cls" not in empty_doc
+    assert "    customer_id (" in empty_doc
+
+
+def test_dataclass_without_explicit_init_gets_attributes(commenter):
+    """A @dataclass with class-level annotated fields and no __init__ in
+    source must still produce an Attributes section (fixture case #11).
+    """
+    code = '''from dataclasses import dataclass
+
+@dataclass
+class Coordinates:
+    latitude: float
+    longitude: float
+    label: str = "unnamed"
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "Attributes:" in patched
+    assert "    latitude (float):" in patched
+    assert "    longitude (float):" in patched
+    assert "    label (str):" in patched
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: fact/guess boundary. Guessed content (no real signal to describe a
+# parameter/function/attribute/method from) is marked with the TODO(...)
+# guess marker instead of being presented as a finished sentence; facts
+# (AST-derived types/names/defaults, parameter_descriptions.py overrides,
+# and preserved existing docstring text) are filled in silently.
+# ---------------------------------------------------------------------------
+
+def test_generated_output_with_unresolved_guesses_fails_own_validator(commenter):
+    """The generator's own guess markers must trip validator.py's existing
+    placeholder check -- closing the self-contradiction where generated
+    output used to fail the generator's own placeholder blacklist silently
+    (the blacklist includes "Description of", which the old filler text
+    always contained, but nothing surfaced that failure to the user).
+    """
+    code = '''def calculate_discount(price, rate=0.1):
+    return price * (1 - rate)
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+
+    validator = PyCodeCommenter()
+    validator.from_string(patched)
+    report = validator.validate()
+
+    placeholder_issues = [
+        i for i in report.issues
+        if i.category == "quality" and "Placeholder text 'TODO'" in i.message
+    ]
+    assert placeholder_issues, "generated guesses should trip the placeholder check"
+
+
+def test_legitimate_lightweight_inference_stays_unmarked(commenter):
+    """Name-pattern and type-hint based inference (infer_description's rules
+    1-3) are still presented as real descriptions, not the guess marker --
+    only the final generic fallback (rule 4) is a guess.
+    """
+    code = '''def read_file(file_path: str, amount: int):
+    return open(file_path).read()
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    args_section = patched.split("Args:", 1)[1].split("Returns:", 1)[0]
+    assert "TODO(pycodecommenter): describe" not in args_section
+    assert "Path to the" in args_section  # file_path name-pattern rule
+    assert "int value" in args_section  # amount type-hint rule
+
+
+def test_static_override_and_preserved_text_stay_unmarked(commenter):
+    """A parameter_descriptions.py static override is a fact (someone
+    deliberately wrote it), and preserved text from an existing docstring is
+    the author's real words -- neither should ever be replaced by the guess
+    marker.
+    """
+    code = '''def calculate_area(length, width):
+    """Calculate the area of a rectangle.
+
+    Args:
+        length (float): The length, already documented by hand.
+    """
+    return length * width
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    args_section = patched.split("Args:", 1)[1].split("Returns:", 1)[0]
+    assert "TODO(pycodecommenter): describe" not in args_section
+    assert "Width of the rectangle." in args_section  # static override for width
+    assert "The length, already documented by hand." in args_section  # preserved

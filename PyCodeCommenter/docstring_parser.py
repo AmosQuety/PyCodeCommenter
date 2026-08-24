@@ -99,20 +99,25 @@ class DocstringParser:
         self.description = " ".join(desc_lines).strip()
 
     def _parse_google(self, content: str) -> None:
-        """Parses Google style documentation (Args:, Returns:)."""
+        """Parses Google style documentation (Args:, Returns:, Yields:)."""
         # Split by sections, allowing headers to be at the start or after a newline
-        sections = re.split(r'(?m)^ *(Args|Returns|Attributes|Methods):$', content)
-        
+        sections = re.split(r'(?m)^ *(Args|Returns|Yields|Attributes|Methods):$', content)
+
         # If the first part doesn't match a header, it's the description
         self.description = sections[0].strip()
-        
+
         for i in range(1, len(sections), 2):
             header = sections[i]
             body = sections[i+1] if i+1 < len(sections) else ""
-            
+
             if header == "Args":
                 self._parse_google_args(body)
-            elif header == "Returns":
+            elif header in ("Returns", "Yields"):
+                # Yields shares the same "returns" slot -- both describe
+                # what comes back out of the function, just via a different
+                # mechanism (a generator's Yields section vs. a plain
+                # return), and nothing downstream needs to distinguish them
+                # when merging.
                 self.returns = body.strip()
 
     def _parse_google_args(self, body: str) -> None:
@@ -124,9 +129,10 @@ class DocstringParser:
         """
         current_arg = None
         for line in body.splitlines():
-            # Match "    name (type): desc" or "    name: desc"
+            # Match "    name (type): desc", "    name: desc", or the
+            # "*args"/"**kwargs" star-prefixed form.
             # Improved regex to handle various spacing and optional types more robustly
-            match = re.match(r'^\s+(\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)', line)
+            match = re.match(r'^\s+(\*{0,2}\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)', line)
             if match:
                 current_arg = match.group(1)
                 self.params[current_arg] = match.group(3).strip()

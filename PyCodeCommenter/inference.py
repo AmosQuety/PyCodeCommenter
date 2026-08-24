@@ -15,6 +15,15 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
+# Content that isn't extracted from the AST, a hand-written docstring, or a
+# deliberate per-function override in parameter_descriptions.py is a guess
+# about what something means, not a fact about it. Guesses are marked with
+# this instead of being dressed up as a finished sentence -- and the text
+# deliberately reuses "TODO", a placeholder validator.py's own
+# check_content_quality() already blacklists, so generated output that still
+# has unresolved guesses in it visibly fails validation.
+GUESS_MARKER = "TODO(pycodecommenter): describe"
+
 
 def humanize_identifier(name: str) -> str:
     """Strip leading/trailing underscores and collapse any remaining run of
@@ -23,6 +32,12 @@ def humanize_identifier(name: str) -> str:
     Unlike a naive ``name.replace('_', ' ')``, this handles dunder methods
     (``__init__`` -> ``init``, not ``"  init  "`` with stray leading/
     trailing spaces) and names with multiple consecutive underscores.
+
+    Args:
+        name (str): The identifier to humanize.
+
+    Returns:
+        str: The identifier with underscores replaced by spaces.
 
     >>> humanize_identifier('__init__')
     'init'
@@ -34,6 +49,12 @@ def humanize_identifier(name: str) -> str:
 
 def _human_readable(name: str) -> str:
     """Convert ``snake_case`` or ``camelCase`` identifiers to a readable phrase.
+
+    Args:
+        name (str): The identifier to convert.
+
+    Returns:
+        str: A lowercase, space-separated readable phrase.
 
     >>> _human_readable('file_path')
     'file path'
@@ -48,7 +69,14 @@ def _human_readable(name: str) -> str:
 
 
 def _infer_from_name(param_name: str) -> Optional[str]:
-    """Return a description based purely on the parameter name, if a known pattern matches."""
+    """Return a description based purely on the parameter name, if a known pattern matches.
+
+    Args:
+        param_name (str): The parameter name to match against known patterns.
+
+    Returns:
+        Optional[str]: A description if a name pattern matched, otherwise None.
+    """
     lowered = param_name.lower()
     if lowered in {"path", "file_path", "dir_path", "directory"} or lowered.endswith("_path"):
         return f"Path to the {lowered.replace('_path', '').replace('path', '').strip()}"
@@ -69,7 +97,14 @@ def _infer_from_name(param_name: str) -> Optional[str]:
 
 
 def _infer_from_type(type_hint: Optional[str]) -> Optional[str]:
-    """Return a description based on the provided type hint, if helpful."""
+    """Return a description based on the provided type hint, if helpful.
+
+    Args:
+        type_hint (Optional[str]): The parameter's inferred type hint, if any.
+
+    Returns:
+        Optional[str]: A description based on the type, otherwise None.
+    """
     if not type_hint:
         return None
     t = type_hint.lower()
@@ -87,7 +122,14 @@ def _infer_from_type(type_hint: Optional[str]) -> Optional[str]:
 
 
 def _infer_from_default(default_value: Optional[str]) -> Optional[str]:
-    """Create a short hint based on the default value, when available."""
+    """Create a short hint based on the default value, when available.
+
+    Args:
+        default_value (Optional[str]): The parameter's default value, if any.
+
+    Returns:
+        Optional[str]: A short hint based on the default, otherwise None.
+    """
     if default_value is None:
         return None
     # Common literal defaults.
@@ -116,7 +158,8 @@ def infer_description(
     1. **Static name patterns** – e.g., ``*_path`` or ``url``.
     2. **Provided type hint** – ``int`` → "int value".
     3. **Default value hint** – adds "Default is …" when appropriate.
-    4. **Fallback** – a generic "{Param} of the {function}" sentence.
+    4. **Fallback** – none of the above matched, so this returns
+       :data:`GUESS_MARKER` instead of fabricating a sentence.
 
     Parameters
     ----------
@@ -157,10 +200,10 @@ def infer_description(
     if default_desc:
         return f"{default_desc}."
 
-    # 4. Generic fallback.
-    func_part = f" of the {humanize_identifier(function_name)}" if function_name else ""
-    readable = _human_readable(param_name)
-    return f"{readable.capitalize()}{func_part}."
+    # 4. Generic fallback. Nothing above matched, so there's no real signal
+    # to describe this parameter from -- anything written here would be a
+    # guess dressed up as prose, so it's marked instead.
+    return GUESS_MARKER
 
 
-__all__ = ["infer_description", "humanize_identifier"]
+__all__ = ["infer_description", "humanize_identifier", "GUESS_MARKER"]

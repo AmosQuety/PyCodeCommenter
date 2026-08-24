@@ -20,8 +20,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 try:
     from .docstring_parser import DocstringParser
+    from .param_utils import get_all_parameters, exclude_self_cls
 except (ImportError, ValueError):
     from docstring_parser import DocstringParser
+    from param_utils import get_all_parameters, exclude_self_cls
 
 logger = logging.getLogger(__name__)
 
@@ -372,17 +374,18 @@ class DocstringValidator:
         issues = []
         parser = DocstringParser(docstring)
         doc_params = list(parser.params.keys())
-        
-        # Actual arguments from AST
-        actual_params = [arg.arg for arg in func_node.args.args]
-        
+
+        # Actual arguments from AST. get_all_parameters() covers
+        # positional-only, positional-or-keyword, *args, keyword-only, and
+        # **kwargs -- not just func_node.args.args -- so a signature using
+        # any of those is no longer invisible to this check.
+        all_params = get_all_parameters(func_node)
+
         # Handle self/cls for methods
-        is_method = False
         # Simple heuristic: if it's inside a ClassDef (but we don't have parent info easily here without extra logic)
         # Better: check if first arg is self/cls and it's likely a method
-        if actual_params and actual_params[0] in ('self', 'cls'):
-            actual_params = actual_params[1:]
-            is_method = True
+        is_method = bool(all_params) and all_params[0].kind == "positional" and all_params[0].arg.arg in ('self', 'cls')
+        actual_params = [p.display_name for p in exclude_self_cls(all_params)]
 
         actual_set = set(actual_params)
         doc_set = set(doc_params)
@@ -462,19 +465,17 @@ class DocstringValidator:
                 ))
         
         # Check parameter type hints vs docstring
-        for arg in func_node.args.args:
-            if arg.arg in ('self', 'cls'):
-                continue
-            if arg.annotation and arg.arg not in parser.params:
-                type_hint = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else str(arg.annotation)
+        for param in exclude_self_cls(get_all_parameters(func_node)):
+            if param.arg.annotation and param.display_name not in parser.params:
+                type_hint = ast.unparse(param.arg.annotation) if hasattr(ast, 'unparse') else str(param.arg.annotation)
                 issues.append(ValidationIssue(
                     severity=Severity.INFO,
                     category="types",
                     location=location,
-                    message=f"Parameter '{arg.arg}' has type hint '{type_hint}' but is not documented",
-                    suggestion=f"Document '{arg.arg}' in the Args section"
+                    message=f"Parameter '{param.display_name}' has type hint '{type_hint}' but is not documented",
+                    suggestion=f"Document '{param.display_name}' in the Args section"
                 ))
-        
+
         return issues
     
     def check_exception_documentation(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], docstring: str, location: str) -> List[ValidationIssue]:

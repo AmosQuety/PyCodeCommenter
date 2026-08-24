@@ -18,20 +18,38 @@ from typing import Union, Dict, Any, Optional, List
 import libcst as cst
 from libcst.metadata import PositionProvider
 try:
-    from .templates import get_function_description
     from .parameter_descriptions import parameter_descriptions
-    from .inference import infer_description, humanize_identifier
+    from .inference import infer_description, humanize_identifier, GUESS_MARKER
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
+    from .param_utils import get_all_parameters, exclude_self_cls
 except (ImportError, ValueError):
-    from templates import get_function_description
     from parameter_descriptions import parameter_descriptions
-    from inference import infer_description, humanize_identifier
+    from inference import infer_description, humanize_identifier, GUESS_MARKER
     from type_analyzer import TypeAnalyzer
     from docstring_parser import DocstringParser
+    from param_utils import get_all_parameters, exclude_self_cls
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _walk_function_body(func_node):
+    """Yields every AST node in func_node's own body, without descending
+    into nested function/class scopes.
+
+    ``ast.walk(func_node)`` descends into nested FunctionDef/
+    AsyncFunctionDef/ClassDef bodies too, so a ``return``/``yield`` inside a
+    nested ``def`` would get misattributed to the outer function. This stops
+    at those boundaries instead.
+    """
+    stack = list(func_node.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
 
 class PyCodeCommenter:
     """
@@ -159,7 +177,11 @@ class PyCodeCommenter:
                 summary = "Initialize the class."
                 description = parsed_info.get("description") or "Initialize a new instance."
             else:
-                description = parsed_info.get("description") or get_function_description(func_node.name)
+                # A preserved existing description is the author's real
+                # words (a fact); anything templates.py.get_function_description()
+                # would have guessed from the function's name alone is not,
+                # so it's marked rather than presented as finished prose.
+                description = parsed_info.get("description") or GUESS_MARKER
 
             if description and description.lower().rstrip('.') == summary.lower().rstrip('.'):
                 description = ""
@@ -169,55 +191,70 @@ class PyCodeCommenter:
                 docstring += f"{description}\n\n"
 
             docstring += "Args:\n"
-            defaults = [None] * (len(func_node.args.args) - len(func_node.args.defaults)) + func_node.args.defaults
+
+            # get_all_parameters() covers positional-only, positional-or-
+            # keyword, *args, keyword-only, and **kwargs params -- the full
+            # ast.arguments grammar, not just func_node.args.args -- so
+            # signatures using any of those are no longer silently dropped.
+            all_params = exclude_self_cls(get_all_parameters(func_node))
+            sibling_params = [p.name for p in all_params]
 
             found_args = False
-            for arg, default in zip(func_node.args.args, defaults):
-                if arg.arg == 'self':
-                    continue
+            for param in all_params:
                 found_args = True
                 # A real static type annotation is provably correct from
                 # the code and always wins. Only fall back to a type
                 # documented in an existing docstring when static
-                # inference has nothing to offer ("any").
-                static_type = self._infer_type(arg)
-                docstring_type = parsed_info.get("param_types", {}).get(arg.arg)
+                # inference has nothing to offer ("any"). *args/**kwargs
+                # collect into a tuple/dict at runtime regardless of
+                # annotation, so that's used as the last-resort fact for them.
+                static_type = self._infer_type(param.arg)
+                if static_type == "any":
+                    if param.kind == "vararg":
+                        static_type = "tuple"
+                    elif param.kind == "kwarg":
+                        static_type = "dict"
+                docstring_type = parsed_info.get("param_types", {}).get(param.display_name)
                 inferred_type = static_type if static_type != "any" else (docstring_type or static_type)
-                # Use parser to get existing parameter description
-                sibling_params = [a.arg for a in func_node.args.args if a.arg != 'self']
-                default_str = self._get_default_value(default) if default is not None else None
-                param_desc = parsed_info.get("params", {}).get(arg.arg) or self._get_parameter_description(
+                default_str = self._get_default_value(param.default) if param.default is not None else None
+                param_desc = parsed_info.get("params", {}).get(param.display_name) or self._get_parameter_description(
                     func_name=func_node.name,
-                    param_name=arg.arg,
+                    param_name=param.name,
                     inferred_type=inferred_type,
                     default_value=default_str,
                     sibling_params=sibling_params
                 )
-                
-                arg_line = f"    {arg.arg} ({inferred_type}): {param_desc}"
+
+                arg_line = f"    {param.display_name} ({inferred_type}): {param_desc}"
                 if not any(param_desc.endswith(p) for p in {'.', '!', '?'}):
                     arg_line += "."
-                if default is not None:
-                    arg_line += f" (default: {self._get_default_value(default)})"
+                if param.default is not None:
+                    arg_line += f" (default: {self._get_default_value(param.default)})"
                 docstring += arg_line + "\n"
 
             if not found_args:
                 docstring += "    None.\n"
 
             local_types = self._get_local_types(func_node)
+            is_generator = self._is_generator(func_node)
             return_type = self._get_return_type(func_node, local_types)
-            return_desc = parsed_info.get("returns") or "Description of the return value."
-            
-            if ":" in return_desc:
-                prefix, rest = return_desc.split(":", 1)
-                prefix_clean = prefix.strip()
-                if (prefix_clean == return_type or 
-                    " " not in prefix_clean or 
-                    "[" in prefix_clean or 
-                    "|" in prefix_clean):
-                    return_desc = rest.strip()
-            
-            docstring += f"\nReturns:\n    {return_type}: {return_desc}\n"
+
+            existing_return_desc = parsed_info.get("returns")
+            if existing_return_desc:
+                return_desc = existing_return_desc
+                if ":" in return_desc:
+                    prefix, rest = return_desc.split(":", 1)
+                    prefix_clean = prefix.strip()
+                    if (prefix_clean == return_type or
+                        " " not in prefix_clean or
+                        "[" in prefix_clean or
+                        "|" in prefix_clean):
+                        return_desc = rest.strip()
+            else:
+                return_desc = GUESS_MARKER
+
+            section_label = "Yields" if is_generator else "Returns"
+            docstring += f"\n{section_label}:\n    {return_type}: {return_desc}\n"
             docstring += '"""'
             return docstring
         except Exception as e:
@@ -232,8 +269,8 @@ class PyCodeCommenter:
             parsed_info = parser.get_info()
             
             summary = parsed_info.get("summary") or f"{class_node.name} class."
-            description = parsed_info.get("description") or f"{class_node.name} class for [describe purpose]."
-            
+            description = parsed_info.get("description") or GUESS_MARKER
+
             docstring = f'"""{summary}\n\n'
             if description:
                 docstring += f"{description}\n\n"
@@ -243,13 +280,13 @@ class PyCodeCommenter:
                 docstring += "Attributes:\n"
                 for attr, attr_type in attributes.items():
                     # We could also parse existing attributes if we added that to DocstringParser
-                    docstring += f"    {attr} ({attr_type}): Description of attribute.\n"
+                    docstring += f"    {attr} ({attr_type}): {GUESS_MARKER}\n"
 
             methods = [node.name for node in class_node.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith('_')]
             if methods:
                 docstring += "\nMethods:\n"
                 for method in methods:
-                    docstring += f"    {method}(): Description of method.\n"
+                    docstring += f"    {method}(): {GUESS_MARKER}\n"
 
             docstring += '"""'
             return docstring
@@ -284,17 +321,23 @@ class PyCodeCommenter:
                 sibling_params=sibling_params or []
             )
         except Exception as e:
-            # Fallback to a generic description on unexpected errors.
+            # Inference failed, so there's nothing but a guess to offer here.
             logger.warning(f"Inference failed for {func_name}.{param_name}: {e}")
-            return f"{humanize_identifier(param_name).capitalize()} of the {humanize_identifier(func_name)}."
+            return GUESS_MARKER
 
     def _get_class_attributes(self, class_node: ast.ClassDef) -> Dict[str, str]:
         """
-        Extracts attributes from a class by looking at __init__.
-        
+        Extracts attributes from a class.
+
+        Three sources, in this order: __init__'s own parameters, ``self.x =
+        ...`` assignments anywhere in __init__'s body (for computed
+        attributes that aren't also parameters), and class-level
+        ``AnnAssign`` fields (covers ``@dataclass``-style classes with no
+        __init__ written in source).
+
         Args:
             class_node (ast.ClassDef): The class node.
-            
+
         Returns:
             Dict[str, str]: A dictionary mapping attribute names to their inferred types.
         """
@@ -303,6 +346,22 @@ class PyCodeCommenter:
             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == "__init__":
                 for arg in item.args.args[1:]:
                     attributes[arg.arg] = self._infer_type(arg)
+                for node in ast.walk(item):
+                    if (isinstance(node, ast.Assign)
+                            and len(node.targets) == 1
+                            and isinstance(node.targets[0], ast.Attribute)
+                            and isinstance(node.targets[0].value, ast.Name)
+                            and node.targets[0].value.id == 'self'):
+                        attr_name = node.targets[0].attr
+                        if attr_name not in attributes:
+                            attributes[attr_name] = self._infer_expr_type(node.value)
+
+        for item in class_node.body:
+            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                attr_name = item.target.id
+                if attr_name not in attributes:
+                    attributes[attr_name] = self.type_analyzer.get_annotation_type(item.annotation)
+
         return attributes
 
     def _indent_text(self, text: str, spaces: int) -> str:
@@ -358,26 +417,55 @@ class PyCodeCommenter:
             return repr(default_node.value)
         return "unknown"
 
+    def _is_generator(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> bool:
+        """
+        Determines whether a function is a generator (contains a yield in
+        its own body).
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node.
+
+        Returns:
+            bool: True if the function's own body contains a yield expression.
+        """
+        return any(
+            isinstance(node, (ast.Yield, ast.YieldFrom))
+            for node in _walk_function_body(func_node)
+        )
+
     def _get_return_type(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], local_types: Optional[Dict[str, str]] = None) -> str:
         """
-        Infers the return type of a function.
-        
+        Infers the return (or, for a generator, yield) type of a function.
+
+        Only walks the function's own body -- not nested function/class
+        definitions -- so a return/yield inside a nested def is never
+        misattributed to the outer function.
+
         Args:
             func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node.
             local_types (Optional[Dict[str, str]]): Known local types for better inference.
-            
+
         Returns:
-            str: The inferred return type.
+            str: The inferred return (or yield) type.
         """
         if func_node.returns:
             return self.type_analyzer.get_annotation_type(func_node.returns)
-        return_types = set()
-        for stmt in ast.walk(func_node):
-            if isinstance(stmt, ast.Return) and stmt.value is not None:
-                return_types.add(self._infer_expr_type(stmt.value, local_types))
-        
-        filtered_types = {t for t in return_types if t != "any"}
-        if not filtered_types and return_types:
+
+        if self._is_generator(func_node):
+            value_nodes = [
+                node for node in _walk_function_body(func_node)
+                if isinstance(node, (ast.Yield, ast.YieldFrom)) and node.value is not None
+            ]
+        else:
+            value_nodes = [
+                node for node in _walk_function_body(func_node)
+                if isinstance(node, ast.Return) and node.value is not None
+            ]
+
+        value_types = {self._infer_expr_type(node.value, local_types) for node in value_nodes}
+
+        filtered_types = {t for t in value_types if t != "any"}
+        if not filtered_types and value_types:
             return "any"
         return " | ".join(sorted(filtered_types)) if filtered_types else "None"
 

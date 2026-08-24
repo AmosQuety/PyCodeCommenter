@@ -3,6 +3,34 @@
 All notable changes to PyCodeCommenter will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- New shared `PyCodeCommenter/param_utils.py` primitive
+  (`get_all_parameters`/`exclude_self_cls`), fixing five independent blind
+  spots where positional-only params, keyword-only params, `*args`/`**kwargs`,
+  and dataclass/self-assigned class attributes were silently invisible to
+  both docstring generation and validation — all three sites that inspected
+  a function's parameters (the generator's Args-writer, and two validator
+  checks) previously rebuilt that list from `func_node.args.args` alone.
+- Generator functions (containing a `yield`) now get a `Yields:` section
+  instead of an incorrect `Returns: None`.
+
+### Fixed
+- Guessed (as opposed to AST-extracted or preserved) docstring content is now
+  marked with `GUESS_MARKER = "TODO(pycodecommenter): describe"` instead of
+  being presented as finished prose. This string is already in
+  `validator.py`'s placeholder blacklist, so generated output with
+  unresolved guesses now fails the tool's own quality check instead of
+  silently passing it.
+- `_get_class_attributes` now also picks up `self.x = ...` assignments
+  anywhere in `__init__`'s body (not just `__init__`'s own parameters) and
+  class-level `AnnAssign` fields (covers `@dataclass`-style classes with no
+  `__init__` written in source).
+- `@classmethod`-decorated functions no longer document `cls` in the
+  generated Args section (the generator only excluded `self`; the validator
+  already excluded both).
+
 ## [2.3.0] - 2026-08-22
 
 Follow-up work from an internal engineering audit (`Future Work/Vulnerabilties.md`),
