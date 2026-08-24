@@ -9,6 +9,8 @@ If the file is found it is parsed with ``ruamel.yaml`` and the resulting Python
 If no configuration file is found an empty ``dict`` is returned.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -23,7 +25,7 @@ class ConfigError(Exception):
     debugging.
     """
 
-    def __init__(self, message: str, original: Exception | None = None):
+    def __init__(self, message: str, original: Optional[Exception] = None):
         full_msg = message
         if original is not None:
             full_msg = f"{message}: {original}"
