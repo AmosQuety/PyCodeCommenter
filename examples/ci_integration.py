@@ -4,7 +4,7 @@ import os
 # Add parent directory to path so we can import PyCodeCommenter if not installed
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from PyCodeCommenter import PyCodeCommenter
+from PyCodeCommenter import PyCodeCommenter  # noqa: E402
 
 
 def run_ci_check():
@@ -27,7 +27,8 @@ def run_ci_check():
         sys.exit(1)
 
     print(
-        f"✅ Documentation check PASSED! ({report.stats.coverage_percentage:.1f}% coverage)"
+        "✅ Documentation check PASSED! "
+        f"({report.stats.coverage_percentage:.1f}% coverage)"
     )
     sys.exit(0)
 

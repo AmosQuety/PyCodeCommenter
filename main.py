@@ -5,7 +5,7 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from PyCodeCommenter.commenter import PyCodeCommenter
+from PyCodeCommenter.commenter import PyCodeCommenter  # noqa: E402
 
 # Example functions for string input
 code_string = """

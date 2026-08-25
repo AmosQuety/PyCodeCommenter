@@ -71,7 +71,6 @@ def get_function_description(func_name: str) -> str:
         "upgrade": f"Upgrades the {func_name.split('_', 1)[-1]}.",
         "downgrade": f"Downgrades the {func_name.split('_', 1)[-1]}.",
         "configure": f"Configures the {func_name.split('_', 1)[-1]}.",
-        "initialize": f"Initializes the {func_name.split('_', 1)[-1]}.",
         "shutdown": f"Shuts down the {func_name.split('_', 1)[-1]}.",
         "restart": f"Restarts the {func_name.split('_', 1)[-1]}.",
         "start": f"Starts the {func_name.split('_', 1)[-1]}.",

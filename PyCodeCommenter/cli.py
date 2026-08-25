@@ -86,7 +86,9 @@ def main():
     config_fail_below = (config.get("coverage") or {}).get("threshold")
 
     parser = argparse.ArgumentParser(
-        description="PyCodeCommenter CLI - Automatic docstring generation and validation."
+        description=(
+            "PyCodeCommenter CLI - Automatic docstring generation and validation."
+        )
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -163,7 +165,10 @@ def main():
     coverage_parser.add_argument(
         "--badge-output",
         metavar="PATH",
-        help="Write a shields.io endpoint-badge JSON file for the coverage percentage to PATH",
+        help=(
+            "Write a shields.io endpoint-badge JSON file for the coverage "
+            "percentage to PATH"
+        ),
     )
 
     args = parser.parse_args()
@@ -326,11 +331,15 @@ def main():
             result = analyzer.analyze_file(args.path)
             coverage_percentage = result.coverage_percentage
             if args.output_format == "json":
+                functions_ratio = (
+                    f"{result.documented_functions}/{result.total_functions}"
+                )
+                classes_ratio = f"{result.documented_classes}/{result.total_classes}"
                 file_dict = {
                     "file": args.path,
                     "coverage_percentage": round(result.coverage_percentage, 2),
-                    "functions": f"{result.documented_functions}/{result.total_functions}",
-                    "classes": f"{result.documented_classes}/{result.total_classes}",
+                    "functions": functions_ratio,
+                    "classes": classes_ratio,
                 }
                 print(json.dumps(file_dict, indent=2))
             else:
@@ -342,7 +351,8 @@ def main():
 
         if args.fail_below is not None and coverage_percentage < args.fail_below:
             print(
-                f"Coverage {coverage_percentage:.1f}% is below the {args.fail_below}% threshold",
+                f"Coverage {coverage_percentage:.1f}% is below the "
+                f"{args.fail_below}% threshold",
                 file=sys.stderr,
             )
             sys.exit(1)

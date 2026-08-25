@@ -15,7 +15,7 @@ import ast
 import tokenize
 import io
 import logging
-from typing import Union, Dict, Any, Optional, List
+from typing import Union, Dict, Any, Optional
 import libcst as cst
 from libcst.metadata import PositionProvider
 
@@ -114,7 +114,8 @@ class PyCodeCommenter:
         return self
 
     def generate_docstrings(self) -> list:
-        """Iterates over the parsed code to generate docstrings for functions and classes."""
+        """Iterates over the parsed code to generate docstrings for functions
+        and classes."""
         if self.parsed_code is None:
             logger.error("No valid code to parse.")
             return []
@@ -172,7 +173,8 @@ class PyCodeCommenter:
     def _generate_function_docstring(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> str:
-        """Generates a Google-style docstring for a function node, merging existing info."""
+        """Generates a Google-style docstring for a function node, merging
+        existing info."""
         try:
             existing_doc = ast.get_docstring(func_node)
             parser = DocstringParser(existing_doc)
@@ -307,7 +309,8 @@ class PyCodeCommenter:
             return '"""Error generating docstring."""'
 
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
-        """Generates a Google-style docstring for a class node, merging existing info."""
+        """Generates a Google-style docstring for a class node, merging
+        existing info."""
         try:
             existing_doc = ast.get_docstring(class_node)
             parser = DocstringParser(existing_doc)
@@ -324,7 +327,8 @@ class PyCodeCommenter:
             if attributes:
                 docstring += "Attributes:\n"
                 for attr, attr_type in attributes.items():
-                    # We could also parse existing attributes if we added that to DocstringParser
+                    # We could also parse existing attributes if we added
+                    # that to DocstringParser
                     docstring += f"    {attr} ({attr_type}): {GUESS_MARKER}\n"
 
             methods = [
@@ -352,14 +356,16 @@ class PyCodeCommenter:
         default_value: str = None,
         sibling_params: list = None,
     ) -> str:
-        """Retrieve a description for a parameter, using static dict as fallback and rule‑based inference as primary source.
+        """Retrieve a description for a parameter, using static dict as
+        fallback and rule‑based inference as primary source.
 
         Args:
             func_name (str): Name of the function containing the parameter.
             param_name (str): Parameter name.
             inferred_type (str, optional): Inferred type hint for the parameter.
             default_value (str, optional): String representation of the default value.
-            sibling_params (list, optional): List of other parameter names in the same function.
+            sibling_params (list, optional): List of other parameter names in
+                the same function.
 
         Returns:
             str: Description of the parameter.
@@ -396,7 +402,8 @@ class PyCodeCommenter:
             class_node (ast.ClassDef): The class node.
 
         Returns:
-            Dict[str, str]: A dictionary mapping attribute names to their inferred types.
+            Dict[str, str]: A dictionary mapping attribute names to their
+                inferred types.
         """
         attributes = {}
         for item in class_node.body:
@@ -517,7 +524,8 @@ class PyCodeCommenter:
 
         Args:
             func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node.
-            local_types (Optional[Dict[str, str]]): Known local types for better inference.
+            local_types (Optional[Dict[str, str]]): Known local types for
+                better inference.
 
         Returns:
             str: The inferred return (or yield) type.

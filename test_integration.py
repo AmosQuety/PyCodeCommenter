@@ -6,8 +6,8 @@ import pytest
 # Ensure repository root is on sys.path for package imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from PyCodeCommenter.commenter import PyCodeCommenter
-from PyCodeCommenter.coverage import CoverageAnalyzer
+from PyCodeCommenter.commenter import PyCodeCommenter  # noqa: E402
+from PyCodeCommenter.coverage import CoverageAnalyzer  # noqa: E402
 
 logging.disable(logging.CRITICAL)
 
@@ -22,11 +22,11 @@ def test_integration_flow(commenter):
     test_code = """
 def add(a, b):
     '''Add two numbers.
-    
+
     Args:
         a (int): First number
         b (int): Second number
-    
+
     Returns:
         int: Sum of a and b
     '''
@@ -34,7 +34,7 @@ def add(a, b):
 
 def subtract(x, y):
     '''Subtract y from x.
-    
+
     Args:
         a (int): Wrong parameter name
         b (int): Another wrong name
@@ -43,7 +43,7 @@ def subtract(x, y):
 
 def divide(numerator: int, denominator: int) -> float:
     '''Divide two numbers.
-    
+
     Args:
         numerator (int): The numerator
         denominator (int): The denominator
@@ -54,7 +54,7 @@ def divide(numerator: int, denominator: int) -> float:
 
 class Calculator:
     '''Calculator class.'''
-    
+
     def multiply(self, a, b):
         return a * b
 

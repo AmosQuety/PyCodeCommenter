@@ -6,7 +6,7 @@ def main():
     code = """
 def process_data(data, timeout=30):
     \"\"\"Process the data.
-    
+
     Args:
         data: The data to process.
     \"\"\"

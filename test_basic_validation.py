@@ -1,10 +1,3 @@
-import pytest
-
-try:
-    from PyCodeCommenter import PyCodeCommenter
-except ImportError:
-    from commenter import PyCodeCommenter
-
 from PyCodeCommenter.validator import DocstringValidator, Severity
 
 
@@ -23,11 +16,11 @@ def test_signature_mismatch():
     code_mismatch = """\
 def multiply(x, y):
     '''Multiply two numbers.
-    
+
     Args:
         x (int): First number
         z (int): Wrong parameter name!
-    
+
     Returns:
         int: Product
     '''
@@ -46,7 +39,7 @@ def test_order_mismatch():
     code_order = """\
 def subtract(a, b):
     '''Subtract.
-    
+
     Args:
         b (int): Second
         a (int): First

@@ -12,7 +12,7 @@ Classes:
 
 import ast
 import logging
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Dict, Optional
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 class TypeAnalyzer:
     """
-    Analyzes Python AST nodes to infer types for variables, arguments, and return values.
-    Supports modern Python features like PEP 604 (|) and PEP 585 (generics).
+    Analyzes Python AST nodes to infer types for variables, arguments, and
+    return values. Supports modern Python features like PEP 604 (|) and
+    PEP 585 (generics).
     """
 
     def __init__(self, local_types: Optional[Dict[str, str]] = None):
@@ -29,7 +30,8 @@ class TypeAnalyzer:
         Initializes the analyzer with optional pre-known local types.
 
         Args:
-            local_types (Optional[Dict[str, str]]): Dictionary mapping variable names to their inferred types.
+            local_types (Optional[Dict[str, str]]): Dictionary mapping
+                variable names to their inferred types.
         """
         self.local_types = local_types or {}
 

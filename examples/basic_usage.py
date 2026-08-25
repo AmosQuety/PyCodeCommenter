@@ -10,7 +10,7 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
 class ShoppingCart:
     def __init__(self, items: list):
         self.items = items
-    
+
     def add_item(self, item):
         self.items.append(item)
 """

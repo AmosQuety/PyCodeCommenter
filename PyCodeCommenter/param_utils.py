@@ -17,7 +17,8 @@ FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
 class Parameter(NamedTuple):
-    """One parameter of a function, normalized across every kind ``ast.arguments`` can hold."""
+    """One parameter of a function, normalized across every kind
+    ``ast.arguments`` can hold."""
 
     arg: ast.arg
     kind: str  # "positional", "vararg", "kwonly", or "kwarg"
@@ -29,7 +30,8 @@ class Parameter(NamedTuple):
 
     @property
     def display_name(self) -> str:
-        """Name as it should appear in (and be matched against) a docstring Args section."""
+        """Name as it should appear in (and be matched against) a docstring
+        Args section."""
         if self.kind == "vararg":
             return f"*{self.arg.arg}"
         if self.kind == "kwarg":

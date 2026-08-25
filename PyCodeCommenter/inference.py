@@ -69,7 +69,8 @@ def _human_readable(name: str) -> str:
 
 
 def _infer_from_name(param_name: str) -> Optional[str]:
-    """Return a description based purely on the parameter name, if a known pattern matches.
+    """Return a description based purely on the parameter name, if a known
+    pattern matches.
 
     Args:
         param_name (str): The parameter name to match against known patterns.
@@ -94,11 +95,13 @@ def _infer_from_name(param_name: str) -> Optional[str]:
         return f"Flag indicating whether {base}"
     if "count" in lowered or "num" in lowered or "number" in lowered:
         base = _human_readable(param_name)
-        return f"Number of {base.replace('count', '').replace('num', '').replace('number', '').strip()}"
+        stripped = base.replace("count", "").replace("num", "")
+        stripped = stripped.replace("number", "").strip()
+        return f"Number of {stripped}"
     if lowered in {"timeout", "delay"}:
-        return f"Timeout in seconds"
+        return "Timeout in seconds"
     if lowered in {"verbose", "debug"}:
-        return f"Enable verbose output"
+        return "Enable verbose output"
     return None
 
 

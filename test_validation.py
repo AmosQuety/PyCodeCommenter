@@ -1,7 +1,6 @@
 """Comprehensive pytest suite for all validation checks (v2.2.0 rewrite)."""
 
 # -*- coding: utf-8 -*-
-import pytest
 from PyCodeCommenter.validator import DocstringValidator, Severity
 
 # ---------------------------------------------------------------------------

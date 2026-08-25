@@ -12,7 +12,6 @@ working if this suite is ever run under `pytest --cov`).
 
 import sys
 import json
-import os
 
 import pytest
 
@@ -20,7 +19,8 @@ from PyCodeCommenter.cli import main
 
 
 def run_cli(args, monkeypatch, capsys):
-    """Invoke cli.main() with argv=[<prog>, *args], return (exit_code, stdout, stderr)."""
+    """Invoke cli.main() with argv=[<prog>, *args], return (exit_code, stdout,
+    stderr)."""
     monkeypatch.setattr(sys, "argv", ["pycodecommenter"] + args)
     exit_code = 0
     try:

@@ -11,7 +11,7 @@ Classes:
 
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -210,11 +210,11 @@ class DocstringParser:
         Args:
             body (str): The body of the Returns section.
         """
-        lines = [l for l in body.splitlines() if l.strip()]
+        lines = [ln for ln in body.splitlines() if ln.strip()]
         if not lines:
             return
         header_line = lines[0].strip()
-        desc = " ".join(l.strip() for l in lines[1:])
+        desc = " ".join(ln.strip() for ln in lines[1:])
         self.returns = f"{header_line}: {desc}".strip() if desc else header_line
 
     def get_info(self) -> Dict[str, Any]:

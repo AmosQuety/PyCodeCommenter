@@ -7,7 +7,7 @@ import traceback
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(parent_dir)
 
-from PyCodeCommenter.commenter import PyCodeCommenter
+from PyCodeCommenter.commenter import PyCodeCommenter  # noqa: E402
 
 code = """
 async def simple_async():

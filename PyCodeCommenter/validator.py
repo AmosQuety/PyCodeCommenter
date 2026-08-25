@@ -16,8 +16,8 @@ Classes:
 import ast
 import re
 import logging
-from typing import List, Dict, Optional, Set, Any, Union
-from dataclasses import dataclass, field
+from typing import List, Optional, Any, Union
+from dataclasses import dataclass
 from enum import Enum
 
 try:
@@ -225,9 +225,9 @@ class ValidationReport:
 
     def to_markdown(self) -> str:
         """Generate markdown report."""
-        md = f"# Validation Report\n\n"
+        md = "# Validation Report\n\n"
         md += f"**File:** {self.file_path or 'N/A'}\n\n"
-        md += f"## Summary\n\n"
+        md += "## Summary\n\n"
         md += f"- **Coverage:** {self.stats.coverage_percentage:.1f}%\n"
         md += f"- **Total Issues:** {self.stats.total_issues}\n"
         md += f"  - Errors: {self.stats.errors}\n"
@@ -235,7 +235,7 @@ class ValidationReport:
         md += f"  - Info: {self.stats.info}\n\n"
 
         if self.issues:
-            md += f"## Issues\n\n"
+            md += "## Issues\n\n"
             for issue in self.issues:
                 md += f"### {issue.severity.value.upper()}: {issue.message}\n\n"
                 md += f"- **Location:** `{issue.location}`\n"
@@ -310,7 +310,8 @@ class DocstringValidator:
         by the signature-match heuristic and need no special casing here.
 
         Args:
-            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node to validate.
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node to validate.
             report (ValidationReport): The report to add issues to.
         """
         docstring = ast.get_docstring(func_node)
@@ -410,15 +411,6 @@ class DocstringValidator:
         # **kwargs -- not just func_node.args.args -- so a signature using
         # any of those is no longer invisible to this check.
         all_params = get_all_parameters(func_node)
-
-        # Handle self/cls for methods
-        # Simple heuristic: if it's inside a ClassDef (but we don't have parent info easily here without extra logic)
-        # Better: check if first arg is self/cls and it's likely a method
-        is_method = (
-            bool(all_params)
-            and all_params[0].kind == "positional"
-            and all_params[0].arg.arg in ("self", "cls")
-        )
         actual_params = [p.display_name for p in exclude_self_cls(all_params)]
 
         actual_set = set(actual_params)
@@ -445,8 +437,12 @@ class DocstringValidator:
                     severity=Severity.WARNING,
                     category="signature",
                     location=location,
-                    message=f"Parameter '{p}' is documented but not in function signature",
-                    suggestion=f"Remove '{p}' from docstring or update function signature",
+                    message=(
+                        f"Parameter '{p}' is documented but not in function signature"
+                    ),
+                    suggestion=(
+                        f"Remove '{p}' from docstring or update function signature"
+                    ),
                 )
             )
 
@@ -459,8 +455,13 @@ class DocstringValidator:
                         severity=Severity.INFO,
                         category="signature",
                         location=location,
-                        message="Parameter order mismatch between signature and docstring",
-                        suggestion=f"Reorder docstring params to match: {', '.join(actual_params)}",
+                        message=(
+                            "Parameter order mismatch between signature and docstring"
+                        ),
+                        suggestion=(
+                            "Reorder docstring params to match: "
+                            f"{', '.join(actual_params)}"
+                        ),
                     )
                 )
 
@@ -512,7 +513,10 @@ class DocstringValidator:
                         severity=Severity.WARNING,
                         category="types",
                         location=location,
-                        message=f"Function has return type hint '{return_type_hint}' but no Returns section in docstring",
+                        message=(
+                            f"Function has return type hint '{return_type_hint}' "
+                            "but no Returns section in docstring"
+                        ),
                         suggestion="Add a Returns section documenting the return value",
                     )
                 )
@@ -530,8 +534,13 @@ class DocstringValidator:
                         severity=Severity.INFO,
                         category="types",
                         location=location,
-                        message=f"Parameter '{param.display_name}' has type hint '{type_hint}' but is not documented",
-                        suggestion=f"Document '{param.display_name}' in the Args section",
+                        message=(
+                            f"Parameter '{param.display_name}' has type hint "
+                            f"'{type_hint}' but is not documented"
+                        ),
+                        suggestion=(
+                            f"Document '{param.display_name}' in the Args section"
+                        ),
                     )
                 )
 
@@ -555,7 +564,6 @@ class DocstringValidator:
             List[ValidationIssue]: List of issues found.
         """
         issues = []
-        parser = DocstringParser(docstring)
 
         # Find all raise statements in function body
         raised_exceptions = set()
@@ -579,7 +587,10 @@ class DocstringValidator:
                     severity=Severity.WARNING,
                     category="exceptions",
                     location=location,
-                    message=f"Function raises exceptions {raised_exceptions} but has no Raises section",
+                    message=(
+                        f"Function raises exceptions {raised_exceptions} but "
+                        "has no Raises section"
+                    ),
                     suggestion="Add a Raises section documenting the exceptions",
                 )
             )
@@ -620,7 +631,10 @@ class DocstringValidator:
                     severity=Severity.WARNING,
                     category="returns",
                     location=location,
-                    message="Function returns a value but has no Returns section in docstring",
+                    message=(
+                        "Function returns a value but has no Returns section "
+                        "in docstring"
+                    ),
                     suggestion="Add a Returns section documenting the return value",
                 )
             )
@@ -701,7 +715,10 @@ class DocstringValidator:
                             category="format",
                             location=location,
                             message=f"Non-standard section header '{stripped}' found",
-                            suggestion=f"Use standard Google-style sections: {', '.join(valid_sections)}",
+                            suggestion=(
+                                "Use standard Google-style sections: "
+                                f"{', '.join(valid_sections)}"
+                            ),
                         )
                     )
 
@@ -753,7 +770,9 @@ class DocstringValidator:
                     category="quality",
                     location=location,
                     message=f"Summary line is very short ({len(parser.summary)} chars)",
-                    suggestion="Provide a more descriptive summary (at least 10 characters)",
+                    suggestion=(
+                        "Provide a more descriptive summary (at least 10 characters)"
+                    ),
                 )
             )
 
@@ -783,7 +802,9 @@ class DocstringValidator:
                     category="quality",
                     location=location,
                     message="Summary and description are identical",
-                    suggestion="Either remove the description or expand it with more details",
+                    suggestion=(
+                        "Either remove the description or expand it with more details"
+                    ),
                 )
             )
 
