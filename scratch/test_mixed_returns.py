@@ -6,6 +6,7 @@ def return_none() -> None:
     """
     pass
 
+
 def return_bool() -> bool:
     """Return bool.
 
@@ -14,6 +15,7 @@ def return_bool() -> bool:
     """
     return True
 
+
 def return_str() -> str:
     """Return str.
 
@@ -21,6 +23,7 @@ def return_str() -> str:
         str: The return description.
     """
     return "hello"
+
 
 def return_dict() -> dict:
     """Return dict.

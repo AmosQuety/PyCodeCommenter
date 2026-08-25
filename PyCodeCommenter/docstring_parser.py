@@ -8,11 +8,13 @@ summary, description, parameters, and return values for smart docstring merging.
 Classes:
     DocstringParser: Main parser class for extracting docstring information
 """
+
 import re
 import logging
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
+
 
 class DocstringParser:
     """
@@ -26,17 +28,17 @@ class DocstringParser:
     # Google style (`Args:` on one line) nor Sphinx style (`:param:`) can
     # produce it - so it's checked first in parse().
     _NUMPY_HEADER_RE = re.compile(
-        r'(?m)^[ \t]*(Parameters|Returns|Raises)[ \t]*\r?\n[ \t]*-{3,}[ \t]*\r?\n?'
+        r"(?m)^[ \t]*(Parameters|Returns|Raises)[ \t]*\r?\n[ \t]*-{3,}[ \t]*\r?\n?"
     )
-    _NUMPY_DECL_RE = re.compile(r'^(\S.*?)\s*:\s*(.*)$')
-    _TRAILING_OPTIONAL_RE = re.compile(r',?\s*optional\s*$', re.IGNORECASE)
+    _NUMPY_DECL_RE = re.compile(r"^(\S.*?)\s*:\s*(.*)$")
+    _TRAILING_OPTIONAL_RE = re.compile(r",?\s*optional\s*$", re.IGNORECASE)
 
     def __init__(self, docstring: Optional[str] = None):
         self.raw_docstring = docstring or ""
         self.summary = ""
         self.description = ""
-        self.params = {} # type: Dict[str, str]
-        self.param_types = {} # type: Dict[str, str]
+        self.params = {}  # type: Dict[str, str]
+        self.param_types = {}  # type: Dict[str, str]
         self.returns = ""
 
         if self.raw_docstring:
@@ -66,49 +68,52 @@ class DocstringParser:
         """Parses Sphinx style documentation (:param name: desc)."""
         desc_lines = []
         current_param = None
-        
+
         for line in content.splitlines():
             line = line.strip()
-            if not line: continue
-            
-            if line.startswith(':param'):
-                match = re.match(r':param\s+(\w+):\s*(.*)', line)
+            if not line:
+                continue
+
+            if line.startswith(":param"):
+                match = re.match(r":param\s+(\w+):\s*(.*)", line)
                 if match:
                     current_param = match.group(1)
                     self.params[current_param] = match.group(2).strip()
                 continue
 
-            if line.startswith(':type'):
-                match = re.match(r':type\s+(\w+):\s*(.*)', line)
+            if line.startswith(":type"):
+                match = re.match(r":type\s+(\w+):\s*(.*)", line)
                 if match:
                     self.param_types[match.group(1)] = match.group(2).strip()
                 continue
 
-            if line.startswith(':return'):
-                match = re.match(r':returns?:\s*(.*)', line)
+            if line.startswith(":return"):
+                match = re.match(r":returns?:\s*(.*)", line)
                 if match:
                     self.returns = match.group(1).strip()
                 current_param = None
                 continue
-                
-            if current_param and not line.startswith(':'):
+
+            if current_param and not line.startswith(":"):
                 self.params[current_param] += " " + line
-            elif not line.startswith(':'):
+            elif not line.startswith(":"):
                 desc_lines.append(line)
-        
+
         self.description = " ".join(desc_lines).strip()
 
     def _parse_google(self, content: str) -> None:
         """Parses Google style documentation (Args:, Returns:, Yields:)."""
         # Split by sections, allowing headers to be at the start or after a newline
-        sections = re.split(r'(?m)^ *(Args|Returns|Yields|Attributes|Methods):$', content)
+        sections = re.split(
+            r"(?m)^ *(Args|Returns|Yields|Attributes|Methods):$", content
+        )
 
         # If the first part doesn't match a header, it's the description
         self.description = sections[0].strip()
 
         for i in range(1, len(sections), 2):
             header = sections[i]
-            body = sections[i+1] if i+1 < len(sections) else ""
+            body = sections[i + 1] if i + 1 < len(sections) else ""
 
             if header == "Args":
                 self._parse_google_args(body)
@@ -132,13 +137,13 @@ class DocstringParser:
             # Match "    name (type): desc", "    name: desc", or the
             # "*args"/"**kwargs" star-prefixed form.
             # Improved regex to handle various spacing and optional types more robustly
-            match = re.match(r'^\s+(\*{0,2}\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)', line)
+            match = re.match(r"^\s+(\*{0,2}\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)", line)
             if match:
                 current_arg = match.group(1)
                 self.params[current_arg] = match.group(3).strip()
                 if match.group(2):
                     self.param_types[current_arg] = match.group(2).strip()
-            elif current_arg and line.strip(): # Continuation line, any indentation
+            elif current_arg and line.strip():  # Continuation line, any indentation
                 self.params[current_arg] += " " + line.strip()
 
     def _parse_numpy(self, content: str) -> None:
@@ -161,7 +166,9 @@ class DocstringParser:
                 # fold it into the description rather than dropping it -
                 # non-lossy, and it can't collide/duplicate later.
                 if body.strip():
-                    self.description = (self.description + "\n\nRaises\n" + body.strip()).strip()
+                    self.description = (
+                        self.description + "\n\nRaises\n" + body.strip()
+                    ).strip()
 
     def _parse_numpy_params(self, body: str) -> None:
         """Helper to parse a NumPy-style Parameters section.
@@ -178,14 +185,14 @@ class DocstringParser:
         for line in body.splitlines():
             if not line.strip():
                 continue
-            if line[:1] not in (' ', '\t'):
+            if line[:1] not in (" ", "\t"):
                 match = self._NUMPY_DECL_RE.match(line)
                 if match:
                     names_part, type_part = match.group(1), match.group(2).strip()
                 else:
                     names_part, type_part = line.strip(), ""
-                current_names = [n.strip() for n in names_part.split(',') if n.strip()]
-                type_part = self._TRAILING_OPTIONAL_RE.sub('', type_part).strip()
+                current_names = [n.strip() for n in names_part.split(",") if n.strip()]
+                type_part = self._TRAILING_OPTIONAL_RE.sub("", type_part).strip()
                 for name in current_names:
                     self.params[name] = ""
                     if type_part:
@@ -217,5 +224,5 @@ class DocstringParser:
             "description": self.description,
             "params": self.params,
             "param_types": self.param_types,
-            "returns": self.returns
+            "returns": self.returns,
         }

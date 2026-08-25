@@ -1,12 +1,13 @@
 """Comprehensive pytest suite for all validation checks (v2.2.0 rewrite)."""
+
 # -*- coding: utf-8 -*-
 import pytest
 from PyCodeCommenter.validator import DocstringValidator, Severity
 
-
 # ---------------------------------------------------------------------------
 # Original test scenarios (1–10), preserved and migrated to pytest
 # ---------------------------------------------------------------------------
+
 
 def test_missing_docstring():
     """Test 1 – Missing docstring raises an ERROR."""
@@ -180,6 +181,7 @@ def complex_function(a, b, c):
 # Feature 1 – Decorator awareness (new in v2.2.0)
 # ---------------------------------------------------------------------------
 
+
 def test_property_getter_return_check_fires():
     """@property getter should still require a Returns section."""
     code = """
@@ -192,10 +194,13 @@ class MyClass:
     report = DocstringValidator(code_string=code).validate_all()
     # The getter returns a value but has no Returns section → at least one warning
     return_warnings = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert len(return_warnings) > 0, "Expected a return-doc warning on the @property getter"
+    assert (
+        len(return_warnings) > 0
+    ), "Expected a return-doc warning on the @property getter"
 
 
 def test_property_setter_skips_return_check():
@@ -213,12 +218,13 @@ class MyClass:
 """
     report = DocstringValidator(code_string=code).validate_all()
     return_warnings = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert len(return_warnings) == 0, (
-        f"@property setter must not trigger a return warning, got: {return_warnings}"
-    )
+    assert (
+        len(return_warnings) == 0
+    ), f"@property setter must not trigger a return warning, got: {return_warnings}"
 
 
 def test_property_deleter_skips_return_check():
@@ -232,12 +238,13 @@ class MyClass:
 """
     report = DocstringValidator(code_string=code).validate_all()
     return_warnings = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert len(return_warnings) == 0, (
-        f"@property deleter must not trigger a return warning, got: {return_warnings}"
-    )
+    assert (
+        len(return_warnings) == 0
+    ), f"@property deleter must not trigger a return warning, got: {return_warnings}"
 
 
 def test_classmethod_cls_not_flagged():
@@ -258,9 +265,9 @@ class MyClass:
 """
     report = DocstringValidator(code_string=code).validate_all()
     cls_issues = [i for i in report.issues if "'cls'" in i.message]
-    assert len(cls_issues) == 0, (
-        f"cls should not be flagged as missing/extra, got: {cls_issues}"
-    )
+    assert (
+        len(cls_issues) == 0
+    ), f"cls should not be flagged as missing/extra, got: {cls_issues}"
 
 
 def test_staticmethod_first_arg_not_stripped():
@@ -283,17 +290,19 @@ class MyClass:
     report = DocstringValidator(code_string=code).validate_all()
     # Both x and y are documented; no signature errors expected
     sig_errors = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "signature" and i.severity == Severity.ERROR
     ]
-    assert len(sig_errors) == 0, (
-        f"@staticmethod should not produce signature errors, got: {sig_errors}"
-    )
+    assert (
+        len(sig_errors) == 0
+    ), f"@staticmethod should not produce signature errors, got: {sig_errors}"
 
 
 # ---------------------------------------------------------------------------
 # Feature 3 – Sphinx :raises: detection (new in v2.2.0)
 # ---------------------------------------------------------------------------
+
 
 def test_sphinx_raises_detected():
     """Sphinx-style ':raises ExcType:' must suppress the missing-Raises warning."""
@@ -315,17 +324,19 @@ def fetch(url):
 """
     report = DocstringValidator(code_string=code).validate_all()
     raises_warnings = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "exceptions" and i.severity == Severity.WARNING
     ]
-    assert len(raises_warnings) == 0, (
-        f"Sphinx ':raises:' should suppress the warning, got: {raises_warnings}"
-    )
+    assert (
+        len(raises_warnings) == 0
+    ), f"Sphinx ':raises:' should suppress the warning, got: {raises_warnings}"
 
 
 # ---------------------------------------------------------------------------
 # Feature 2 – JSON output shape (new in v2.2.0)
 # ---------------------------------------------------------------------------
+
 
 def test_json_output_shape():
     """to_dict() must return the exact spec-compliant shape."""
@@ -364,10 +375,12 @@ def divide(a, b):
         assert "check" in issue, f"Missing 'check' key in issue: {issue}"
         assert "message" in issue, f"Missing 'message' key in issue: {issue}"
         # severity must be uppercase string name
-        assert issue["severity"] in {"ERROR", "WARNING", "INFO"}, (
-            f"severity must be uppercase, got: {issue['severity']}"
-        )
+        assert issue["severity"] in {
+            "ERROR",
+            "WARNING",
+            "INFO",
+        }, f"severity must be uppercase, got: {issue['severity']}"
         # line must be an integer
-        assert isinstance(issue["line"], int), (
-            f"'line' must be int, got {type(issue['line'])}: {issue['line']}"
-        )
+        assert isinstance(
+            issue["line"], int
+        ), f"'line' must be int, got {type(issue['line'])}: {issue['line']}"

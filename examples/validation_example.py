@@ -1,5 +1,6 @@
 from PyCodeCommenter import PyCodeCommenter
 
+
 def main():
     # Code with some documentation issues
     code = """
@@ -15,12 +16,13 @@ def process_data(data, timeout=30):
 """
 
     commenter = PyCodeCommenter().from_string(code)
-    
+
     # Validate documentation
     report = commenter.validate()
-    
+
     # Print the report summary
     report.print_summary()
+
 
 if __name__ == "__main__":
     main()

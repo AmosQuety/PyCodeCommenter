@@ -2,10 +2,10 @@
 def get_function_description(func_name: str) -> str:
     """
     Returns a template-based description for a function based on its name.
-    
+
     Args:
         func_name (str): The name of the function to describe.
-        
+
     Returns:
         str: A descriptive sentence for the function.
     """
@@ -91,5 +91,5 @@ def get_function_description(func_name: str) -> str:
         "publish": f"Publishes the {func_name.split('_', 1)[-1]}.",
     }
 
-    action = func_name.split('_')[0]  # First part is the action (verb)
+    action = func_name.split("_")[0]  # First part is the action (verb)
     return verb_templates.get(action, f"Executes the function {func_name}.")

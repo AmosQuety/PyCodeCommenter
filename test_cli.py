@@ -9,6 +9,7 @@ each test drives it via monkeypatched argv and catches SystemExit rather
 than shelling out to a subprocess (faster, and keeps coverage instrumentation
 working if this suite is ever run under `pytest --cov`).
 """
+
 import sys
 import json
 import os
@@ -47,7 +48,10 @@ def project(tmp_path, monkeypatch):
 
 # --- validate: directory mode ---------------------------------------------
 
-def test_validate_directory_aggregates_and_exits_1_on_errors(project, monkeypatch, capsys):
+
+def test_validate_directory_aggregates_and_exits_1_on_errors(
+    project, monkeypatch, capsys
+):
     # a.py's foo() has no docstring -> ERROR -> non-zero exit, aggregated
     # across the whole directory.
     exit_code, out, _ = run_cli(["validate", "."], monkeypatch, capsys)
@@ -57,7 +61,9 @@ def test_validate_directory_aggregates_and_exits_1_on_errors(project, monkeypatc
 
 
 def test_validate_directory_json_is_a_list_of_reports(project, monkeypatch, capsys):
-    exit_code, out, _ = run_cli(["validate", ".", "--output-format", "json"], monkeypatch, capsys)
+    exit_code, out, _ = run_cli(
+        ["validate", ".", "--output-format", "json"], monkeypatch, capsys
+    )
     assert exit_code == 1
     reports = json.loads(out)
     assert isinstance(reports, list)
@@ -85,7 +91,10 @@ def test_validate_no_python_files_exits_0(tmp_path, monkeypatch, capsys):
 
 # --- generate: directory mode ----------------------------------------------
 
-def test_generate_directory_dry_run_shows_diff_and_exits_1(project, monkeypatch, capsys):
+
+def test_generate_directory_dry_run_shows_diff_and_exits_1(
+    project, monkeypatch, capsys
+):
     exit_code, out, _ = run_cli(["generate", ".", "--dry-run"], monkeypatch, capsys)
     assert exit_code == 1
     assert "a.py" in out
@@ -101,15 +110,20 @@ def test_generate_directory_inplace_patches_files(project, monkeypatch, capsys):
 
 
 def test_generate_directory_rejects_output_flag(project, monkeypatch, capsys):
-    exit_code, out, _ = run_cli(["generate", ".", "--output", "combined.py"], monkeypatch, capsys)
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output", "combined.py"], monkeypatch, capsys
+    )
     assert exit_code == 1
     assert "--output cannot be used with a directory" in out
 
 
 # --- exclude: CLI flag and config wiring ------------------------------------
 
+
 def test_exclude_flag_skips_matching_files(project, monkeypatch, capsys):
-    exit_code, out, _ = run_cli(["validate", ".", "--exclude", "sub"], monkeypatch, capsys)
+    exit_code, out, _ = run_cli(
+        ["validate", ".", "--exclude", "sub"], monkeypatch, capsys
+    )
     assert "b.py" not in out
     assert "a.py" in out
 
@@ -132,6 +146,7 @@ def test_explicit_exclude_flag_overrides_config(project, monkeypatch, capsys):
 
 
 # --- coverage: --fail-below and config.coverage.threshold ------------------
+
 
 def test_coverage_fail_below_explicit_flag(project, monkeypatch, capsys):
     exit_code, _, err = run_cli(
@@ -164,7 +179,9 @@ def test_coverage_explicit_fail_below_overrides_config(project, monkeypatch, cap
     assert exit_code == 0
 
 
-def test_coverage_without_fail_below_or_config_never_exits_nonzero_for_it(project, monkeypatch, capsys):
+def test_coverage_without_fail_below_or_config_never_exits_nonzero_for_it(
+    project, monkeypatch, capsys
+):
     # No --fail-below, no config threshold -> the fail-below check must be a
     # no-op regardless of how low coverage is.
     exit_code, _, _ = run_cli(["coverage", ".", "--exclude"], monkeypatch, capsys)

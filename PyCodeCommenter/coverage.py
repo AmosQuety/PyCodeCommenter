@@ -10,6 +10,7 @@ Classes:
     ProjectCoverage: Coverage statistics for entire project
     CoverageAnalyzer: Analyzes documentation coverage for files or projects
 """
+
 # coverage.py
 
 import ast
@@ -29,11 +30,26 @@ logger = logging.getLogger(__name__)
 # 'tests'/'test_' - coverage-specific, since coverage measures documentation
 # of source code, not test code.
 DEFAULT_COVERAGE_EXCLUDES = [
-    '__pycache__', '.git', '.venv', 'venv', 'env',
-    '.tox', '.nox', '__pypackages__', 'site-packages',
-    'build', 'dist', '.eggs', '.egg-info', '.mypy_cache', '.pytest_cache',
-    'node_modules', 'tests', 'test_',
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+    "env",
+    ".tox",
+    ".nox",
+    "__pypackages__",
+    "site-packages",
+    "build",
+    "dist",
+    ".eggs",
+    ".egg-info",
+    ".mypy_cache",
+    ".pytest_cache",
+    "node_modules",
+    "tests",
+    "test_",
 ]
+
 
 def _path_is_excluded(py_file: Path, patterns) -> bool:
     """A path is excluded if one of its directory/file name components
@@ -48,54 +64,62 @@ def _path_is_excluded(py_file: Path, patterns) -> bool:
         for part in parts:
             if part == pattern:
                 return True
-            if pattern.startswith('.') and part.endswith(pattern):
+            if pattern.startswith(".") and part.endswith(pattern):
                 return True
-            if pattern.endswith('_') and part.startswith(pattern):
+            if pattern.endswith("_") and part.startswith(pattern):
                 return True
     return False
+
 
 @dataclass
 class FileCoverage:
     """Coverage statistics for a single file."""
+
     path: str
     total_functions: int = 0
     documented_functions: int = 0
     total_classes: int = 0
     documented_classes: int = 0
-    
+
     @property
     def coverage_percentage(self) -> float:
         total = self.total_functions + self.total_classes
         documented = self.documented_functions + self.documented_classes
         return (documented / total * 100) if total > 0 else 0.0
 
+
 @dataclass
 class ProjectCoverage:
     """Coverage statistics for entire project."""
+
     files: Dict[str, FileCoverage] = field(default_factory=dict)
-    
+
     @property
     def total_coverage(self) -> float:
-        total_items = sum(f.total_functions + f.total_classes for f in self.files.values())
-        documented = sum(f.documented_functions + f.documented_classes for f in self.files.values())
+        total_items = sum(
+            f.total_functions + f.total_classes for f in self.files.values()
+        )
+        documented = sum(
+            f.documented_functions + f.documented_classes for f in self.files.values()
+        )
         return (documented / total_items * 100) if total_items > 0 else 0.0
-    
+
     def print_report(self):
         """Print coverage report to console."""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("DOCUMENTATION COVERAGE REPORT")
-        print("="*80)
-        
+        print("=" * 80)
+
         for path, coverage in sorted(self.files.items()):
             status = "[OK]" if coverage.coverage_percentage == 100 else "[!!]"
             # Shorten path for display
             display_path = os.path.basename(path)
             print(f"{status} {display_path:50} {coverage.coverage_percentage:5.1f}%")
-        
-        print("-"*80)
+
+        print("-" * 80)
         print(f"{'TOTAL':52} {self.total_coverage:5.1f}%")
-        print("="*80)
-    
+        print("=" * 80)
+
     def to_json(self) -> dict:
         """Export as JSON."""
         return {
@@ -104,10 +128,10 @@ class ProjectCoverage:
                 path: {
                     "coverage": cov.coverage_percentage,
                     "functions": f"{cov.documented_functions}/{cov.total_functions}",
-                    "classes": f"{cov.documented_classes}/{cov.total_classes}"
+                    "classes": f"{cov.documented_classes}/{cov.total_classes}",
                 }
                 for path, cov in self.files.items()
-            }
+            },
         }
 
 
@@ -141,15 +165,15 @@ def shields_badge_dict(percentage: float, label: str = "docs coverage") -> dict:
 
 class CoverageAnalyzer:
     """Analyzes documentation coverage for files or projects."""
-    
+
     def analyze_file(self, file_path: str) -> FileCoverage:
         """Analyze a single Python file."""
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
-        
+
         tree = ast.parse(code)
         coverage = FileCoverage(path=file_path)
-        
+
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 coverage.total_functions += 1
@@ -159,19 +183,21 @@ class CoverageAnalyzer:
                 coverage.total_classes += 1
                 if ast.get_docstring(node):
                     coverage.documented_classes += 1
-        
+
         return coverage
-    
-    def analyze_directory(self, directory: str, exclude_patterns: List[str] = None) -> ProjectCoverage:
+
+    def analyze_directory(
+        self, directory: str, exclude_patterns: List[str] = None
+    ) -> ProjectCoverage:
         """Analyze all Python files in a directory."""
         patterns = list(DEFAULT_COVERAGE_EXCLUDES) + list(exclude_patterns or [])
         project = ProjectCoverage()
 
-        for py_file in Path(directory).rglob('*.py'):
+        for py_file in Path(directory).rglob("*.py"):
             # Skip excluded paths
             if _path_is_excluded(py_file, patterns):
                 continue
-            
+
             try:
                 coverage = self.analyze_file(str(py_file))
                 project.files[str(py_file)] = coverage
@@ -181,5 +207,5 @@ class CoverageAnalyzer:
                 logger.error(f"Error parsing {py_file}: {e}")
             except UnicodeDecodeError as e:
                 logger.error(f"Encoding error in {py_file}: {e}")
-        
+
         return project

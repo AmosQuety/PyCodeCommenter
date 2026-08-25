@@ -1,6 +1,7 @@
 """
 CLI entry point for PyCodeCommenter.
 """
+
 import sys
 import json
 import argparse
@@ -19,22 +20,25 @@ from .config import load_config, ConfigError
 # build output - the risk isn't wasted effort, it's `--inplace` writing
 # generated docstrings into code the user doesn't own or care about.
 DEFAULT_DIRECTORY_EXCLUDES = [
-    '__pycache__',      # bytecode cache
-    '.git',              # VCS metadata
-    '.venv', 'venv', 'env',  # common virtualenv directory names
-    '.tox',              # tox per-environment venvs (full vendored deps)
-    '.nox',              # nox per-session venvs, same risk as .tox
-    '__pypackages__',    # PEP 582 local package installs
-    'site-packages',     # installed-package dir name, catches venvs with a
-                          # naming scheme not covered above
-    'build',             # setuptools/build-backend output
-    'dist',               # sdist/wheel output
-    '.eggs',             # setuptools .eggs cache
-    '.egg-info',          # <package-name>.egg-info metadata dirs
-    '.mypy_cache',       # mypy cache
-    '.pytest_cache',     # pytest cache
-    'node_modules',       # JS/npm dependencies (hybrid-language repos)
+    "__pycache__",  # bytecode cache
+    ".git",  # VCS metadata
+    ".venv",
+    "venv",
+    "env",  # common virtualenv directory names
+    ".tox",  # tox per-environment venvs (full vendored deps)
+    ".nox",  # nox per-session venvs, same risk as .tox
+    "__pypackages__",  # PEP 582 local package installs
+    "site-packages",  # installed-package dir name, catches venvs with a
+    # naming scheme not covered above
+    "build",  # setuptools/build-backend output
+    "dist",  # sdist/wheel output
+    ".eggs",  # setuptools .eggs cache
+    ".egg-info",  # <package-name>.egg-info metadata dirs
+    ".mypy_cache",  # mypy cache
+    ".pytest_cache",  # pytest cache
+    "node_modules",  # JS/npm dependencies (hybrid-language repos)
 ]
+
 
 def _path_is_excluded(py_file, patterns):
     """A path is excluded if one of its directory/file name components
@@ -53,9 +57,10 @@ def _path_is_excluded(py_file, patterns):
         for part in parts:
             if part == pattern:
                 return True
-            if pattern.startswith('.') and part.endswith(pattern):
+            if pattern.startswith(".") and part.endswith(pattern):
                 return True
     return False
+
 
 def _collect_py_files(directory, exclude_patterns=None):
     """Recursively collect .py files under directory, skipping any path
@@ -64,9 +69,11 @@ def _collect_py_files(directory, exclude_patterns=None):
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
     return [
-        str(py_file) for py_file in sorted(Path(directory).rglob("*.py"))
+        str(py_file)
+        for py_file in sorted(Path(directory).rglob("*.py"))
         if not _path_is_excluded(py_file, patterns)
     ]
+
 
 def main():
     try:
@@ -78,22 +85,50 @@ def main():
     config_exclude = config.get("exclude")
     config_fail_below = (config.get("coverage") or {}).get("threshold")
 
-    parser = argparse.ArgumentParser(description="PyCodeCommenter CLI - Automatic docstring generation and validation.")
+    parser = argparse.ArgumentParser(
+        description="PyCodeCommenter CLI - Automatic docstring generation and validation."
+    )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Generate command
-    generate_parser = subparsers.add_parser("generate", help="Generate docstrings for a file or directory")
+    generate_parser = subparsers.add_parser(
+        "generate", help="Generate docstrings for a file or directory"
+    )
     generate_parser.add_argument("file", help="Python file or directory to process")
-    generate_parser.add_argument("-i", "--inplace", action="store_true", help="Modify file(s) in place")
-    generate_parser.add_argument("-o", "--output", help="Output file path (single-file targets only)")
-    generate_parser.add_argument("--dry-run", action="store_true", help="Show diff without writing any files")
-    generate_parser.add_argument("--backup", action="store_true", help="Create a .bak backup before inplace modification")
-    generate_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude (directory targets only)")
+    generate_parser.add_argument(
+        "-i", "--inplace", action="store_true", help="Modify file(s) in place"
+    )
+    generate_parser.add_argument(
+        "-o", "--output", help="Output file path (single-file targets only)"
+    )
+    generate_parser.add_argument(
+        "--dry-run", action="store_true", help="Show diff without writing any files"
+    )
+    generate_parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Create a .bak backup before inplace modification",
+    )
+    generate_parser.add_argument(
+        "-e",
+        "--exclude",
+        nargs="*",
+        default=config_exclude,
+        help="Patterns to exclude (directory targets only)",
+    )
 
     # Validate command
-    validate_parser = subparsers.add_parser("validate", help="Validate docstrings for a file or directory")
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate docstrings for a file or directory"
+    )
     validate_parser.add_argument("file", help="Python file or directory to validate")
-    validate_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude (directory targets only)")
+    validate_parser.add_argument(
+        "-e",
+        "--exclude",
+        nargs="*",
+        default=config_exclude,
+        help="Patterns to exclude (directory targets only)",
+    )
     validate_parser.add_argument(
         "--output-format",
         choices=["text", "json"],
@@ -103,9 +138,13 @@ def main():
     )
 
     # Coverage command
-    coverage_parser = subparsers.add_parser("coverage", help="Analyze documentation coverage")
+    coverage_parser = subparsers.add_parser(
+        "coverage", help="Analyze documentation coverage"
+    )
     coverage_parser.add_argument("path", help="Directory or file to analyze")
-    coverage_parser.add_argument("-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude")
+    coverage_parser.add_argument(
+        "-e", "--exclude", nargs="*", default=config_exclude, help="Patterns to exclude"
+    )
     coverage_parser.add_argument(
         "--output-format",
         choices=["text", "json"],
@@ -119,7 +158,7 @@ def main():
         default=config_fail_below,
         metavar="THRESHOLD",
         help="Exit with code 1 if coverage is below THRESHOLD "
-             "(default: coverage.threshold from .pycodecommenter.yaml, if set)",
+        "(default: coverage.threshold from .pycodecommenter.yaml, if set)",
     )
     coverage_parser.add_argument(
         "--badge-output",
@@ -155,27 +194,29 @@ def main():
                 patched_code = commenter.get_patched_code()
 
                 if args.dry_run:
-                    with open(target, 'r', encoding='utf-8') as f:
+                    with open(target, "r", encoding="utf-8") as f:
                         original_code = f.read()
-                    diff_lines = list(difflib.unified_diff(
-                        original_code.splitlines(),
-                        patched_code.splitlines(),
-                        fromfile=target,
-                        tofile=target,
-                        lineterm=''
-                    ))
+                    diff_lines = list(
+                        difflib.unified_diff(
+                            original_code.splitlines(),
+                            patched_code.splitlines(),
+                            fromfile=target,
+                            tofile=target,
+                            lineterm="",
+                        )
+                    )
                     if diff_lines:
                         print("\n".join(diff_lines))
                         any_changed = True
                     continue
 
                 if args.inplace:
-                    with open(target, 'r', encoding='utf-8') as f:
+                    with open(target, "r", encoding="utf-8") as f:
                         original_code = f.read()
                     if patched_code != original_code:
                         if args.backup:
                             shutil.copy2(target, target + ".bak")
-                        with open(target, 'w', encoding='utf-8') as f:
+                        with open(target, "w", encoding="utf-8") as f:
                             f.write(patched_code)
                         print(f"Successfully patched {target}")
                         any_changed = True
@@ -203,15 +244,17 @@ def main():
 
         # Dry-run: show diff and exit without writing
         if args.dry_run:
-            with open(args.file, 'r', encoding='utf-8') as f:
+            with open(args.file, "r", encoding="utf-8") as f:
                 original_code = f.read()
-            diff_lines = list(difflib.unified_diff(
-                original_code.splitlines(),
-                patched_code.splitlines(),
-                fromfile=args.file,
-                tofile=args.file,
-                lineterm=''
-            ))
+            diff_lines = list(
+                difflib.unified_diff(
+                    original_code.splitlines(),
+                    patched_code.splitlines(),
+                    fromfile=args.file,
+                    tofile=args.file,
+                    lineterm="",
+                )
+            )
             if diff_lines:
                 print("\n".join(diff_lines))
                 # Exit with code 1 to indicate there are changes
@@ -224,11 +267,11 @@ def main():
             # Backup if requested
             if args.backup:
                 shutil.copy2(args.file, args.file + ".bak")
-            with open(args.file, 'w', encoding='utf-8') as f:
+            with open(args.file, "w", encoding="utf-8") as f:
                 f.write(patched_code)
             print(f"Successfully patched {args.file}")
         elif args.output:
-            with open(args.output, 'w', encoding='utf-8') as f:
+            with open(args.output, "w", encoding="utf-8") as f:
                 f.write(patched_code)
             print(f"Successfully wrote patched code to {args.output}")
         else:
@@ -271,7 +314,9 @@ def main():
     elif args.command == "coverage":
         analyzer = CoverageAnalyzer()
         if os.path.isdir(args.path):
-            result = analyzer.analyze_directory(args.path, exclude_patterns=args.exclude)
+            result = analyzer.analyze_directory(
+                args.path, exclude_patterns=args.exclude
+            )
             coverage_percentage = result.total_coverage
             if args.output_format == "json":
                 print(json.dumps(result.to_json(), indent=2))
@@ -296,11 +341,15 @@ def main():
                 json.dump(shields_badge_dict(coverage_percentage), f, indent=2)
 
         if args.fail_below is not None and coverage_percentage < args.fail_below:
-            print(f"Coverage {coverage_percentage:.1f}% is below the {args.fail_below}% threshold", file=sys.stderr)
+            print(
+                f"Coverage {coverage_percentage:.1f}% is below the {args.fail_below}% threshold",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()

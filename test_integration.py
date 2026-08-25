@@ -4,16 +4,18 @@ import logging
 import pytest
 
 # Ensure repository root is on sys.path for package imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from PyCodeCommenter.commenter import PyCodeCommenter
 from PyCodeCommenter.coverage import CoverageAnalyzer
 
 logging.disable(logging.CRITICAL)
 
+
 @pytest.fixture
 def commenter():
     return PyCodeCommenter()
+
 
 def test_integration_flow(commenter):
     """Full integration test covering generation, validation, and coverage."""

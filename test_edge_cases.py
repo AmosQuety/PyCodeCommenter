@@ -5,7 +5,7 @@ import pytest
 import logging
 
 # Add parent directory to path to allow importing from PyCodeCommenter
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
     from PyCodeCommenter import PyCodeCommenter
@@ -14,9 +14,11 @@ except ImportError:
 
 logging.disable(logging.CRITICAL)
 
+
 @pytest.fixture
 def commenter():
     return PyCodeCommenter()
+
 
 def test_empty_string(commenter):
     """Test with an empty string."""
@@ -24,6 +26,7 @@ def test_empty_string(commenter):
     docstrings = commenter.generate_docstrings()
     assert docstrings == []
     assert commenter.get_patched_code() == ""
+
 
 def test_syntax_error(commenter):
     """Test with a syntax error in the code."""
@@ -33,6 +36,7 @@ def test_syntax_error(commenter):
     assert docstrings == []
     assert commenter.get_patched_code() == code
 
+
 def test_unicode_handling(commenter):
     """Test with Unicode characters in function names and strings."""
     code = """def 世界_function(name="世界"):
@@ -40,16 +44,19 @@ def test_unicode_handling(commenter):
 """
     commenter.from_string(code)
     patched = commenter.get_patched_code()
-    assert 'Args:' in patched
-    assert 'Returns:' in patched
-    assert '世界' in patched
-    assert '🚀' in patched
+    assert "Args:" in patched
+    assert "Returns:" in patched
+    assert "世界" in patched
+    assert "🚀" in patched
+
 
 def test_large_file(commenter):
     """Test with a large number of functions and lines."""
     functions = []
     for i in range(200):
-        functions.append(f"def func_{i}(a: int, b: int) -> int:\n    return a + b + {i}")
+        functions.append(
+            f"def func_{i}(a: int, b: int) -> int:\n    return a + b + {i}"
+        )
     large_code = "\n\n".join(functions)
     commenter.from_string(large_code)
     docstrings = commenter.generate_docstrings()
@@ -57,6 +64,7 @@ def test_large_file(commenter):
     patched = commenter.get_patched_code()
     assert "func_199" in patched
     assert "Args:" in patched
+
 
 def test_multiline_signature_docstring_placement(commenter):
     """Regression test for the 'multi-line signature corruption' item in
@@ -90,7 +98,9 @@ def test_multiline_signature_docstring_placement(commenter):
     assert isinstance(func, ast.FunctionDef)
     assert func.name == "very_long_function_name"
     assert [a.arg for a in func.args.args] == [
-        "argument_one", "argument_two", "argument_three",
+        "argument_one",
+        "argument_two",
+        "argument_three",
     ]
 
     # Docstring must be the first body statement, and the original body
@@ -100,6 +110,7 @@ def test_multiline_signature_docstring_placement(commenter):
     real_stmts = func.body[1:]
     assert len(real_stmts) == 1
     assert ast.unparse(real_stmts[0]) == "return {}"
+
 
 def test_multi_function_no_line_shift_corruption(commenter):
     """Regression test for the 'line-shift insertion bug' item in
@@ -160,9 +171,12 @@ def d(
 
     def first_real_stmt(node):
         body = node.body
-        if body and isinstance(body[0], ast.Expr) \
-                and isinstance(getattr(body[0], "value", None), ast.Constant) \
-                and isinstance(body[0].value.value, str):
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(getattr(body[0], "value", None), ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
             body = body[1:]
         return ast.unparse(body[0]) if body else None
 
@@ -184,6 +198,7 @@ def d(
         "d": "return a",
     }
 
+
 def test_get_patched_code_preserves_comments(commenter):
     """Phase 3 deliverable: verify whether comments in the source file
     survive get_patched_code() now that it is libcst-based.
@@ -196,7 +211,7 @@ def test_get_patched_code_preserves_comments(commenter):
     comment on a statement, and a trailing comment on a one-liner
     definition) is asserted to survive verbatim.
     """
-    code = '''# Module comment
+    code = """# Module comment
 import os  # inline import comment
 
 def foo(x, y):  # trailing comment on def line
@@ -210,7 +225,7 @@ class C:
     # comment before method
     def method(self):
         return 1
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
 
@@ -227,6 +242,7 @@ class C:
         "# comment before method",
     ]:
         assert expected_comment in patched, f"comment lost: {expected_comment!r}"
+
 
 def test_type_preserved_from_existing_docstring_when_unannotated(commenter):
     """Regression test for Phase 6 bug 6a: a parameter's documented type
@@ -246,6 +262,7 @@ def test_type_preserved_from_existing_docstring_when_unannotated(commenter):
     assert "x (int): custom description that should survive." in patched
     assert "x (any)" not in patched
 
+
 def test_static_annotation_wins_over_stale_docstring_type(commenter):
     """6a precedence: a real type annotation must always beat a stale
     type documented in an existing docstring.
@@ -262,6 +279,7 @@ def test_static_annotation_wins_over_stale_docstring_type(commenter):
     patched = commenter.get_patched_code()
     assert "x (str):" in patched
     assert "x (int):" not in patched
+
 
 def test_numpy_docstring_not_duplicated_on_regeneration(commenter):
     """Regression test for Phase 6 bug 6b, using config.py's real
@@ -305,6 +323,7 @@ def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
     assert patched.count("Parsed configuration dictionary.") == 1
     assert "start_path (Optional[str]): Directory to start the search from." in patched
 
+
 def test_dunder_init_parameter_description_not_garbled(commenter):
     """Regression test for Phase 6 bug 6c, using ConfigError.__init__'s
     real (undocumented) signature from config.py.
@@ -328,14 +347,15 @@ def test_dunder_init_parameter_description_not_garbled(commenter):
     assert "of the   init  " not in patched
     assert "TODO(pycodecommenter): describe" in patched
 
+
 def test_dunder_summary_not_garbled_for_non_init_dunders(commenter):
     """6c also affects the summary line for dunders other than __init__,
     which is separately special-cased.
     """
-    code = '''class C:
+    code = """class C:
     def __repr__(self):
         return "C()"
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert '"""  repr  .' not in patched
@@ -349,14 +369,15 @@ def test_dunder_summary_not_garbled_for_non_init_dunders(commenter):
 # named cases in scratch/docstring_generation_fixture.py.
 # ---------------------------------------------------------------------------
 
+
 def test_generator_function_gets_yields_not_returns(commenter):
     """A function with a yield is a generator; it should get a Yields
     section, not a Returns: None section (fixture case #4).
     """
-    code = '''def iter_batches(items, batch_size=10):
+    code = """def iter_batches(items, batch_size=10):
     for i in range(0, len(items), batch_size):
         yield items[i : i + batch_size]
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "Yields:" in patched
@@ -368,12 +389,12 @@ def test_yield_in_nested_function_not_attributed_to_outer(commenter):
     like a generator (the ast.walk nested-scope landmine called out for
     _get_return_type).
     """
-    code = '''def make_batcher(batch_size):
+    code = """def make_batcher(batch_size):
     def batches(items):
         yield items[:batch_size]
 
     return batches
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     # Outer function returns a plain callable -- it must keep "Returns:".
@@ -391,9 +412,9 @@ def test_keyword_only_params_appear_in_args(commenter):
     """Bare-`*` keyword-only parameters live in func_node.args.kwonlyargs,
     not func_node.args.args (fixture case #6).
     """
-    code = '''def build_report(*, title, sections, verbose=False):
+    code = """def build_report(*, title, sections, verbose=False):
     return title
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "    title (" in patched
@@ -407,9 +428,9 @@ def test_positional_only_params_appear_in_args(commenter):
     """Params before a bare `/` live in func_node.args.posonlyargs, not
     func_node.args.args (fixture case #7).
     """
-    code = '''def clamp(value, low, /, high=1.0):
+    code = """def clamp(value, low, /, high=1.0):
     return max(low, min(value, high))
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "    value (" in patched
@@ -421,9 +442,9 @@ def test_varargs_and_kwargs_appear_in_args(commenter):
     """*args/**kwargs live in func_node.args.vararg/kwarg, not
     func_node.args.args (fixture case #8).
     """
-    code = '''def dispatch_event(event_name, *args, **kwargs):
+    code = """def dispatch_event(event_name, *args, **kwargs):
     print(event_name, args, kwargs)
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "    *args (tuple):" in patched
@@ -435,7 +456,7 @@ def test_class_attributes_include_self_assign_and_exclude_cls(commenter):
     picked up as attributes, and a @classmethod's `cls` must not be
     documented as an Args entry (fixture case #10).
     """
-    code = '''class OrderProcessor:
+    code = """class OrderProcessor:
     def __init__(self, customer_id, items):
         self.customer_id = customer_id
         self.items = items
@@ -444,7 +465,7 @@ def test_class_attributes_include_self_assign_and_exclude_cls(commenter):
     @classmethod
     def empty(cls, customer_id):
         return cls(customer_id, [])
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "    total (float):" in patched
@@ -457,14 +478,14 @@ def test_dataclass_without_explicit_init_gets_attributes(commenter):
     """A @dataclass with class-level annotated fields and no __init__ in
     source must still produce an Attributes section (fixture case #11).
     """
-    code = '''from dataclasses import dataclass
+    code = """from dataclasses import dataclass
 
 @dataclass
 class Coordinates:
     latitude: float
     longitude: float
     label: str = "unnamed"
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     assert "Attributes:" in patched
@@ -481,6 +502,7 @@ class Coordinates:
 # and preserved existing docstring text) are filled in silently.
 # ---------------------------------------------------------------------------
 
+
 def test_generated_output_with_unresolved_guesses_fails_own_validator(commenter):
     """The generator's own guess markers must trip validator.py's existing
     placeholder check -- closing the self-contradiction where generated
@@ -488,9 +510,9 @@ def test_generated_output_with_unresolved_guesses_fails_own_validator(commenter)
     (the blacklist includes "Description of", which the old filler text
     always contained, but nothing surfaced that failure to the user).
     """
-    code = '''def calculate_discount(price, rate=0.1):
+    code = """def calculate_discount(price, rate=0.1):
     return price * (1 - rate)
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
 
@@ -499,7 +521,8 @@ def test_generated_output_with_unresolved_guesses_fails_own_validator(commenter)
     report = validator.validate()
 
     placeholder_issues = [
-        i for i in report.issues
+        i
+        for i in report.issues
         if i.category == "quality" and "Placeholder text 'TODO'" in i.message
     ]
     assert placeholder_issues, "generated guesses should trip the placeholder check"
@@ -510,9 +533,9 @@ def test_legitimate_lightweight_inference_stays_unmarked(commenter):
     1-3) are still presented as real descriptions, not the guess marker --
     only the final generic fallback (rule 4) is a guess.
     """
-    code = '''def read_file(file_path: str, amount: int):
+    code = """def read_file(file_path: str, amount: int):
     return open(file_path).read()
-'''
+"""
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     args_section = patched.split("Args:", 1)[1].split("Returns:", 1)[0]

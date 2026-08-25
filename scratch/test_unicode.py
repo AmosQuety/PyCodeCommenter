@@ -7,7 +7,7 @@ except SyntaxError as e:
     print("Chinese characters failed:", e)
 
 try:
-    ast.parse('def 🚀_function(): pass')
+    ast.parse("def 🚀_function(): pass")
     print("Emoji characters are valid Python identifiers!")
 except SyntaxError as e:
     print("Emoji characters failed:", e)

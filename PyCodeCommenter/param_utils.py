@@ -9,6 +9,7 @@ checks) independently rebuilt "this function's parameters" from
 categories of parameter. This module is the single shared primitive both
 now use instead.
 """
+
 import ast
 from typing import List, NamedTuple, Optional, Union
 
@@ -17,6 +18,7 @@ FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 class Parameter(NamedTuple):
     """One parameter of a function, normalized across every kind ``ast.arguments`` can hold."""
+
     arg: ast.arg
     kind: str  # "positional", "vararg", "kwonly", or "kwarg"
     default: Optional[ast.expr]
@@ -83,6 +85,10 @@ def exclude_self_cls(params: List[Parameter]) -> List[Parameter]:
         List[Parameter]: *params* with a leading self/cls dropped, unchanged
             otherwise.
     """
-    if params and params[0].kind == "positional" and params[0].arg.arg in ("self", "cls"):
+    if (
+        params
+        and params[0].kind == "positional"
+        and params[0].arg.arg in ("self", "cls")
+    ):
         return params[1:]
     return params

@@ -44,7 +44,7 @@ def humanize_identifier(name: str) -> str:
     >>> humanize_identifier('file_path')
     'file path'
     """
-    return re.sub(r'_+', ' ', name.strip('_'))
+    return re.sub(r"_+", " ", name.strip("_"))
 
 
 def _human_readable(name: str) -> str:
@@ -64,7 +64,7 @@ def _human_readable(name: str) -> str:
     # Replace underscores with spaces (dunder-safe) and split camel case boundaries.
     name = humanize_identifier(name)
     # Insert spaces before capital letters that follow a lowercase letter.
-    name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name)
+    name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)
     return name.lower()
 
 
@@ -78,11 +78,17 @@ def _infer_from_name(param_name: str) -> Optional[str]:
         Optional[str]: A description if a name pattern matched, otherwise None.
     """
     lowered = param_name.lower()
-    if lowered in {"path", "file_path", "dir_path", "directory"} or lowered.endswith("_path"):
+    if lowered in {"path", "file_path", "dir_path", "directory"} or lowered.endswith(
+        "_path"
+    ):
         return f"Path to the {lowered.replace('_path', '').replace('path', '').strip()}"
     if "url" in lowered:
         return "URL for the resource"
-    if lowered.startswith("is_") or lowered.startswith("has_") or lowered.startswith("can_"):
+    if (
+        lowered.startswith("is_")
+        or lowered.startswith("has_")
+        or lowered.startswith("can_")
+    ):
         # Boolean flag – convert to a question‑style description.
         base = _human_readable(param_name[3:])
         return f"Flag indicating whether {base}"
@@ -184,7 +190,7 @@ def infer_description(
     # 1. Name‑based heuristics.
     name_desc = _infer_from_name(param_name)
     if name_desc:
-        return name_desc.rstrip('.') + '.'
+        return name_desc.rstrip(".") + "."
 
     # 2. Type‑based heuristics.
     type_desc = _infer_from_type(type_hint)

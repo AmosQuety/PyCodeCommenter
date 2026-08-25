@@ -36,7 +36,10 @@ def multiply(x, y):
     validator = DocstringValidator(code_string=code_mismatch)
     report = validator.validate_all()
     # Should contain an error for the mismatched parameter 'z'
-    assert any(issue.category == "signature" and "z" in issue.message for issue in report.issues)
+    assert any(
+        issue.category == "signature" and "z" in issue.message
+        for issue in report.issues
+    )
 
 
 def test_order_mismatch():
@@ -53,4 +56,7 @@ def subtract(a, b):
     validator = DocstringValidator(code_string=code_order)
     report = validator.validate_all()
     # Should contain an error for the parameter order
-    assert any(issue.category == "signature" and "order" in issue.message.lower() for issue in report.issues)
+    assert any(
+        issue.category == "signature" and "order" in issue.message.lower()
+        for issue in report.issues
+    )

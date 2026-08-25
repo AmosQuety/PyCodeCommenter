@@ -10,6 +10,7 @@ Classes:
     PyCodeCommenter: Main class for generating and patching Python docstrings
     DocstringVisitor: AST visitor for traversing and processing code nodes
 """
+
 import ast
 import tokenize
 import io
@@ -17,6 +18,7 @@ import logging
 from typing import Union, Dict, Any, Optional, List
 import libcst as cst
 from libcst.metadata import PositionProvider
+
 try:
     from .parameter_descriptions import parameter_descriptions
     from .inference import infer_description, humanize_identifier, GUESS_MARKER
@@ -51,10 +53,12 @@ def _walk_function_body(func_node):
             continue
         stack.extend(ast.iter_child_nodes(node))
 
+
 class PyCodeCommenter:
     """
     Main class for generating and patching Python docstrings.
     """
+
     def __init__(self):
         self.code = ""
         self.parsed_code = None
@@ -63,7 +67,7 @@ class PyCodeCommenter:
         self.type_analyzer = TypeAnalyzer()
         self.file_path = None
 
-    def from_string(self, code_string: str) -> 'PyCodeCommenter':
+    def from_string(self, code_string: str) -> "PyCodeCommenter":
         """Initializes the commenter from a string of code."""
         self.file_path = None
         try:
@@ -87,19 +91,17 @@ class PyCodeCommenter:
             tokens = tokenize.generate_tokens(io.StringIO(self.code).readline)
             for tok_type, tok_string, start, end, line in tokens:
                 if tok_type == tokenize.COMMENT:
-                    self.tokenized_comments.append({
-                        "text": tok_string,
-                        "line": start[0],
-                        "column": start[1]
-                    })
+                    self.tokenized_comments.append(
+                        {"text": tok_string, "line": start[0], "column": start[1]}
+                    )
         except Exception as e:
             logger.error(f"Error extracting comments: {e}")
 
-    def from_file(self, file_path: str) -> 'PyCodeCommenter':
+    def from_file(self, file_path: str) -> "PyCodeCommenter":
         """Initializes the commenter from a file path."""
         self.file_path = file_path
         try:
-            with open(file_path, 'r', encoding='utf-8') as file:
+            with open(file_path, "r", encoding="utf-8") as file:
                 self.code = file.read()
             self.parsed_code = ast.parse(self.code)
             self._extract_comments()
@@ -118,7 +120,7 @@ class PyCodeCommenter:
             return []
 
         self.comments = []
-        
+
         # Module level docstring
         module_doc = ast.get_docstring(self.parsed_code)
         if module_doc:
@@ -126,10 +128,10 @@ class PyCodeCommenter:
 
         visitor = DocstringVisitor(self)
         visitor.visit(self.parsed_code)
-        
+
         for node, doc in visitor.results:
             self.comments.append(doc)
-        
+
         return self.comments
 
     def get_patched_code(self) -> str:
@@ -152,7 +154,10 @@ class PyCodeCommenter:
         if not visitor.results:
             return self.code
 
-        edits = {(node.lineno, node.col_offset): docstring for node, docstring in visitor.results}
+        edits = {
+            (node.lineno, node.col_offset): docstring
+            for node, docstring in visitor.results
+        }
 
         try:
             module = cst.parse_module(self.code)
@@ -164,18 +169,24 @@ class PyCodeCommenter:
         patched_module = wrapper.visit(_DocstringCSTPatcher(edits))
         return patched_module.code
 
-    def _generate_function_docstring(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> str:
+    def _generate_function_docstring(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> str:
         """Generates a Google-style docstring for a function node, merging existing info."""
         try:
             existing_doc = ast.get_docstring(func_node)
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
-            
-            summary = parsed_info.get("summary") or (humanize_identifier(func_node.name).capitalize() + ".")
-            
+
+            summary = parsed_info.get("summary") or (
+                humanize_identifier(func_node.name).capitalize() + "."
+            )
+
             if func_node.name == "__init__":
                 summary = "Initialize the class."
-                description = parsed_info.get("description") or "Initialize a new instance."
+                description = (
+                    parsed_info.get("description") or "Initialize a new instance."
+                )
             else:
                 # A preserved existing description is the author's real
                 # words (a fact); anything templates.py.get_function_description()
@@ -183,7 +194,9 @@ class PyCodeCommenter:
                 # so it's marked rather than presented as finished prose.
                 description = parsed_info.get("description") or GUESS_MARKER
 
-            if description and description.lower().rstrip('.') == summary.lower().rstrip('.'):
+            if description and description.lower().rstrip(
+                "."
+            ) == summary.lower().rstrip("."):
                 description = ""
 
             docstring = f'"""{summary}\n\n'
@@ -214,20 +227,32 @@ class PyCodeCommenter:
                         static_type = "tuple"
                     elif param.kind == "kwarg":
                         static_type = "dict"
-                docstring_type = parsed_info.get("param_types", {}).get(param.display_name)
-                inferred_type = static_type if static_type != "any" else (docstring_type or static_type)
-                default_str = self._get_default_value(param.default) if param.default is not None else None
-                param_desc = parsed_info.get("params", {}).get(param.display_name) or self._get_parameter_description(
+                docstring_type = parsed_info.get("param_types", {}).get(
+                    param.display_name
+                )
+                inferred_type = (
+                    static_type
+                    if static_type != "any"
+                    else (docstring_type or static_type)
+                )
+                default_str = (
+                    self._get_default_value(param.default)
+                    if param.default is not None
+                    else None
+                )
+                param_desc = parsed_info.get("params", {}).get(
+                    param.display_name
+                ) or self._get_parameter_description(
                     func_name=func_node.name,
                     param_name=param.name,
                     inferred_type=inferred_type,
                     default_value=default_str,
-                    sibling_params=sibling_params
+                    sibling_params=sibling_params,
                 )
 
                 display_type = "Any" if inferred_type == "any" else inferred_type
                 arg_line = f"    {param.display_name} ({display_type}): {param_desc}"
-                if not any(param_desc.endswith(p) for p in {'.', '!', '?'}):
+                if not any(param_desc.endswith(p) for p in {".", "!", "?"}):
                     arg_line += "."
                 if param.default is not None:
                     arg_line += f" (default: {self._get_default_value(param.default)})"
@@ -248,12 +273,16 @@ class PyCodeCommenter:
                 if ":" in return_desc:
                     prefix, rest = return_desc.split(":", 1)
                     prefix_clean = prefix.strip()
-                    if (prefix_clean == return_type or
-                        " " not in prefix_clean or
-                        "[" in prefix_clean or
-                        "|" in prefix_clean):
+                    if (
+                        prefix_clean == return_type
+                        or " " not in prefix_clean
+                        or "[" in prefix_clean
+                        or "|" in prefix_clean
+                    ):
                         return_desc = rest.strip()
-                docstring += f"\n{section_label}:\n    {display_return_type}: {return_desc}\n"
+                docstring += (
+                    f"\n{section_label}:\n    {display_return_type}: {return_desc}\n"
+                )
             elif func_node.name == "__init__" and not is_generator:
                 # Constructors implicitly return None -- Google style omits
                 # Returns entirely rather than prompting to describe a value
@@ -265,12 +294,16 @@ class PyCodeCommenter:
                 # guess-marker prompt.
                 docstring += f"\n{section_label}:\n    None.\n"
             else:
-                docstring += f"\n{section_label}:\n    {display_return_type}: {GUESS_MARKER}\n"
+                docstring += (
+                    f"\n{section_label}:\n    {display_return_type}: {GUESS_MARKER}\n"
+                )
 
             docstring += '"""'
             return docstring
         except Exception as e:
-            logger.error(f"Error generating function docstring for {func_node.name}: {e}")
+            logger.error(
+                f"Error generating function docstring for {func_node.name}: {e}"
+            )
             return '"""Error generating docstring."""'
 
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
@@ -279,7 +312,7 @@ class PyCodeCommenter:
             existing_doc = ast.get_docstring(class_node)
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
-            
+
             summary = parsed_info.get("summary") or f"{class_node.name} class."
             description = parsed_info.get("description") or GUESS_MARKER
 
@@ -294,7 +327,12 @@ class PyCodeCommenter:
                     # We could also parse existing attributes if we added that to DocstringParser
                     docstring += f"    {attr} ({attr_type}): {GUESS_MARKER}\n"
 
-            methods = [node.name for node in class_node.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith('_')]
+            methods = [
+                node.name
+                for node in class_node.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and not node.name.startswith("_")
+            ]
             if methods:
                 docstring += "\nMethods:\n"
                 for method in methods:
@@ -306,7 +344,14 @@ class PyCodeCommenter:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
             return '"""Error generating docstring."""'
 
-    def _get_parameter_description(self, func_name: str, param_name: str, inferred_type: str = None, default_value: str = None, sibling_params: list = None) -> str:
+    def _get_parameter_description(
+        self,
+        func_name: str,
+        param_name: str,
+        inferred_type: str = None,
+        default_value: str = None,
+        sibling_params: list = None,
+    ) -> str:
         """Retrieve a description for a parameter, using static dict as fallback and rule‑based inference as primary source.
 
         Args:
@@ -330,7 +375,7 @@ class PyCodeCommenter:
                 type_hint=inferred_type,
                 default_value=default_value,
                 function_name=func_name,
-                sibling_params=sibling_params or []
+                sibling_params=sibling_params or [],
             )
         except Exception as e:
             # Inference failed, so there's nothing but a guess to offer here.
@@ -355,15 +400,20 @@ class PyCodeCommenter:
         """
         attributes = {}
         for item in class_node.body:
-            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == "__init__":
+            if (
+                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and item.name == "__init__"
+            ):
                 for arg in item.args.args[1:]:
                     attributes[arg.arg] = self._infer_type(arg)
                 for node in ast.walk(item):
-                    if (isinstance(node, ast.Assign)
-                            and len(node.targets) == 1
-                            and isinstance(node.targets[0], ast.Attribute)
-                            and isinstance(node.targets[0].value, ast.Name)
-                            and node.targets[0].value.id == 'self'):
+                    if (
+                        isinstance(node, ast.Assign)
+                        and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Attribute)
+                        and isinstance(node.targets[0].value, ast.Name)
+                        and node.targets[0].value.id == "self"
+                    ):
                         attr_name = node.targets[0].attr
                         if attr_name not in attributes:
                             attributes[attr_name] = self._infer_expr_type(node.value)
@@ -372,44 +422,50 @@ class PyCodeCommenter:
             if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
                 attr_name = item.target.id
                 if attr_name not in attributes:
-                    attributes[attr_name] = self.type_analyzer.get_annotation_type(item.annotation)
+                    attributes[attr_name] = self.type_analyzer.get_annotation_type(
+                        item.annotation
+                    )
 
         return attributes
 
     def _indent_text(self, text: str, spaces: int) -> str:
         """
         Indents a block of text.
-        
+
         Args:
             text (str): The text to indent.
             spaces (int): The number of spaces to indent by.
-            
+
         Returns:
             str: The indented text.
         """
-        indent = ' ' * spaces
-        return "\n".join([indent + line if line.strip() else line for line in text.splitlines()])
+        indent = " " * spaces
+        return "\n".join(
+            [indent + line if line.strip() else line for line in text.splitlines()]
+        )
 
     def _infer_type(self, node: Any) -> str:
         """
         Infers the type of an AST node.
-        
+
         Args:
             node (Any): The AST node.
-            
+
         Returns:
             str: The inferred type.
         """
         return self.type_analyzer.infer_type(node)
 
-    def _infer_expr_type(self, expr: Any, local_types: Optional[Dict[str, str]] = None) -> str:
+    def _infer_expr_type(
+        self, expr: Any, local_types: Optional[Dict[str, str]] = None
+    ) -> str:
         """
         Infers the type of an expression node.
-        
+
         Args:
             expr (Any): The expression node.
             local_types (Optional[Dict[str, str]]): Dictionary of known local types.
-            
+
         Returns:
             str: The inferred type.
         """
@@ -418,10 +474,10 @@ class PyCodeCommenter:
     def _get_default_value(self, default_node: Any) -> str:
         """
         Gets the string representation of a default value.
-        
+
         Args:
             default_node (Any): The AST node for the default value.
-            
+
         Returns:
             str: String representation of the default value.
         """
@@ -429,7 +485,9 @@ class PyCodeCommenter:
             return repr(default_node.value)
         return "unknown"
 
-    def _is_generator(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> bool:
+    def _is_generator(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> bool:
         """
         Determines whether a function is a generator (contains a yield in
         its own body).
@@ -445,7 +503,11 @@ class PyCodeCommenter:
             for node in _walk_function_body(func_node)
         )
 
-    def _get_return_type(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], local_types: Optional[Dict[str, str]] = None) -> str:
+    def _get_return_type(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        local_types: Optional[Dict[str, str]] = None,
+    ) -> str:
         """
         Infers the return (or, for a generator, yield) type of a function.
 
@@ -465,29 +527,36 @@ class PyCodeCommenter:
 
         if self._is_generator(func_node):
             value_nodes = [
-                node for node in _walk_function_body(func_node)
-                if isinstance(node, (ast.Yield, ast.YieldFrom)) and node.value is not None
+                node
+                for node in _walk_function_body(func_node)
+                if isinstance(node, (ast.Yield, ast.YieldFrom))
+                and node.value is not None
             ]
         else:
             value_nodes = [
-                node for node in _walk_function_body(func_node)
+                node
+                for node in _walk_function_body(func_node)
                 if isinstance(node, ast.Return) and node.value is not None
             ]
 
-        value_types = {self._infer_expr_type(node.value, local_types) for node in value_nodes}
+        value_types = {
+            self._infer_expr_type(node.value, local_types) for node in value_nodes
+        }
 
         filtered_types = {t for t in value_types if t != "any"}
         if not filtered_types and value_types:
             return "any"
         return " | ".join(sorted(filtered_types)) if filtered_types else "None"
 
-    def _get_local_types(self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Dict[str, str]:
+    def _get_local_types(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> Dict[str, str]:
         """
         Extracts local variable types within a function.
-        
+
         Args:
             func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function node.
-            
+
         Returns:
             Dict[str, str]: Mapping of variable names to their inferred types.
         """
@@ -496,16 +565,18 @@ class PyCodeCommenter:
             if isinstance(stmt, ast.Assign):
                 for target in stmt.targets:
                     if isinstance(target, ast.Name):
-                        local_types[target.id] = self._infer_expr_type(stmt.value, local_types)
+                        local_types[target.id] = self._infer_expr_type(
+                            stmt.value, local_types
+                        )
         return local_types
 
     def validate(self, strict: bool = False):
         """
         Validate existing docstrings against code using comprehensive checks.
-        
+
         Args:
             strict (bool): If True, treat warnings as errors. (default: False)
-        
+
         Returns:
             ValidationReport: Comprehensive validation report with all issues found.
                              Returns empty report if no code is parsed.
@@ -514,23 +585,23 @@ class PyCodeCommenter:
             from .validator import DocstringValidator, ValidationReport
         except (ImportError, ValueError):
             from validator import DocstringValidator, ValidationReport
-        
+
         if self.parsed_code is None:
             logger.error("No valid code parsed for validation.")
             # Return empty report instead of None
             empty_report = ValidationReport()
             empty_report.file_path = None
             return empty_report
-        
+
         validator = DocstringValidator(code_string=self.code, file_path=self.file_path)
         report = validator.validate_all()
-        
+
         return report
-    
+
     def check_coverage(self):
         """
         Calculate documentation coverage for current code.
-        
+
         Returns:
             FileCoverage: Coverage statistics for the current code.
         """
@@ -538,14 +609,14 @@ class PyCodeCommenter:
             from .coverage import FileCoverage
         except (ImportError, ValueError):
             from coverage import FileCoverage
-        
+
         if self.parsed_code is None:
             logger.error("No valid code parsed for coverage analysis.")
             # Return empty coverage instead of None
             return FileCoverage(path="<no code>")
-        
+
         coverage = FileCoverage(path=self.file_path or "<string>")
-        
+
         for node in ast.walk(self.parsed_code):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 coverage.total_functions += 1
@@ -555,14 +626,15 @@ class PyCodeCommenter:
                 coverage.total_classes += 1
                 if ast.get_docstring(node):
                     coverage.documented_classes += 1
-        
+
         return coverage
+
 
 class DocstringVisitor(ast.NodeVisitor):
     def __init__(self, commenter):
         self.commenter = commenter
         self.results = []
-    
+
     def visit_FunctionDef(self, node):
         self.results.append((node, self.commenter._generate_function_docstring(node)))
         self.generic_visit(node)
@@ -609,7 +681,9 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
         if len(lines) <= 1:
             return text
         indent = " " * spaces
-        return "\n".join([lines[0]] + [indent + line if line.strip() else line for line in lines[1:]])
+        return "\n".join(
+            [lines[0]] + [indent + line if line.strip() else line for line in lines[1:]]
+        )
 
     def _patch(self, original_node, updated_node):
         pos = self.get_metadata(PositionProvider, original_node).start
@@ -638,7 +712,11 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
         if stmts and self._is_docstring_stmt(stmts[0]):
             old_line = stmts[0]
             stmts[0] = old_line.with_changes(
-                body=[old_line.body[0].with_changes(value=cst.SimpleString(value=reindented))]
+                body=[
+                    old_line.body[0].with_changes(
+                        value=cst.SimpleString(value=reindented)
+                    )
+                ]
             )
         else:
             stmts.insert(0, doc_line)
@@ -652,4 +730,3 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
 
     def leave_ClassDef(self, original_node, updated_node):
         return self._patch(original_node, updated_node)
-

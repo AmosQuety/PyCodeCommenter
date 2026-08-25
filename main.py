@@ -4,7 +4,6 @@
 import sys
 import os
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from PyCodeCommenter.commenter import PyCodeCommenter
 
@@ -17,7 +16,6 @@ class calc:
     def greet(name: str) -> None:
         print(f"Hello, {name}!")
 """
-
 
 
 # Define the file path for file input
@@ -45,4 +43,3 @@ for comment in docstrings:
 # with open(output_file, 'w') as f:
 #     for comment in docstrings:
 #         f.write(comment + "\n\n")  # Add double newlines for separation
-

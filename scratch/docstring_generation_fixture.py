@@ -154,7 +154,10 @@ class Coordinates:
     label: str = "unnamed"
 
     def distance_to(self, other: "Coordinates") -> float:
-        return ((self.latitude - other.latitude) ** 2 + (self.longitude - other.longitude) ** 2) ** 0.5
+        return (
+            (self.latitude - other.latitude) ** 2
+            + (self.longitude - other.longitude) ** 2
+        ) ** 0.5
 
 
 # ---------------------------------------------------------------------------

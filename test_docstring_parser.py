@@ -1,9 +1,10 @@
 """Unit tests for DocstringParser (Phase 6: type preservation and
 NumPy-style parsing)."""
+
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
     from PyCodeCommenter.docstring_parser import DocstringParser
@@ -12,6 +13,7 @@ except ImportError:
 
 
 # --- 6a: type capture -------------------------------------------------
+
 
 def test_parse_google_args_extracts_type():
     doc = """Custom summary.
@@ -52,6 +54,7 @@ def test_parse_sphinx_type_directive():
 
 # --- 6b: NumPy detection + parsing -------------------------------------
 
+
 def test_parse_numpy_params_and_returns():
     # Mirrors config.py's real load_config() docstring shape.
     doc = """Load configuration for PyCodeCommenter.
@@ -74,8 +77,10 @@ ConfigError
     If a config file is discovered but parsing fails.
 """
     info = DocstringParser(doc).get_info()
-    assert info["params"]["start_path"].startswith("Directory to start the search from.")
-    assert info["param_types"]["start_path"] == "str | None"   # ", optional" stripped
+    assert info["params"]["start_path"].startswith(
+        "Directory to start the search from."
+    )
+    assert info["param_types"]["start_path"] == "str | None"  # ", optional" stripped
     assert info["returns"].startswith("dict:")
     assert "Parsed configuration dictionary." in info["returns"]
     # Raises has no first-class field; folded into description, non-lossy.
