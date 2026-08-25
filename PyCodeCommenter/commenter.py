@@ -225,7 +225,8 @@ class PyCodeCommenter:
                     sibling_params=sibling_params
                 )
 
-                arg_line = f"    {param.display_name} ({inferred_type}): {param_desc}"
+                display_type = "Any" if inferred_type == "any" else inferred_type
+                arg_line = f"    {param.display_name} ({display_type}): {param_desc}"
                 if not any(param_desc.endswith(p) for p in {'.', '!', '?'}):
                     arg_line += "."
                 if param.default is not None:
@@ -238,6 +239,8 @@ class PyCodeCommenter:
             local_types = self._get_local_types(func_node)
             is_generator = self._is_generator(func_node)
             return_type = self._get_return_type(func_node, local_types)
+            display_return_type = "Any" if return_type == "any" else return_type
+            section_label = "Yields" if is_generator else "Returns"
 
             existing_return_desc = parsed_info.get("returns")
             if existing_return_desc:
@@ -250,11 +253,20 @@ class PyCodeCommenter:
                         "[" in prefix_clean or
                         "|" in prefix_clean):
                         return_desc = rest.strip()
+                docstring += f"\n{section_label}:\n    {display_return_type}: {return_desc}\n"
+            elif func_node.name == "__init__" and not is_generator:
+                # Constructors implicitly return None -- Google style omits
+                # Returns entirely rather than prompting to describe a value
+                # that's never returned.
+                pass
+            elif return_type == "None":
+                # No return statement anywhere in the body (or only bare
+                # `return`s): there's nothing to describe, so skip the
+                # guess-marker prompt.
+                docstring += f"\n{section_label}:\n    None.\n"
             else:
-                return_desc = GUESS_MARKER
+                docstring += f"\n{section_label}:\n    {display_return_type}: {GUESS_MARKER}\n"
 
-            section_label = "Yields" if is_generator else "Returns"
-            docstring += f"\n{section_label}:\n    {return_type}: {return_desc}\n"
             docstring += '"""'
             return docstring
         except Exception as e:
