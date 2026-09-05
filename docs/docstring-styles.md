@@ -49,6 +49,27 @@ def connect_to_database(host: str, port: int, timeout: float = 30.0) -> bool:
     ...
 ```
 
+### Generator functions get `Yields:` instead of `Returns:`
+
+A function whose own body contains a `yield` (a nested function's `yield` doesn't count) is generated with a `Yields:` section instead of `Returns:` — since v2.4.0, this no longer incorrectly reports `Returns: None` for a generator.
+
+```python
+def batches(items, batch_size):
+    """Batches.
+
+    TODO(pycodecommenter): describe
+
+    Args:
+        items (Any): TODO(pycodecommenter): describe.
+        batch_size (Any): TODO(pycodecommenter): describe.
+
+    Yields:
+        Any: TODO(pycodecommenter): describe
+    """
+    for i in range(0, len(items), batch_size):
+        yield items[i:i + batch_size]
+```
+
 ### Recognised section headers
 
 The parser (`DocstringParser._parse_google`) splits on these headers:

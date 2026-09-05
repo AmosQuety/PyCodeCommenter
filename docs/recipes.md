@@ -31,7 +31,7 @@ repos:
         pass_filenames: true
 ```
 
-> **Note:** The `validate` subcommand accepts a single file path. The `pass_filenames: true` setting tells pre-commit to call the hook once per staged Python file. This is the correct setup because `pycodecommenter validate` does not yet accept directory paths — only file paths are supported.
+> **Note:** `pycodecommenter validate` accepts a directory too (since v2.3.0), but `pass_filenames: true` is still the right choice for a pre-commit hook — it calls the hook once per staged Python file, so the check only runs against what actually changed instead of re-validating the whole tree on every commit.
 
 Install the hook:
 
@@ -133,9 +133,36 @@ Fix any remaining WARNING or INFO issues, then commit. Step 4 will now also flag
 
 ## Recipe 4: Coverage Gating in CI
 
-Fail the CI build if documentation coverage falls below a threshold. The CLI `coverage` subcommand always exits with code 0, so threshold enforcement must be done via the Python API.
+Fail the CI build if documentation coverage falls below a threshold. Since v2.3.0, the CLI `coverage` subcommand does this natively with `--fail-below` — no wrapper script needed:
 
-Create a script `check_coverage.py`:
+```bash
+pycodecommenter coverage ./src --exclude migrations tests --fail-below 80
+```
+
+Add to your GitHub Actions workflow:
+
+```yaml
+      - name: Check coverage threshold
+        run: pycodecommenter coverage ./src --exclude migrations tests --fail-below 80
+```
+
+You can also set the threshold once in `.pycodecommenter.yaml` instead of repeating `--fail-below` in every CI config:
+
+```yaml
+# .pycodecommenter.yaml
+coverage:
+  threshold: 80
+```
+
+```bash
+pycodecommenter coverage ./src --exclude migrations tests
+```
+
+An explicit `--fail-below` on the command line always overrides the config value. See [Configuration](configuration.md) for the full key reference.
+
+### When you'd still reach for the Python API
+
+`--fail-below` covers the common case. Use the API directly instead when you need something the CLI flag doesn't offer — e.g. combining coverage with other checks in one script, or custom logging/formatting beyond `--output-format json`:
 
 ```python
 # check_coverage.py
@@ -156,15 +183,6 @@ print(f"\nPASSED: Coverage {project.total_coverage:.1f}% meets threshold {THRESH
 sys.exit(0)
 ```
 
-Add to your GitHub Actions workflow:
-
-```yaml
-      - name: Check coverage threshold
-        run: python check_coverage.py
-```
-
-> **Note:** The `coverage.threshold` and `coverage.fail_below` keys in `.pycodecommenter.yaml` are documented in the README but are not yet wired into the runtime. Use the Python API approach above for reliable threshold enforcement.
-
 ---
 
 ## Recipe 5: Excluding Test Files
@@ -177,7 +195,7 @@ When running coverage on a project, you often want to exclude test files and gen
 pycodecommenter coverage . --exclude tests migrations __pycache__ vendor
 ```
 
-The `--exclude` values are matched as substrings against each file path. A file is skipped if any of the patterns appears anywhere in its path.
+Each `--exclude` value is matched against a path *component* (a directory or file name), not as a substring against the whole path — `rebuild_index.py` is not skipped just because it contains `build`. A dot-prefixed pattern like `.egg-info` also matches a component it's a suffix of; an underscore-suffixed pattern like `test_` also matches a component it's a prefix of.
 
 **Via the Python API:**
 
@@ -187,12 +205,12 @@ from PyCodeCommenter import CoverageAnalyzer
 analyzer = CoverageAnalyzer()
 project = analyzer.analyze_directory(
     "./",
-    exclude_patterns=["tests", "test_", "migrations", "vendor", "__pycache__", ".git"]
+    exclude_patterns=["migrations", "vendor"]
 )
 project.print_report()
 ```
 
-> **Default exclusions:** When `exclude_patterns` is `None`, `CoverageAnalyzer.analyze_directory()` uses `['__pycache__', '.git', 'venv', 'tests', 'test_']`. Passing your own list **replaces** this default — it does not extend it.
+> **Default exclusions:** `CoverageAnalyzer.analyze_directory()` always applies its built-in defaults (`__pycache__`, `.git`, `.venv`, `venv`, `env`, `.tox`, `.nox`, `__pypackages__`, `site-packages`, `build`, `dist`, `.eggs`, `.egg-info`, `.mypy_cache`, `.pytest_cache`, `node_modules`, `tests`, `test_`) — including `tests`/`test_`, so you don't need to repeat those. `exclude_patterns` is **added** to that list, not a replacement for it; the example above only needs to name `migrations`/`vendor`, the extra patterns the defaults don't already cover.
 
 ---
 

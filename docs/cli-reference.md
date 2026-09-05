@@ -289,6 +289,12 @@ pycodecommenter
 # prints usage and subcommand list
 ```
 
+`--version` prints the installed version and exits 0:
+
+```bash
+pycodecommenter --version
+```
+
 ---
 
 ## Related

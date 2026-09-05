@@ -49,11 +49,11 @@ def process_data(items, strict=False):
     TODO(pycodecommenter): describe
 
     Args:
-        items (any): TODO(pycodecommenter): describe.
-        strict (any): Default is false. (default: False)
+        items (Any): TODO(pycodecommenter): describe.
+        strict (Any): Default is false. (default: False)
 
     Returns:
-        any: TODO(pycodecommenter): describe
+        Any: TODO(pycodecommenter): describe
     """
     return items
 ```
@@ -140,7 +140,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
 | AI / LLM dependency | None — fully deterministic |
 | Runtime dependencies | `ruamel.yaml` (config), `libcst` (patching) |
 | License | MIT |
-| Version | v2.3.0 |
+| Version | v2.4.0 |
 
 ---
 
@@ -164,7 +164,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
   "url": "https://amosquety.github.io/PyCodeCommenter/",
   "downloadUrl": "https://pypi.org/project/pycodecommenter/",
   "codeRepository": "https://github.com/AmosQuety/PyCodeCommenter",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "license": "https://opensource.org/licenses/MIT",
   "programmingLanguage": "Python",
   "runtimePlatform": "Python 3.9+",

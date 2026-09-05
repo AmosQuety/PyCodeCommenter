@@ -8,14 +8,14 @@ PyCodeCommenter is a deterministic, AST-based Python docstring generator and
 validator (published to PyPI as `pycodecommenter`). It generates Google-style
 docstrings from a function's actual signature, validates existing docstrings
 against real code (catching drift), and measures documentation coverage. No
-network calls, no AI/LLM dependency — everything is done with the stdlib `ast`
-module. Runtime dependency: `ruamel.yaml` (for `.pycodecommenter.yaml` config
-loading).
+network calls, no AI/LLM dependency — code analysis is done with the stdlib
+`ast` module. Runtime dependencies: `ruamel.yaml` (for `.pycodecommenter.yaml`
+config loading) and `libcst` (for source-preserving docstring patching in
+`commenter.py`'s `get_patched_code()`).
 
-Note: the repo root (this directory) also contains the installable package
-directory `PyCodeCommenter/` (note the case-identical nesting —
-`PyCodeCommenter/PyCodeCommenter/`). All commands below assume you're in this
-top-level directory unless noted.
+Note: the repo root (this directory) contains the installable package
+directory `PyCodeCommenter/`, one level deep (not nested further). All
+commands below assume you're in this top-level directory unless noted.
 
 ## Commands
 
@@ -85,9 +85,12 @@ re-exports the public API):
   source with `get_patched_code()`. It merges rather than overwrites: existing
   summary/param/return text is preserved, only missing sections are filled
   in. Docstring generation composes several helper modules:
-  - `templates.py` — description templates for common function name patterns.
-  - `parameter_descriptions.py` — heuristics for describing parameters by name.
-  - `inference.py` — infers human-readable descriptions from code context.
+  - `templates.py` — verb→template description map. Currently unused by the
+    generator (which uses `humanize_identifier` instead); retained as the
+    pattern the `v3.0.0` multi-style output work is planned to extend, per
+    `Future Work/v3.0.0...txt`.
+  - `inference.py` — infers human-readable parameter descriptions from name,
+    type hint, and default value.
   - `type_analyzer.py` — `TypeAnalyzer`, infers types from annotations and
     AST shape, including PEP 604 unions (`int | str`) and PEP 585 generics
     (`list[int]`).
