@@ -28,13 +28,14 @@ theme:
     - navigation.sections
     - navigation.top
     - navigation.indexes
+    - navigation.footer
     - search.highlight
     - search.suggest
     - search.share
     - content.code.copy
     - toc.follow
-  # logo: assets/logo.png   # Uncomment once docs/assets/logo.png is added
-  # favicon: assets/logo.png
+  logo: assets/favicon.svg
+  favicon: assets/favicon.svg
 
 nav:
   - Home: index.md

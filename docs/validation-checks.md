@@ -8,9 +8,46 @@ keywords: python docstring validation, docstring checks, signature mismatch, mis
 
 The validator (`DocstringValidator`) runs six categories of checks whenever `validate_all()` is called. Each check may produce issues at one of three severity levels:
 
-- **ERROR** — a real problem that causes `pycodecommenter validate` to exit with code 1
-- **WARNING** — an inconsistency that should be fixed but does not fail the build
-- **INFO** — a style or quality hint; never causes a non-zero exit
+<p>
+<span class="pcc-badge pcc-badge--error">ERROR</span> a real problem that causes <code>pycodecommenter validate</code> to exit with code 1 &nbsp;&middot;&nbsp;
+<span class="pcc-badge pcc-badge--warning">WARNING</span> an inconsistency that should be fixed but does not fail the build &nbsp;&middot;&nbsp;
+<span class="pcc-badge pcc-badge--info">INFO</span> a style or quality hint; never causes a non-zero exit
+</p>
+
+<div class="pcc-eyebrow">Jump to a category</div>
+<div class="pcc-category-grid">
+
+<a class="pcc-card" href="#parameter-not-documented">
+  <span class="pcc-card__title">Signature</span>
+  <span class="pcc-card__desc">Params in code vs. in the docstring.</span>
+</a>
+
+<a class="pcc-card" href="#return-type-hint-without-returns-section">
+  <span class="pcc-card__title">Types</span>
+  <span class="pcc-card__desc">Type hints vs. documented types.</span>
+</a>
+
+<a class="pcc-card" href="#raises-without-raises-section">
+  <span class="pcc-card__title">Exceptions</span>
+  <span class="pcc-card__desc"><code>raise</code> statements vs. a Raises section.</span>
+</a>
+
+<a class="pcc-card" href="#returns-a-value-without-returns-section">
+  <span class="pcc-card__title">Returns</span>
+  <span class="pcc-card__desc"><code>return value</code> vs. a Returns section.</span>
+</a>
+
+<a class="pcc-card" href="#empty-docstring">
+  <span class="pcc-card__title">Format</span>
+  <span class="pcc-card__desc">Summary line, standard section headers.</span>
+</a>
+
+<a class="pcc-card" href="#placeholder-text-found">
+  <span class="pcc-card__title">Quality</span>
+  <span class="pcc-card__desc">Placeholders, short summaries, duplicates.</span>
+</a>
+
+</div>
 
 Below is a summary table followed by a detailed breakdown of every check.
 
@@ -43,7 +80,7 @@ Below is a summary table followed by a detailed breakdown of every check.
 
 ## Missing Docstring (Function)
 
-**Severity:** ERROR
+**Severity:** <span class="pcc-badge pcc-badge--error">ERROR</span>
 **Category:** `missing`
 
 **What it checks:** Every function (`def` or `async def`) must have a docstring. If the first statement of the function body is not a string literal, this check fires.
@@ -67,7 +104,7 @@ def process_data(data, timeout=30):
 
 ## Missing Docstring (Class)
 
-**Severity:** ERROR
+**Severity:** <span class="pcc-badge pcc-badge--error">ERROR</span>
 **Category:** `missing`
 
 **What it checks:** Every class definition must have a docstring.
@@ -94,7 +131,7 @@ class DataProcessor:
 
 ## Parameter Not Documented
 
-**Severity:** ERROR
+**Severity:** <span class="pcc-badge pcc-badge--error">ERROR</span>
 **Category:** `signature`
 
 **What it checks:** Every parameter in the function signature (excluding `self` and `cls`) must appear in the `Args:` section of the docstring.
@@ -130,7 +167,7 @@ def calculate(price: float, tax: float):
 
 ## Parameter Documented but Not in Signature
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `signature`
 
 **What it checks:** Parameters listed in the `Args:` section must actually exist in the function signature. Stale entries from a previous version of the function are caught here.
@@ -164,7 +201,7 @@ def greet(name: str):
 
 ## Parameter Order Mismatch
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `signature`
 
 **What it checks:** When all parameters are accounted for (no missing, no extra), the order in `Args:` should match the order in the function signature. This check only fires when the parameter sets are identical.
@@ -197,7 +234,7 @@ def connect(host: str, port: int):
 
 ## `self` or `cls` Documented in Args
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `signature`
 
 **What it checks:** `self` and `cls` should never appear in the `Args:` section. They are implementation details, not parameters the caller provides.
@@ -221,7 +258,7 @@ class MyClass:
 
 ## Return Type Hint Without `Returns:` Section
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `types`
 
 **What it checks:** If the function has a return type annotation (e.g., `-> str`) but the docstring has no `Returns:` section, this is flagged.
@@ -243,7 +280,7 @@ def get_name() -> str:
 
 ## Annotated Parameter Not Documented
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `types`
 
 **What it checks:** A parameter that has a type annotation but is absent from the `Args:` section is a lighter-weight hint (INFO, not ERROR) caught here. The ERROR-level `signature` check covers the same case — this check fires only when the param has an annotation.
@@ -254,7 +291,7 @@ def get_name() -> str:
 
 ## Raises Without `Raises:` Section
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `exceptions`
 
 **What it checks:** If the function body contains any `raise` statements and the docstring has no `Raises:` section, this fires.
@@ -308,7 +345,7 @@ def divide(a, b):
 
 ## Returns a Value Without `Returns:` Section
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `returns`
 
 **What it checks:** If the function has a `return <value>` statement (a return statement with a non-None value) but the docstring has no `Returns:` section, this fires.
@@ -330,7 +367,7 @@ def double(x):
 
 ## `Returns:` Section Without Return Value
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `returns`
 
 **What it checks:** If the docstring has a `Returns:` section but the function has no `return <value>` statement (only a bare `return` or no return at all), this is flagged as an informational hint. This check is skipped for `__init__` methods.
@@ -355,7 +392,7 @@ def log_message(msg):
 
 ## Empty Docstring
 
-**Severity:** ERROR
+**Severity:** <span class="pcc-badge pcc-badge--error">ERROR</span>
 **Category:** `format`
 
 **What it checks:** The docstring exists (as a string literal) but contains no text after stripping whitespace.
@@ -373,7 +410,7 @@ def my_func():
 
 ## Missing Summary Line
 
-**Severity:** ERROR
+**Severity:** <span class="pcc-badge pcc-badge--error">ERROR</span>
 **Category:** `format`
 
 **What it checks:** The first line of the docstring (after stripping) is empty.
@@ -394,7 +431,7 @@ def my_func():
 
 ## Non-Standard Section Header
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `format`
 
 **What it checks:** Lines that look like section headers (capitalised, single word, ending with `:`) but are not in the official Google-style list are flagged.
@@ -420,7 +457,7 @@ def fetch(url):
 
 ## Placeholder Text Found
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `quality`
 
 **What it checks:** The docstring contains any of these placeholder strings (case-insensitive): `TODO`, `FIXME`, `XXX`, `HACK`, `Description of`, `TBD`, `To be determined`.
@@ -433,7 +470,7 @@ def fetch(url):
 
 ## Summary Line Too Short
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `quality`
 
 **What it checks:** The summary line (first line of the docstring) is fewer than 10 characters.
@@ -451,7 +488,7 @@ def save():
 
 ## Duplicate Parameter Descriptions
 
-**Severity:** WARNING
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
 **Category:** `quality`
 
 **What it checks:** When a function has more than one parameter, all parameter descriptions in `Args:` must be unique. Copy-pasted descriptions are flagged.
@@ -473,7 +510,7 @@ def copy(src, dst):
 
 ## Summary and Description Are Identical
 
-**Severity:** INFO
+**Severity:** <span class="pcc-badge pcc-badge--info">INFO</span>
 **Category:** `quality`
 
 **What it checks:** If the extended description (text between the summary and first section header) is identical to the summary line, the description is redundant.

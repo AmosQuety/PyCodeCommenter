@@ -70,6 +70,7 @@ Run a documentation quality check on every push and pull request. Use the config
     </select>
   </div>
 
+  <div class="pcc-ci-widget__output-label">Updates live as you choose above</div>
   <pre><code id="ci-output" class="language-yaml"># .github/workflows/docs-check.yml
 name: Documentation Check
 on: [push, pull_request]

@@ -10,7 +10,23 @@ keywords: python docstring generator, docstring validator, documentation coverag
 # PyCodeCommenter — Python Docstring Generator & Validator
 
 <div class="pcc-hero">
-  <div class="pcc-hero__logo"></></div>
+  <div class="pcc-hero__logo" aria-hidden="true">
+    <svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line class="pcc-ast-line" x1="60" y1="16" x2="30" y2="50" stroke="#0284C7" stroke-width="3" stroke-linecap="round"/>
+      <line class="pcc-ast-line" x1="60" y1="16" x2="90" y2="50" stroke="#0284C7" stroke-width="3" stroke-linecap="round"/>
+      <line class="pcc-ast-line" x1="30" y1="50" x2="16" y2="84" stroke="#3B82C4" stroke-width="2.5" stroke-linecap="round"/>
+      <line class="pcc-ast-line" x1="30" y1="50" x2="46" y2="84" stroke="#3B82C4" stroke-width="2.5" stroke-linecap="round"/>
+      <line class="pcc-ast-line" x1="90" y1="50" x2="74" y2="84" stroke="#3B82C4" stroke-width="2.5" stroke-linecap="round"/>
+      <line class="pcc-ast-line" x1="90" y1="50" x2="104" y2="84" stroke="#3B82C4" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="60" cy="16" r="7" fill="#0284C7"/>
+      <circle cx="30" cy="50" r="6" fill="#5B9FD6"/>
+      <circle cx="90" cy="50" r="6" fill="#5B9FD6"/>
+      <circle cx="16" cy="84" r="5" fill="#94A3B8"/>
+      <circle cx="46" cy="84" r="5" fill="#94A3B8"/>
+      <circle cx="74" cy="84" r="5" fill="#94A3B8"/>
+      <circle cx="104" cy="84" r="5" fill="#94A3B8"/>
+    </svg>
+  </div>
   <h2>Keep Python docstrings accurate as your code evolves.</h2>
   <p class="pcc-hero__tagline">
     Deterministic docstring generation and validation for production Python.
@@ -95,31 +111,37 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
 <div class="pcc-nav-cards">
 
 <a class="pcc-card" href="getting-started/">
+  <span class="pcc-card__icon">▸</span>
   <span class="pcc-card__title">Getting Started</span>
   <span class="pcc-card__desc">Step-by-step from install to your first generate, validate, and coverage run.</span>
 </a>
 
 <a class="pcc-card" href="validation-checks/">
+  <span class="pcc-card__icon">✓</span>
   <span class="pcc-card__title">Validation Checks</span>
   <span class="pcc-card__desc">All checks — severity levels, violation examples, and how to fix each one.</span>
 </a>
 
 <a class="pcc-card" href="recipes/">
+  <span class="pcc-card__icon">⟲</span>
   <span class="pcc-card__title">Recipes & CI</span>
   <span class="pcc-card__desc">Pre-commit hooks, GitHub Actions, and coverage gating patterns.</span>
 </a>
 
 <a class="pcc-card" href="cli-reference/">
+  <span class="pcc-card__icon">›_</span>
   <span class="pcc-card__title">CLI Reference</span>
   <span class="pcc-card__desc">Every flag and argument for generate, validate, and coverage — derived directly from the source.</span>
 </a>
 
 <a class="pcc-card" href="python-api/">
+  <span class="pcc-card__icon">{ }</span>
   <span class="pcc-card__title">Python API</span>
   <span class="pcc-card__desc">Use PyCodeCommenter programmatically: PyCodeCommenter, DocstringValidator, CoverageAnalyzer.</span>
 </a>
 
 <a class="pcc-card" href="faq/">
+  <span class="pcc-card__icon">?</span>
   <span class="pcc-card__title">FAQ</span>
   <span class="pcc-card__desc">Common questions answered directly from the source code.</span>
 </a>

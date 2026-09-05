@@ -10,6 +10,29 @@ The PyCodeCommenter command-line interface provides three subcommands: `generate
 
 The entry point is installed as `pycodecommenter` when you run `pip install pycodecommenter`.
 
+<div class="pcc-eyebrow">Jump to a subcommand</div>
+<div class="pcc-nav-cards">
+
+<a class="pcc-card" href="#pycodecommenter-generate">
+  <span class="pcc-card__icon">✎</span>
+  <span class="pcc-card__title">generate</span>
+  <span class="pcc-card__desc">Write or update docstrings for a file or directory, merging with anything already there.</span>
+</a>
+
+<a class="pcc-card" href="#pycodecommenter-validate">
+  <span class="pcc-card__icon">✓</span>
+  <span class="pcc-card__title">validate</span>
+  <span class="pcc-card__desc">Check existing docstrings against the real signature; exits non-zero on ERROR-level issues.</span>
+</a>
+
+<a class="pcc-card" href="#pycodecommenter-coverage">
+  <span class="pcc-card__icon">◔</span>
+  <span class="pcc-card__title">coverage</span>
+  <span class="pcc-card__desc">Measure documentation coverage per file or across a project, with optional threshold gating.</span>
+</a>
+
+</div>
+
 ---
 
 ## pycodecommenter generate

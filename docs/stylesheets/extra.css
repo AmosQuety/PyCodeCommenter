@@ -101,18 +101,44 @@
 }
 
 .pcc-hero__logo {
-  width: 80px;
-  height: 80px;
+  width: 132px;
+  height: 110px;
   margin: 0 auto 1rem;
-  background: #262A33;
-  border: 1px solid var(--md-default-fg-color--x-light);
-  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.5rem;
-  line-height: 1;
-  color: var(--md-typeset-a-color);
+}
+
+.pcc-hero__logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* A quiet "parse, don't guess" cue: the branches draw themselves in once
+   on load, root-first. Nodes are static -- only the connecting lines
+   animate, so the motion reads as construction, not decoration. */
+.pcc-ast-line {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: pcc-draw 0.7s ease-out forwards;
+}
+
+.pcc-ast-line:nth-of-type(1) { animation-delay: 0s; }
+.pcc-ast-line:nth-of-type(2) { animation-delay: 0s; }
+.pcc-ast-line:nth-of-type(3) { animation-delay: 0.25s; }
+.pcc-ast-line:nth-of-type(4) { animation-delay: 0.25s; }
+.pcc-ast-line:nth-of-type(5) { animation-delay: 0.25s; }
+.pcc-ast-line:nth-of-type(6) { animation-delay: 0.25s; }
+
+@keyframes pcc-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pcc-ast-line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
 
 .pcc-hero__tagline {
@@ -154,4 +180,97 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* The widget writes its output via plain textContent (see custom.js) --
+   it can't carry the build-time syntax highlighting every static code
+   block on this page has, and faking it with a client-side highlighter
+   isn't worth a new dependency for one block. Owning that directly (a
+   small "regenerates as you choose" label) reads as intentional instead
+   of broken. */
+.pcc-ci-widget__output-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.5rem;
+}
+
+.pcc-ci-widget__output-label::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+/* ── Eyebrow label: a small, consistent way to introduce a section
+   across different pages (used above card strips / grouped content) ── */
+.pcc-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-typeset-a-color);
+  margin-bottom: 0.5rem;
+}
+
+/* ── Severity badges (validation-checks.md) ───────────────────────────
+   Color reinforces severity but never carries it alone: every badge
+   pairs its color with the severity name as text. */
+.pcc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+.pcc-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pcc-badge--error {
+  color: #F87171;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.pcc-badge--warning {
+  color: #FBBF24;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.pcc-badge--info {
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+/* ── Compact category strip (validation-checks.md summary) ───────────── */
+.pcc-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.pcc-category-grid .pcc-card {
+  padding: 1rem 1.1rem;
 }
