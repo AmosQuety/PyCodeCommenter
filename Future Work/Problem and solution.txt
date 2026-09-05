@@ -1,0 +1,836 @@
+PROBLEM:
+
+Grounding this the way you asked — in what the code materially does when run, not what its docs or version number claim — here's what I actually see across those two files.
+
+The generator doesn't produce docstrings.
+ It produces the shape of a docstring.
+ Look at the literal bytes it wrote: "Description of the return value.", "Description of attribute.", "[describe purpose]", "Executes the function X.". These aren't degraded descriptions of behavior — they're not descriptions of anything.
+ There's no model of what calculate_discount does behind that text; there's a template with slots, filled by AST facts (names, annotations, defaults) and a small lookup table. That's a legitimate thing to build, but it isn't the thing the name promises.
+ A materialist test is simple: does the text refer to something real about the object, or only to its own template of origin? Here it's almost entirely the latter.
+ And there's a nice, concrete proof of that sitting in your own two files: validator.py's placeholder blacklist literally contains the string "Description of" — the exact phrase the generator writes into every unset field. Run the validator on the generator's own output and it fails its own bar. Not a matter of opinion; it's right there in both artifacts, independently generated, agreeing with each other.
+
+The bugs aren't scattered — they trace to one shared, unexamined assumption. func_node.args.args shows up as the sole source of truth for "this function's parameters" in three separate places I found: the generator's Args-section writer, and two of the validator's checks.
+All three silently go blind on keyword-only params, positional-only params, and *args/**kwargs — not because of three separate mistakes, but because the codebase's working model of "a function's parameters" is narrower than Python's actual grammar, and that narrower model got reused by convention rather than by a shared, tested primitive. Same story for classes: attributes are read exclusively off __init__'s parameter list, so a @dataclass with no __init__ in source, or a plain class that sets self.total inside a method body, is invisible to it.
+The tool's internal model of "the object it's operating on" is smaller than the object.
+
+
+That's the actual defect category here — not "has bugs," which is true of everything, but "models a subset of the language and doesn't know it."
+
+Where it's actually good: the parts that only require observing yes/no facts. "Does this node have a docstring." "Does this docstring contain a Returns: line." Those are exactly the kind of thing deterministic AST inspection is suited to, and there — modulo the same parameter-list blind spot — the validator holds up under scrutiny;
+I checked its findings against the source by hand and they were real. Coverage is even more honest about its own limits: it's a presence count, it says so in its own architecture notes, and it doesn't pretend to be more.
+The failure mode isn't the metric, it's trusting a cheap metric alone — which inference.py (100% coverage, 25 real issues) demonstrates cleanly.
+
+My honest read: this is a well-built lint tool wearing a documentation-generator's name tag. The validator and coverage modules are doing real, checkable work on real structural facts and I'd trust them in a CI gate today, bug notwithstanding. The generator is a scaffold — genuinely useful for saving keystrokes on the Args/Returns skeleton — but every string it writes that isn't a name or a type hint is filler, and it should be treated as a first draft requiring a full human rewrite pass, never as output.
+ If I were describing this package accurately rather than charitably, I'd call it a "docstring-skeleton linter with a template-fill assist," not a docstring generator.
+
+
+ SOLUTION:
+
+ Two different projects hide under "turn this into a real docstring generator," and they don't share a roadmap. I'd split the work into three tiers, in this order:
+
+Tier 0 — fix the shared blind spot (mechanical, no philosophy change, do this regardless of anything else)
+
+Every bug I found traces to one root cause: three call sites each independently rebuild "what are this function's parameters" from func_node.args.args alone.
+The fix isn't three patches, it's one shared primitive:
+
+
+def get_all_parameters(func_node) -> list[ast.arg]:
+    return [*func_node.args.posonlyargs, *func_node.args.args, *func_node.args.kwonlyargs]
+used by the generator's Args-writer and both validator checks, plus explicit (not incidental) handling of vararg/kwarg, and cls excluded alongside self.
+Same fix pattern for classes: extract attributes from AnnAssign nodes at class level (covers @dataclass) and self.x = ... assignments anywhere in __init__'s body (covers self.total), not just __init__'s parameter list.
+Add generator-function detection (ast.Yield/ast.YieldFrom present in body → it's a generator, don't claim it returns None, emit Yields: instead of Returns:).
+ This closes every concrete bug in both files. It's bounded, testable, and doesn't touch the deterministic-AST philosophy at all.
+
+
+Tier 1 — stop dressing guesses as facts
+
+This is the one that actually answers your question, because it's not a bug fix, it's a design fix. Right now the tool has two kinds of content and treats them identically: facts (a parameter's name, its type annotation, its default value — extracted, not guessed) and guesses (what the parameter or function "means" — templated). Collapsing that distinction is what makes the output read as documentation when it's a skeleton.
+I'd make the generator emit them differently — facts filled in silently, guesses left as an explicit, greppable marker (# TODO(pycodecommenter): describe) instead of a grammatically complete sentence that looks finished. That alone would fix the self-contradiction I found (generator output tripping the validator's own placeholder check) — because the placeholder would stop pretending to be prose.
+
+Tier 2 — the actual fork: this is where "generator" has to mean something
+
+Fact-filling and honest placeholders still don't produce a description of what calculate_discount does. Nothing in an AST tells you that — you'd need either genuinely deeper static analysis (trace body content: single-expression return → describe the expression; thin wrapper calling another function → "Delegates to X"; loop-plus-yield → summarize the pattern — raises the ceiling but is still pattern-matching, not understanding) or you cross into semantic generation, which means an LLM in the loop for the prose fields only, with the AST facts fed in as grounding to keep it from hallucinating.
+
+That second option is a real fork because the project's own architecture doc states "no network calls, no AI/LLM dependency" as a design pillar — that's not incidental, it's the tool's whole value proposition (deterministic, offline, CI-safe).
+So the decision isn't an engineering one, it's: does this project want to stay a deterministic scaffold-and-lint tool and be renamed/repositioned honestly around that (validator and coverage are genuinely good — lean into that identity), or does it want to add an optional, clearly-separated generative layer (pip install pycodecommenter[ai], opt-in, prose-only, validator/coverage untouched) and become a hybrid. Both are legitimate; pretending the current deterministic core will eventually produce real descriptions through more heuristics is the one option that doesn't actually work.
+
+If I were the maintainer, I'd ship Tier 0 and Tier 1 unconditionally — they're strict improvements either way — and treat Tier 2 as a explicit product decision, not a bug-tracker item.
+
+
+===== BEGIN TASK BRIEF ================================================
+Copy everything from this line down to the end of the Evidence Appendix and
+hand it to the implementing AI as one piece (the PROBLEM and SOLUTION sections
+above are useful human-facing context but are not required for the AI — every
+technical detail it needs is restated or embedded below).
+========================================================================
+
+IMPLEMENTATION NOTES:
+
+These close the gaps between "directionally correct roadmap" and "something an autonomous coding AI can execute without drifting." Written after re-checking exact locations against the source.
+
+0. Locations — read this first
+
+   This document was produced against a copy of PyCodeCommenter checked out at:
+
+       /home/amos/dev/python/python packages/Test_PyCodeCommenter/PyCodeCommenter
+
+   on this computer (call this the ANALYSIS CHECKOUT below). If you have filesystem
+   access to this same machine, you are granted READ-ONLY access to the analysis
+   checkout for extra context beyond what's embedded in this document — reports/,
+   scratch/, examples/, CLAUDE.md, the test_*.py files, pyproject.toml, etc. Do not
+   write, edit, or delete anything there under any circumstances; it belongs to a
+   separate, already-completed analysis session.
+
+   HARD EXCLUSION: do not open, read, or list this subfolder of the analysis
+   checkout at all:
+
+       /home/amos/dev/python/python packages/Test_PyCodeCommenter/PyCodeCommenter/PyCodeCommenter/
+
+   That is the PyCodeCommenter package source (commenter.py, validator.py, etc.) —
+   the exact same code you already have read/write access to in your own checkout.
+   Reading it a second time from here wastes time and tokens for no benefit, and
+   risks you confusing which copy is the one you're actually supposed to edit. Your
+   own checkout's package source is the only one you ever modify.
+
+   Two kinds of paths appear below:
+
+     - `PyCodeCommenter/commenter.py`, `PyCodeCommenter/validator.py`, etc. (module
+       paths in "Exact fix locations" below) are relative to YOUR OWN PyCodeCommenter
+       project root — wherever this repo is actually checked out for you to edit.
+       Resolve and edit them there, never against the analysis checkout above.
+
+     - `scratch/docstring_generation_fixture.py` and `reports/*` (in "Verification
+       loop" below and in the Evidence Appendix) are test/report artifacts that were
+       created during the analysis session and most likely do NOT exist yet in your
+       checkout — they are not part of upstream PyCodeCommenter. Their full contents
+       are embedded verbatim in the Evidence Appendix at the end of this document so
+       you don't need filesystem access at all to get them: write Appendix A's
+       content to `scratch/docstring_generation_fixture.py` in YOUR checkout before
+       running the verification loop. If you do have read access to the analysis
+       checkout and want to cross-check, you may read its `reports/` and `scratch/`
+       files (never its nested `PyCodeCommenter/` subfolder, per the exclusion
+       above) — but the embedded copies are the reliable source if that access
+       isn't available or the path doesn't exist for you.
+
+1. Exact fix locations (Tier 0)
+
+   - PyCodeCommenter/commenter.py, method _generate_function_docstring (starts line 149).
+     The Args-section loop is lines 171-202; the parameter source is line 172
+     (`defaults = [...] + func_node.args.args`) and line 175
+     (`for arg, default in zip(func_node.args.args, defaults)`). This is the ONLY
+     of the three sites that also needs a `cls` exclusion added — line 176 currently
+     excludes only `self` (`if arg.arg == 'self': continue`). The validator already
+     excludes both `self` and `cls` in the equivalent places (see below), so this is
+     a generator-only gap, not a shared one.
+
+   - PyCodeCommenter/commenter.py, method _get_class_attributes (lines 291-306).
+     Only reads `item.args.args[1:]` from `__init__` (line 304). Needs to also walk
+     `class_node.body` for `ast.AnnAssign` nodes (covers `@dataclass` fields with no
+     `__init__` in source) and walk `__init__`'s body for `self.x = ...`
+     (`ast.Assign` where target is `ast.Attribute` with `value.id == 'self'`) that
+     aren't already covered by a parameter of the same name.
+
+   - PyCodeCommenter/commenter.py, method _get_return_type (lines 361-378+).
+     Only looks for `ast.Return` via `ast.walk(func_node)` (line 375). Needs
+     `ast.Yield`/`ast.YieldFrom` detection to switch the docstring section from
+     `Returns:` to `Yields:`. LANDMINE: `ast.walk(func_node)` descends into nested
+     function/class definitions too, so a `return` or `yield` inside a nested `def`
+     (see fixture case #12, `make_multiplier`/`multiply`) would get misattributed to
+     the outer function if you naively extend this pattern. Walk only the function's
+     own statements, stopping recursion at nested FunctionDef/AsyncFunctionDef/
+     ClassDef boundaries, for both the existing Return scan and the new Yield scan.
+
+   - PyCodeCommenter/validator.py, method check_signature_match (starts line 360).
+     Parameter source is line 377: `actual_params = [arg.arg for arg in
+     func_node.args.args]`. Already strips a leading `self`/`cls` (lines 383-385) —
+     that part is fine. Only needs `posonlyargs`/`kwonlyargs`/`vararg`/`kwarg` added.
+
+   - PyCodeCommenter/validator.py, method check_type_consistency (starts line 437).
+     Parameter source is line 465: `for arg in func_node.args.args:`. Already skips
+     `self`/`cls` (line 466) — that part is fine too. Same extension needed as above.
+
+   Recommended: put `get_all_parameters(func_node)` (or equivalent, including
+   posonly/kwonly/vararg/kwarg with a way to distinguish them, since vararg/kwarg
+   need `*`/`**`-style rendering, not plain `(type): desc` lines) in one module both
+   commenter.py and validator.py already import from without a cycle — inference.py
+   or a new small shared module — not duplicated in both files.
+
+2. Verification loop — do not eyeball this, diff it
+
+   First, create `scratch/docstring_generation_fixture.py` in YOUR checkout using
+   the exact content in Appendix A below (see note 0 above — it will not already be
+   there). This is the exact file that proves every Tier 0 bug; it was built
+   specifically to exercise these 14 cases. Before making any code changes, run it
+   once against the UNMODIFIED codebase and confirm you reproduce Appendix B
+   byte-for-byte (this proves you're running the same version of the bug this
+   document describes, before you start changing anything):
+
+       PyCodeCommenter().from_file(
+           "scratch/docstring_generation_fixture.py"
+       ).generate_docstrings()
+
+   Appendix B below is that pre-fix baseline. After implementing the fix, regenerate
+   the same call and diff your new output against Appendix B.
+   Specifically confirm, by section number (see Appendix A for what each covers):
+     #4  iter_batches      -> now gets a Yields: section, not Returns: None
+     #6  build_report      -> title/sections/verbose now appear in Args
+     #7  clamp             -> value/low now appear in Args alongside high
+     #8  dispatch_event    -> *args/**kwargs now represented in Args
+     #10 OrderProcessor    -> `total` now appears in Attributes; classmethod
+                               `empty`'s Args no longer documents `cls`
+     #11 Coordinates       -> latitude/longitude/label now appear in Attributes
+   Do not consider Tier 0 done until all six diff cleanly against expectation.
+
+3. Regression guardrail
+
+   This touches shared logic used by every PASSING case too, not just the broken
+   ones — PEP 604/585 type rendering, async def support, nested-function placement,
+   and merge-preserve of already-good existing docstrings (fixture cases #1, #2, #5,
+   #9, #12, #13, #14) must still produce the same output they did before, character
+   for character where the fixture already showed them correct. Also run the
+   project's existing suite (`pytest`, run from the PyCodeCommenter/ project root
+   per this repo's CLAUDE.md) before and after — nothing here should turn a passing
+   test red. Add new tests for the six diff cases above into the existing suite
+   layout (test_edge_cases.py or test_modern.py are the closest fits already).
+
+4. Tier 1's fact/guess boundary, made operational
+
+   Content ORIGINATING from one of these is a fact — fill it in silently, no marker:
+     - the AST itself (parameter name, type annotation, default value, computed
+       return/yield type)
+     - PyCodeCommenter/parameter_descriptions.py's static per-function override dict
+       (someone deliberately wrote that entry)
+     - an existing docstring's own preserved text, merged in via DocstringParser
+       (it's the author's real words, never touch it)
+
+   Content originating from one of these is a guess — mark it, don't present it as
+   finished prose:
+     - inference.py's `infer_description()` GENERIC FALLBACK branch specifically
+       (the final "{Param} of the {function}" template, not the earlier name-pattern
+       or type-hint rules, which are legitimate lightweight inference and can stay
+       unmarked or be marked at your discretion)
+     - commenter.py's `get_function_description()` template lookup
+     - the class-docstring literal "{Class} class for [describe purpose]." filler
+     - any "Description of ..." literal currently hardcoded in commenter.py
+
+   Concretely: replace the "Description of the return value." / "Description of
+   attribute." / "[describe purpose]" literals with something that fails
+   PyCodeCommenter/validator.py's own placeholder check on purpose (it already
+   blacklists "Description of" and "TBD" — reuse that vocabulary rather than
+   inventing a new marker the validator doesn't already recognize), so generated
+   output that still has unresolved guesses in it visibly fails validation instead
+   of silently passing coverage.
+
+PROMPT FOR THE IMPLEMENTING AI:
+
+(continued from the task brief that began at "IMPLEMENTATION NOTES:" above — this
+is the explicit task scoping)
+
+---
+
+You have full read/write access to YOUR OWN checkout of PyCodeCommenter (the
+package at PyCodeCommenter/PyCodeCommenter/*.py within it) — not necessarily the
+same location on disk as wherever this brief was written from; see note 0 in the
+Implementation Notes above for how to resolve the paths used throughout this
+document. Your job is Tier 0 and Tier 1 ONLY, as
+scoped in the SOLUTION section above. Do not implement Tier 2 (no LLM integration,
+no new runtime dependency, no network calls) under any circumstances — it is
+explicitly called out above as a product decision for a human, not something to
+build on your own judgment. If you believe Tier 2 work is warranted, stop and say
+so instead of writing it.
+
+Scope, in order:
+1. Implement the shared parameter-extraction fix described in "Exact fix locations
+   (Tier 0)" above, at the five named locations (two in commenter.py's
+   _generate_function_docstring path, one in commenter.py's _get_class_attributes,
+   one in commenter.py's _get_return_type, two in validator.py). Watch the
+   ast.walk nested-scope landmine called out for _get_return_type/Yield detection.
+2. Implement the fact/guess marker distinction described in "Tier 1's fact/guess
+   boundary, made operational" above, reusing the validator's existing placeholder
+   vocabulary rather than inventing a new one.
+3. Verify using the diff procedure in "Verification loop" above against
+   scratch/docstring_generation_fixture.py (Appendix A) and
+   reports/fixture_docstrings_only.txt (Appendix B) — confirm all six named cases
+   by hand, not just that the diff is nonempty.
+4. Run the existing pytest suite from the PyCodeCommenter/ project root and confirm
+   no regressions, per the "Regression guardrail" section above. Add tests for the
+   six fixed cases into the existing suite.
+5. Report back: what changed, file:line for each change, the fixture diff for the
+   six named cases, and pytest pass/fail before and after.
+
+You do not need the PyCodeCommenter package source files reproduced here — you
+have direct access to the repository. The Evidence Appendix below gives you the
+test fixture and its current (buggy) output so you have a byte-exact baseline to
+diff against, plus supporting validator/coverage output referenced above.
+
+---
+
+EVIDENCE APPENDIX:
+
+Appendix A — scratch/docstring_generation_fixture.py (the input fixture; every
+function/class below is deliberately undocumented or only partially documented so
+that generation has something real to produce; each numbered section is one code
+shape under test):
+
+-----8<----- scratch/docstring_generation_fixture.py -----8<-----
+"""Fixture for exercising PyCodeCommenter's docstring GENERATION path.
+
+Not a pytest test file (deliberately not named ``test_*``) -- every
+function/class below is undocumented (or partially documented, where noted)
+on purpose, so that PyCodeCommenter().from_file(...).get_patched_code() has
+something real to generate. Each section is a distinct code shape the
+generator is expected to handle.
+
+Usage:
+    from PyCodeCommenter import PyCodeCommenter
+    patched = PyCodeCommenter().from_file(
+        "scratch/docstring_generation_fixture.py"
+    ).get_patched_code()
+"""
+
+from typing import Dict, List, Optional, Union
+from dataclasses import dataclass
+
+
+# ---------------------------------------------------------------------------
+# 1. Baseline: positional params with type hints, a default, and a return
+#    value. Exercises Args + Returns generation end to end.
+# ---------------------------------------------------------------------------
+def calculate_discount(price: float, rate: float = 0.1) -> float:
+    return price * (1 - rate)
+
+
+# ---------------------------------------------------------------------------
+# 2. No parameters, no return value. Exercises the "Args: None." fallback
+#    and a None return type.
+# ---------------------------------------------------------------------------
+def refresh_cache() -> None:
+    _CACHE.clear()
+
+
+_CACHE: Dict[str, int] = {}
+
+
+# ---------------------------------------------------------------------------
+# 3. Raises an exception. The validator has a Raises-section check; this
+#    tests whether generation ever emits one (expected: it does not --
+#    _generate_function_docstring only ever writes Args/Returns).
+# ---------------------------------------------------------------------------
+def parse_positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise ValueError(f"{value} must not be negative")
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# 4. Generator function (yield, not return). Tests whether the generator
+#    produces a sensible Returns section, a Yields section, or something
+#    incorrect for a function that never actually returns a value.
+# ---------------------------------------------------------------------------
+def iter_batches(items: List[int], batch_size: int = 10):
+    for i in range(0, len(items), batch_size):
+        yield items[i : i + batch_size]
+
+
+# ---------------------------------------------------------------------------
+# 5. Async function. Tests async def support end to end.
+# ---------------------------------------------------------------------------
+async def fetch_status(endpoint: str, timeout: float = 5.0) -> bool:
+    return len(endpoint) > 0 and timeout > 0
+
+
+# ---------------------------------------------------------------------------
+# 6. Keyword-only parameters (bare `*`). The validator is known to miss
+#    these (see reports/PACKAGE_ASSESSMENT.md); this checks whether
+#    generation has the same blind spot, since _generate_function_docstring
+#    also only iterates func_node.args.args.
+# ---------------------------------------------------------------------------
+def build_report(*, title: str, sections: List[str], verbose: bool = False) -> str:
+    return title + ":" + ",".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# 7. Positional-only parameters (`/`). Same concern as #6 but for
+#    args.posonlyargs instead of args.kwonlyargs.
+# ---------------------------------------------------------------------------
+def clamp(value: float, low: float, /, high: float = 1.0) -> float:
+    return max(low, min(value, high))
+
+
+# ---------------------------------------------------------------------------
+# 8. *args / **kwargs. Neither lives in func_node.args.args, so this checks
+#    whether the generator silently produces "Args: None." for a function
+#    that clearly does take arguments.
+# ---------------------------------------------------------------------------
+def dispatch_event(event_name: str, *args, **kwargs) -> None:
+    print(event_name, args, kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 9. Modern type hints: PEP 604 unions, PEP 585 generics, Optional, Union.
+#    Tests type inference quality/rendering in the generated Args section.
+# ---------------------------------------------------------------------------
+def merge_records(
+    primary: dict[str, int],
+    overrides: list[int] | None,
+    fallback: Optional[str] = None,
+    mode: Union[int, str] = "strict",
+) -> dict[str, int]:
+    result = dict(primary)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 10. A class with __init__ params, extra attributes assigned in the body
+#     (not just __init__ params), public/private methods, and one of each
+#     special method type. Tests class docstring generation: Attributes,
+#     Methods, and whether self.x = ... assignments beyond __init__'s own
+#     parameters are picked up (expected: they are not --
+#     _get_class_attributes only reads __init__'s parameter list).
+# ---------------------------------------------------------------------------
+class OrderProcessor:
+    def __init__(self, customer_id: str, items: List[str]):
+        self.customer_id = customer_id
+        self.items = items
+        self.total = 0.0  # computed attribute, not an __init__ parameter
+
+    def add_item(self, item: str, price: float) -> None:
+        self.items.append(item)
+        self.total += price
+
+    def _reset(self) -> None:
+        self.items = []
+        self.total = 0.0
+
+    @property
+    def item_count(self) -> int:
+        return len(self.items)
+
+    @staticmethod
+    def tax_for(amount: float, rate: float = 0.07) -> float:
+        return amount * rate
+
+    @classmethod
+    def empty(cls, customer_id: str) -> "OrderProcessor":
+        return cls(customer_id, [])
+
+
+# ---------------------------------------------------------------------------
+# 11. A dataclass with class-level annotated attributes and no explicit
+#     __init__. Tests whether attribute extraction (which only looks at
+#     __init__'s parameter list) finds anything at all here (expected: no,
+#     since there is no __init__ in source for it to inspect).
+# ---------------------------------------------------------------------------
+@dataclass
+class Coordinates:
+    latitude: float
+    longitude: float
+    label: str = "unnamed"
+
+    def distance_to(self, other: "Coordinates") -> float:
+        return ((self.latitude - other.latitude) ** 2 + (self.longitude - other.longitude) ** 2) ** 0.5
+
+
+# ---------------------------------------------------------------------------
+# 12. Nested function. Tests whether an inner def gets its own generated
+#     docstring correctly placed inside the outer function's body.
+# ---------------------------------------------------------------------------
+def make_multiplier(factor: int):
+    def multiply(value: int) -> int:
+        return value * factor
+
+    return multiply
+
+
+# ---------------------------------------------------------------------------
+# 13. Merge behavior, case A: only a one-line summary already exists.
+#     Expected: summary is preserved verbatim, Args/Returns are filled in.
+# ---------------------------------------------------------------------------
+def normalize_whitespace(text: str) -> str:
+    """Collapse runs of whitespace in the given text."""
+    return " ".join(text.split())
+
+
+# ---------------------------------------------------------------------------
+# 14. Merge behavior, case B: a complete, already-correct Google-style
+#     docstring. Expected: left untouched (or reproduced identically).
+# ---------------------------------------------------------------------------
+def slugify(text: str) -> str:
+    """Convert text into a URL-friendly slug.
+
+    Args:
+        text (str): The text to slugify.
+
+    Returns:
+        str: The lowercased, hyphen-joined slug.
+    """
+    return "-".join(text.lower().split())
+-----8<----- end scratch/docstring_generation_fixture.py -----8<-----
+
+Appendix B — reports/fixture_docstrings_only.txt (current, pre-fix output of
+PyCodeCommenter().from_file("scratch/docstring_generation_fixture.py")
+.generate_docstrings() — this is the byte-exact baseline to diff the post-fix
+output against; entries [5], [7], [8], [9], [11 Attributes], [17], [18] are the
+ones that must change):
+
+-----8<----- reports/fixture_docstrings_only.txt -----8<-----
+Docstrings generated by PyCodeCommenter().from_file(
+    "scratch/docstring_generation_fixture.py"
+).generate_docstrings()
+======================================================================
+
+[1]
+Module Docstring:
+Fixture for exercising PyCodeCommenter's docstring GENERATION path.
+
+Not a pytest test file (deliberately not named ``test_*``) -- every
+function/class below is undocumented (or partially documented, where noted)
+on purpose, so that PyCodeCommenter().from_file(...).get_patched_code() has
+something real to generate. Each section is a distinct code shape the
+generator is expected to handle.
+
+Usage:
+    from PyCodeCommenter import PyCodeCommenter
+    patched = PyCodeCommenter().from_file(
+        "scratch/docstring_generation_fixture.py"
+    ).get_patched_code()
+
+
+[2]
+"""Calculate discount.
+
+Calculates the discount.
+
+Args:
+    price (float): float value.
+    rate (float): float value. (default: 0.1)
+
+Returns:
+    float: Description of the return value.
+"""
+
+[3]
+"""Refresh cache.
+
+Executes the function refresh_cache.
+
+Args:
+    None.
+
+Returns:
+    None: Description of the return value.
+"""
+
+[4]
+"""Parse positive int.
+
+Parses the positive_int.
+
+Args:
+    value (str): String value.
+
+Returns:
+    int: Description of the return value.
+"""
+
+[5]
+"""Iter batches.
+
+Executes the function iter_batches.
+
+Args:
+    items (List[int]): List of items.
+    batch_size (int): int value. Default is 10. (default: 10)
+
+Returns:
+    None: Description of the return value.
+"""
+
+[6]
+"""Fetch status.
+
+Fetches the status.
+
+Args:
+    endpoint (str): String value.
+    timeout (float): Timeout in seconds. (default: 5.0)
+
+Returns:
+    bool: Description of the return value.
+"""
+
+[7]
+"""Build report.
+
+Builds the report.
+
+Args:
+    None.
+
+Returns:
+    str: Description of the return value.
+"""
+
+[8]
+"""Clamp.
+
+Executes the function clamp.
+
+Args:
+    high (float): float value. (default: 1.0)
+
+Returns:
+    float: Description of the return value.
+"""
+
+[9]
+"""Dispatch event.
+
+Executes the function dispatch_event.
+
+Args:
+    event_name (str): String value.
+
+Returns:
+    None: Description of the return value.
+"""
+
+[10]
+"""Merge records.
+
+Merges the records.
+
+Args:
+    primary (dict[str, int]): Mapping of keys to values.
+    overrides (Union[list[int], None]): Overrides of the merge records.
+    fallback (Optional[str]): Fallback of the merge records. (default: None)
+    mode (Union[int, str]): Default is 'strict'. (default: 'strict')
+
+Returns:
+    dict[str, int]: Description of the return value.
+"""
+
+[11]
+"""OrderProcessor class.
+
+OrderProcessor class for [describe purpose].
+
+Attributes:
+    customer_id (str): Description of attribute.
+    items (List[str]): Description of attribute.
+
+Methods:
+    add_item(): Description of method.
+    item_count(): Description of method.
+    tax_for(): Description of method.
+    empty(): Description of method.
+"""
+
+[12]
+"""Initialize the class.
+
+Initialize a new instance.
+
+Args:
+    customer_id (str): String value.
+    items (List[str]): List of items.
+
+Returns:
+    None: Description of the return value.
+"""
+
+[13]
+"""Add item.
+
+Adds a new item.
+
+Args:
+    item (str): String value.
+    price (float): float value.
+
+Returns:
+    None: Description of the return value.
+"""
+
+[14]
+"""Reset.
+
+Executes the function _reset.
+
+Args:
+    None.
+
+Returns:
+    None: Description of the return value.
+"""
+
+[15]
+"""Item count.
+
+Executes the function item_count.
+
+Args:
+    None.
+
+Returns:
+    int: Description of the return value.
+"""
+
+[16]
+"""Tax for.
+
+Executes the function tax_for.
+
+Args:
+    amount (float): float value.
+    rate (float): float value. (default: 0.07)
+
+Returns:
+    float: Description of the return value.
+"""
+
+[17]
+"""Empty.
+
+Executes the function empty.
+
+Args:
+    cls (any): Cls of the empty.
+    customer_id (str): String value.
+
+Returns:
+    any: Description of the return value.
+"""
+
+[18]
+"""Coordinates class.
+
+Coordinates class for [describe purpose].
+
+
+Methods:
+    distance_to(): Description of method.
+"""
+
+[19]
+"""Distance to.
+
+Executes the function distance_to.
+
+Args:
+    other (any): Other of the distance to.
+
+Returns:
+    float: Description of the return value.
+"""
+
+[20]
+"""Make multiplier.
+
+Executes the function make_multiplier.
+
+Args:
+    factor (int): int value.
+
+Returns:
+    any: Description of the return value.
+"""
+
+[21]
+"""Multiply.
+
+Executes the function multiply.
+
+Args:
+    value (int): int value.
+
+Returns:
+    int: Description of the return value.
+"""
+
+[22]
+"""Collapse runs of whitespace in the given text.
+
+Normalizes the whitespace.
+
+Args:
+    text (str): String value.
+
+Returns:
+    str: Description of the return value.
+"""
+
+[23]
+"""Convert text into a URL-friendly slug.
+
+Executes the function slugify.
+
+Args:
+    text (str): The text to slugify.
+
+Returns:
+    str: The lowercased, hyphen-joined slug.
+"""
+-----8<----- end reports/fixture_docstrings_only.txt -----8<-----
+
+Appendix C — excerpt from reports/validation_report.json / validation_report.txt,
+proving the SAME parameter-model bug independently on the validator side (not just
+the generator): PyCodeCommenter/inference.py's own infer_description() function is
+keyword-only (`*, param_name, type_hint, default_value, function_name,
+sibling_params`) and genuinely documents all five parameters in a NumPy-style
+docstring, yet check_signature_match reports all five as extra/undocumented
+because func_node.args.args sees zero parameters for a fully keyword-only
+signature:
+
+-----8<----- validation_report.txt (PyCodeCommenter/inference.py excerpt) -----8<-----
+FILE: PyCodeCommenter/inference.py
+  Coverage: 100.0%   Issues: 25 (errors=5, warnings=15, info=5)
+  [Missing/extra argument documentation]
+    line   19 [ERROR  ] Parameter 'name' is not documented in docstring
+    line   35 [ERROR  ] Parameter 'name' is not documented in docstring
+    line   50 [ERROR  ] Parameter 'param_name' is not documented in docstring
+    line   71 [ERROR  ] Parameter 'type_hint' is not documented in docstring
+    line   89 [ERROR  ] Parameter 'default_value' is not documented in docstring
+    line  105 [WARNING] Parameter 'param_name' is documented but not in function signature
+    line  105 [WARNING] Parameter 'sibling_params' is documented but not in function signature
+    line  105 [WARNING] Parameter 'function_name' is documented but not in function signature
+    line  105 [WARNING] Parameter 'default_value' is documented but not in function signature
+    line  105 [WARNING] Parameter 'type_hint' is documented but not in function signature
+-----8<----- end excerpt -----8<-----
+
+(line 105 is `def infer_description(*, param_name, type_hint=None, default_value=None,
+function_name=None, sibling_params=None) -> str:` — all five "documented but not in
+signature" warnings are for parameters that are, in fact, in the signature; they're
+just keyword-only, which func_node.args.args does not see.)
+
+Appendix D — reports/coverage_report.txt in full (project-wide presence-only
+coverage; included as supporting context for how coverage.py and validator.py
+diverge on the same file — see inference.py: 100.0% coverage here, 25 issues
+above):
+
+-----8<----- reports/coverage_report.txt -----8<-----
+PYCODECOMMENTER COVERAGE REPORT
+======================================================================
+Project: /home/amos/dev/python/python packages/Test_PyCodeCommenter/PyCodeCommenter
+Total coverage: 76.1%
+
+[!!] PyCodeCommenter/__init__.py                               0.0%  functions=    0/0  classes=    0/0
+[!!] PyCodeCommenter/cli.py                                   66.7%  functions=    2/3  classes=    0/0
+[!!] PyCodeCommenter/commenter.py                             59.4%  functions=  17/29  classes=    2/3
+[!!] PyCodeCommenter/config.py                                75.0%  functions=    2/3  classes=    1/1
+[!!] PyCodeCommenter/coverage.py                              80.0%  functions=    5/7  classes=    3/3
+[!!] PyCodeCommenter/docstring_parser.py                      90.0%  functions=    8/9  classes=    1/1
+[OK] PyCodeCommenter/inference.py                            100.0%  functions=    6/6  classes=    0/0
+[!!] PyCodeCommenter/parameter_descriptions.py                 0.0%  functions=    0/0  classes=    0/0
+[OK] PyCodeCommenter/templates.py                            100.0%  functions=    1/1  classes=    0/0
+[OK] PyCodeCommenter/type_analyzer.py                        100.0%  functions=    7/7  classes=    1/1
+[!!] PyCodeCommenter/validator.py                             81.5%  functions=  18/22  classes=    4/5
+[!!] conftest.py                                               0.0%  functions=    0/0  classes=    0/0
+[!!] examples/basic_usage.py                                   0.0%  functions=    0/1  classes=    0/0
+[OK] examples/ci_integration.py                              100.0%  functions=    1/1  classes=    0/0
+[!!] examples/coverage_example.py                              0.0%  functions=    0/1  classes=    0/0
+[!!] examples/validation_example.py                            0.0%  functions=    0/1  classes=    0/0
+[OK] generate_docs_and_reports.py                            100.0%  functions=    4/4  classes=    0/0
+[!!] main.py                                                   0.0%  functions=    0/0  classes=    0/0
+-----8<----- end reports/coverage_report.txt -----8<-----
