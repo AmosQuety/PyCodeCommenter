@@ -5,6 +5,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-05
+
+### Added
+- `--version` flag on the CLI, printing the installed version and exiting 0.
+
+### Fixed
+- **`validate`'s exception/return checks misattributed a nested function's
+  `raise`/`return` to the outer function.** `check_return_documentation` and
+  `check_exception_documentation` used a raw `ast.walk(func_node)`, which
+  descends into nested `def` bodies — a closure or helper function's own
+  `raise`/`return` produced a false-positive WARNING on the *enclosing*
+  function. `commenter.py` already had the fix for the identical bug class
+  (`_walk_function_body`, used by `_is_generator`/`_get_return_type`) but it
+  was never shared with `validator.py`. Both now share
+  `param_utils.walk_own_scope`.
+- **`_get_class_attributes` had the same class of bug, twice.** A `self.x =
+  ...` assignment inside a *class* nested within `__init__` was
+  misattributed to the outer class's `Attributes:` section (fixed with a
+  new `param_utils.walk_skipping_nested_classes`, which — unlike
+  `walk_own_scope` — still descends into nested *functions*/closures, since
+  those legitimately share the enclosing `__init__`'s own `self`). Separately,
+  `__init__`'s own parameters were read directly from `func_node.args.args`
+  instead of the shared `get_all_parameters()`/`exclude_self_cls()`
+  primitive, so keyword-only params and `**kwargs` got `(any)` in the
+  `Attributes:` section instead of their real type — inconsistent with the
+  correct type already shown for the same parameter in the `Args:` section
+  a few lines below.
+- Negative-number default values (e.g. `x=-1`) rendered as
+  `(default: unknown)`. `ast` represents a signed numeric literal as
+  `UnaryOp(USub, Constant(...))`, not a single `Constant` — `_get_default_value`
+  only handled the latter.
+- `pycodecommenter coverage <file>` crashed with a raw traceback (instead of
+  a clean error and exit 1) when the target file couldn't be parsed or
+  didn't exist. `CoverageAnalyzer.analyze_file()` had no error handling
+  around its own `open()`/`ast.parse()`, unlike `analyze_directory()`'s
+  per-file wrapping; `generate`/`validate` already handled this case
+  gracefully for a single file.
+
+### Removed
+- `parameter_descriptions.py`, a hardcoded dictionary of parameter
+  descriptions keyed to ~17 exact function names (`calculate_area`,
+  `send_email`, `connect_to_database`, etc.), consulted ahead of the
+  general rule-based inference in `inference.py`. It never generalized
+  beyond those exact names and fell through safely regardless — removed in
+  favor of `inference.py` alone. A function whose name and parameter
+  exactly matched one of those entries will now get
+  `TODO(pycodecommenter): describe` for that parameter instead of the old
+  canned sentence, same as any other parameter `inference.py` has no
+  signal for.
+
 ## [2.4.0] - 2026-08-24
 
 ### Added

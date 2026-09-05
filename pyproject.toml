@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "v2.4.0"
+version = "v2.5.0"
 
 description = "Automatically generate, validate, and measure Google-style Python docstrings. Deterministic AST-based docstring generator and validator with CI/CD integration, coverage reporting, and JSON output."
 readme = "README.md"
