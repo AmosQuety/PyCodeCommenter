@@ -498,8 +498,8 @@ class Coordinates:
 # Tier 1: fact/guess boundary. Guessed content (no real signal to describe a
 # parameter/function/attribute/method from) is marked with the TODO(...)
 # guess marker instead of being presented as a finished sentence; facts
-# (AST-derived types/names/defaults, parameter_descriptions.py overrides,
-# and preserved existing docstring text) are filled in silently.
+# (AST-derived types/names/defaults, and preserved existing docstring text)
+# are filled in silently.
 # ---------------------------------------------------------------------------
 
 
@@ -544,11 +544,11 @@ def test_legitimate_lightweight_inference_stays_unmarked(commenter):
     assert "int value" in args_section  # amount type-hint rule
 
 
-def test_static_override_and_preserved_text_stay_unmarked(commenter):
-    """A parameter_descriptions.py static override is a fact (someone
-    deliberately wrote it), and preserved text from an existing docstring is
-    the author's real words -- neither should ever be replaced by the guess
-    marker.
+def test_preserved_text_stays_unmarked(commenter):
+    """Preserved text from an existing docstring is the author's real
+    words -- it must never be replaced by the guess marker, even when a
+    sibling parameter in the same function has nothing to go on and
+    correctly gets the guess marker itself.
     """
     code = '''def calculate_area(length, width):
     """Calculate the area of a rectangle.
@@ -561,6 +561,82 @@ def test_static_override_and_preserved_text_stay_unmarked(commenter):
     commenter.from_string(code)
     patched = commenter.get_patched_code()
     args_section = patched.split("Args:", 1)[1].split("Returns:", 1)[0]
-    assert "TODO(pycodecommenter): describe" not in args_section
-    assert "Width of the rectangle." in args_section  # static override for width
     assert "The length, already documented by hand." in args_section  # preserved
+    assert "TODO(pycodecommenter): describe" in args_section  # width: no signal
+    assert "The length, already documented by hand." in args_section  # preserved
+
+
+def test_negative_default_value_rendered_correctly(commenter):
+    """A negative-number default parses as UnaryOp(USub, Constant), not a
+    single Constant -- _get_default_value must not fall back to "unknown"
+    for it.
+    """
+    code = """def clamp(value, floor=-1, ceiling=+1):
+    return max(floor, min(value, ceiling))
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "(default: -1)" in patched
+    assert "(default: +1)" in patched
+    assert "(default: unknown)" not in patched
+
+
+def test_nested_class_self_attr_not_attributed_to_outer(commenter):
+    """A `self.x = ...` assignment inside a class nested within __init__
+    belongs to the nested class's own instance -- it must not be
+    misattributed to the outer class's Attributes section.
+    """
+    code = """class Outer:
+    def __init__(self):
+        self.real_attr = 1
+
+        class Inner:
+            def __init__(self):
+                self.fake_attr_for_outer = 2
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    outer_doc = patched.split('"""Outer class.', 1)[1].split('"""', 2)[0]
+    assert "real_attr" in outer_doc
+    assert "fake_attr_for_outer" not in outer_doc
+
+
+def test_nested_closure_self_attr_still_found(commenter):
+    """Unlike a nested class, a nested closure shares the enclosing
+    __init__'s own `self` -- a self.x = ... assignment inside it is a real
+    instance attribute and must still be picked up.
+    """
+    code = """class Widget:
+    def __init__(self):
+        self.value = 0
+
+        def on_event(evt):
+            self.value = evt.value
+
+        self._handler = on_event
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    outer_doc = patched.split('"""Widget class.', 1)[1].split('"""', 2)[0]
+    assert "value" in outer_doc
+    assert "_handler" in outer_doc
+
+
+def test_class_attribute_types_match_init_args_section(commenter):
+    """The Attributes section's type inference must go through the same
+    get_all_parameters()/exclude_self_cls() primitive as the Args section,
+    so keyword-only params and **kwargs get the same (correct) type in
+    both places instead of falling back to "any" in Attributes only.
+    """
+    code = """class Config:
+    def __init__(self, *, host: str, port: int = 8080, **extra):
+        self.host = host
+        self.port = port
+        self.extra = extra
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    attrs_section = patched.split("Attributes:", 1)[1].split('"""', 1)[0]
+    assert "host (str)" in attrs_section
+    assert "port (int)" in attrs_section
+    assert "extra (dict)" in attrs_section

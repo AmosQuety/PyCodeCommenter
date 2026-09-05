@@ -15,9 +15,8 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-# Content that isn't extracted from the AST, a hand-written docstring, or a
-# deliberate per-function override in parameter_descriptions.py is a guess
-# about what something means, not a fact about it. Guesses are marked with
+# Content that isn't extracted from the AST or a hand-written docstring is
+# a guess about what something means, not a fact about it. Guesses are marked with
 # this instead of being dressed up as a finished sentence -- and the text
 # deliberately reuses "TODO", a placeholder validator.py's own
 # check_content_quality() already blacklists, so generated output that still

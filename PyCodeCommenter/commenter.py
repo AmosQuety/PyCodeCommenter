@@ -20,38 +20,28 @@ import libcst as cst
 from libcst.metadata import PositionProvider
 
 try:
-    from .parameter_descriptions import parameter_descriptions
     from .inference import infer_description, humanize_identifier, GUESS_MARKER
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
-    from .param_utils import get_all_parameters, exclude_self_cls
+    from .param_utils import (
+        get_all_parameters,
+        exclude_self_cls,
+        walk_own_scope,
+        walk_skipping_nested_classes,
+    )
 except (ImportError, ValueError):
-    from parameter_descriptions import parameter_descriptions
     from inference import infer_description, humanize_identifier, GUESS_MARKER
     from type_analyzer import TypeAnalyzer
     from docstring_parser import DocstringParser
-    from param_utils import get_all_parameters, exclude_self_cls
+    from param_utils import (
+        get_all_parameters,
+        exclude_self_cls,
+        walk_own_scope,
+        walk_skipping_nested_classes,
+    )
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-
-def _walk_function_body(func_node):
-    """Yields every AST node in func_node's own body, without descending
-    into nested function/class scopes.
-
-    ``ast.walk(func_node)`` descends into nested FunctionDef/
-    AsyncFunctionDef/ClassDef bodies too, so a ``return``/``yield`` inside a
-    nested ``def`` would get misattributed to the outer function. This stops
-    at those boundaries instead.
-    """
-    stack = list(func_node.body)
-    while stack:
-        node = stack.pop()
-        yield node
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        stack.extend(ast.iter_child_nodes(node))
 
 
 class PyCodeCommenter:
@@ -220,15 +210,8 @@ class PyCodeCommenter:
                 # A real static type annotation is provably correct from
                 # the code and always wins. Only fall back to a type
                 # documented in an existing docstring when static
-                # inference has nothing to offer ("any"). *args/**kwargs
-                # collect into a tuple/dict at runtime regardless of
-                # annotation, so that's used as the last-resort fact for them.
-                static_type = self._infer_type(param.arg)
-                if static_type == "any":
-                    if param.kind == "vararg":
-                        static_type = "tuple"
-                    elif param.kind == "kwarg":
-                        static_type = "dict"
+                # inference has nothing to offer ("any").
+                static_type = self._infer_param_type(param)
                 docstring_type = parsed_info.get("param_types", {}).get(
                     param.display_name
                 )
@@ -356,8 +339,7 @@ class PyCodeCommenter:
         default_value: str = None,
         sibling_params: list = None,
     ) -> str:
-        """Retrieve a description for a parameter, using static dict as
-        fallback and rule‑based inference as primary source.
+        """Retrieve a description for a parameter via rule‑based inference.
 
         Args:
             func_name (str): Name of the function containing the parameter.
@@ -370,11 +352,6 @@ class PyCodeCommenter:
         Returns:
             str: Description of the parameter.
         """
-        # First, try the static dictionary for explicit overrides.
-        static_desc = parameter_descriptions.get(func_name, {}).get(param_name)
-        if static_desc:
-            return static_desc
-        # Use rule‑based inference when possible.
         try:
             return infer_description(
                 param_name=param_name,
@@ -411,9 +388,19 @@ class PyCodeCommenter:
                 isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
                 and item.name == "__init__"
             ):
-                for arg in item.args.args[1:]:
-                    attributes[arg.arg] = self._infer_type(arg)
-                for node in ast.walk(item):
+                # Same parameter-extraction primitive the Args section uses,
+                # so positional-only/keyword-only/*args/**kwargs params are
+                # picked up here too, and with the same (correctly inferred)
+                # type instead of falling back to "any" via a self.x= scan.
+                for param in exclude_self_cls(get_all_parameters(item)):
+                    attributes[param.name] = self._infer_param_type(param)
+                # walk_skipping_nested_classes (not ast.walk) so a
+                # self.x = ... assignment inside a class nested within
+                # __init__ isn't misattributed to *this* class -- it
+                # belongs to the nested class's own instance, not this
+                # one. Nested closures are still descended into: they
+                # share this __init__'s own self.
+                for node in walk_skipping_nested_classes(item):
                     if (
                         isinstance(node, ast.Assign)
                         and len(node.targets) == 1
@@ -463,6 +450,31 @@ class PyCodeCommenter:
         """
         return self.type_analyzer.infer_type(node)
 
+    def _infer_param_type(self, param: Any) -> str:
+        """
+        Infers a parameter's type, same as ``_infer_type`` plus a
+        *args/**kwargs fallback.
+
+        A real static type annotation is always used when present.
+        Otherwise, ``*args``/``**kwargs`` collect into a tuple/dict at
+        runtime regardless of annotation, so that's used as the
+        last-resort fact for them instead of leaving them as "any".
+
+        Args:
+            param (Any): A ``param_utils.Parameter`` (has ``.arg`` and
+                ``.kind``).
+
+        Returns:
+            str: The inferred type.
+        """
+        static_type = self._infer_type(param.arg)
+        if static_type == "any":
+            if param.kind == "vararg":
+                return "tuple"
+            if param.kind == "kwarg":
+                return "dict"
+        return static_type
+
     def _infer_expr_type(
         self, expr: Any, local_types: Optional[Dict[str, str]] = None
     ) -> str:
@@ -490,6 +502,18 @@ class PyCodeCommenter:
         """
         if isinstance(default_node, ast.Constant):
             return repr(default_node.value)
+        # A signed numeric literal (e.g. -1) parses as UnaryOp(USub, Constant),
+        # not a single Constant -- ast only folds the sign into the constant
+        # for compile-time optimization, which doesn't apply to a default
+        # value expression here.
+        if (
+            isinstance(default_node, ast.UnaryOp)
+            and isinstance(default_node.op, (ast.USub, ast.UAdd))
+            and isinstance(default_node.operand, ast.Constant)
+            and isinstance(default_node.operand.value, (int, float, complex))
+        ):
+            sign = "-" if isinstance(default_node.op, ast.USub) else "+"
+            return f"{sign}{default_node.operand.value!r}"
         return "unknown"
 
     def _is_generator(
@@ -507,7 +531,7 @@ class PyCodeCommenter:
         """
         return any(
             isinstance(node, (ast.Yield, ast.YieldFrom))
-            for node in _walk_function_body(func_node)
+            for node in walk_own_scope(func_node)
         )
 
     def _get_return_type(
@@ -536,14 +560,14 @@ class PyCodeCommenter:
         if self._is_generator(func_node):
             value_nodes = [
                 node
-                for node in _walk_function_body(func_node)
+                for node in walk_own_scope(func_node)
                 if isinstance(node, (ast.Yield, ast.YieldFrom))
                 and node.value is not None
             ]
         else:
             value_nodes = [
                 node
-                for node in _walk_function_body(func_node)
+                for node in walk_own_scope(func_node)
                 if isinstance(node, ast.Return) and node.value is not None
             ]
 

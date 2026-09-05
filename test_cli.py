@@ -1,13 +1,13 @@
 """
 Tests for the Phase 4 CLI changes: directory support for `generate` and
 `validate`, `--fail-below` on `coverage`, and .pycodecommenter.yaml config
-wiring (exclude / coverage.threshold).
+wiring (exclude / coverage.threshold); plus `--version` and single-file
+`coverage` error handling.
 
-NOT YET RUN. Written per audit Phase 4 follow-up request - review before
-running/committing. cli.main() reads sys.argv and calls sys.exit(), so
-each test drives it via monkeypatched argv and catches SystemExit rather
-than shelling out to a subprocess (faster, and keeps coverage instrumentation
-working if this suite is ever run under `pytest --cov`).
+cli.main() reads sys.argv and calls sys.exit(), so each test drives it via
+monkeypatched argv and catches SystemExit rather than shelling out to a
+subprocess (faster, and keeps coverage instrumentation working if this
+suite is ever run under `pytest --cov`).
 """
 
 import sys
@@ -186,3 +186,29 @@ def test_coverage_without_fail_below_or_config_never_exits_nonzero_for_it(
     # no-op regardless of how low coverage is.
     exit_code, _, _ = run_cli(["coverage", ".", "--exclude"], monkeypatch, capsys)
     assert exit_code == 0
+
+
+# --- --version ---------------------------------------------------------
+
+
+def test_version_flag_prints_version_and_exits_0(monkeypatch, capsys):
+    from PyCodeCommenter import __version__
+
+    exit_code, out, _ = run_cli(["--version"], monkeypatch, capsys)
+    assert exit_code == 0
+    assert __version__ in out
+
+
+# --- coverage: single-file error handling -----------------------------
+
+
+def test_coverage_single_file_syntax_error_exits_cleanly(tmp_path, monkeypatch, capsys):
+    """A single-file `coverage` target that fails to parse must print a
+    clean error and exit 1, not crash with an unhandled traceback -- same
+    contract `generate`/`validate` already have for a broken single file.
+    """
+    bad_file = tmp_path / "broken.py"
+    bad_file.write_text("def f(:\n")
+    exit_code, _, err = run_cli(["coverage", str(bad_file)], monkeypatch, capsys)
+    assert exit_code == 1
+    assert "broken.py" in err

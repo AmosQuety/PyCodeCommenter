@@ -9,6 +9,7 @@ import os
 import difflib
 import shutil
 from pathlib import Path
+from . import __version__
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
 from .coverage import CoverageAnalyzer, shields_badge_dict
@@ -89,6 +90,11 @@ def main():
         description=(
             "PyCodeCommenter CLI - Automatic docstring generation and validation."
         )
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -328,7 +334,11 @@ def main():
             else:
                 result.print_report()
         else:
-            result = analyzer.analyze_file(args.path)
+            try:
+                result = analyzer.analyze_file(args.path)
+            except (IOError, OSError, SyntaxError, UnicodeDecodeError) as e:
+                print(f"Error: Could not analyze {args.path}: {e}", file=sys.stderr)
+                sys.exit(1)
             coverage_percentage = result.coverage_percentage
             if args.output_format == "json":
                 functions_ratio = (

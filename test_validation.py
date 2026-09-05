@@ -383,3 +383,47 @@ def divide(a, b):
         assert isinstance(
             issue["line"], int
         ), f"'line' must be int, got {type(issue['line'])}: {issue['line']}"
+
+
+# ---------------------------------------------------------------------------
+# Nested-scope misattribution -- ast.walk(func_node) crosses into nested
+# def bodies, so a return/raise belonging to an inner function must not be
+# attributed to the outer one (same landmine already fixed for the
+# generator's _get_return_type; check_return_documentation and
+# check_exception_documentation independently rebuilt the unsafe ast.walk
+# and needed the same fix).
+# ---------------------------------------------------------------------------
+
+
+def test_nested_function_return_not_attributed_to_outer():
+    """A `return <value>` inside a nested def must not make the *outer*
+    function look like it returns a value."""
+    code = '''
+def outer():
+    """Do the outer thing."""
+    def inner():
+        return 42
+    inner()
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    outer_issues = [i for i in report.issues if ":outer" in i.location]
+    assert not any(
+        i.category == "returns" for i in outer_issues
+    ), f"outer() falsely flagged for returning a value: {outer_issues}"
+
+
+def test_nested_function_raise_not_attributed_to_outer():
+    """A `raise` inside a nested def must not make the *outer* function
+    look like it raises that exception."""
+    code = '''
+def outer():
+    """Do the outer thing."""
+    def inner():
+        raise ValueError("bad")
+    return inner
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    outer_issues = [i for i in report.issues if ":outer" in i.location]
+    assert not any(
+        i.category == "exceptions" for i in outer_issues
+    ), f"outer() falsely flagged for raising an exception: {outer_issues}"

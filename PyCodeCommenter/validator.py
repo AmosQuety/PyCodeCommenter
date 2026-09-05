@@ -22,10 +22,10 @@ from enum import Enum
 
 try:
     from .docstring_parser import DocstringParser
-    from .param_utils import get_all_parameters, exclude_self_cls
+    from .param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
 except (ImportError, ValueError):
     from docstring_parser import DocstringParser
-    from param_utils import get_all_parameters, exclude_self_cls
+    from param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
 
 logger = logging.getLogger(__name__)
 
@@ -565,9 +565,11 @@ class DocstringValidator:
         """
         issues = []
 
-        # Find all raise statements in function body
+        # Find all raise statements in function body. walk_own_scope (not
+        # ast.walk) so a raise inside a nested def isn't misattributed to
+        # this function -- it belongs to the nested function's own scope.
         raised_exceptions = set()
-        for node in ast.walk(func_node):
+        for node in walk_own_scope(func_node):
             if isinstance(node, ast.Raise):
                 if node.exc:
                     # Extract exception name
@@ -617,9 +619,10 @@ class DocstringValidator:
         issues = []
         parser = DocstringParser(docstring)
 
-        # Find all return statements
+        # Find all return statements. walk_own_scope (not ast.walk) so a
+        # return inside a nested def isn't misattributed to this function.
         has_return_value = False
-        for node in ast.walk(func_node):
+        for node in walk_own_scope(func_node):
             if isinstance(node, ast.Return) and node.value is not None:
                 has_return_value = True
                 break

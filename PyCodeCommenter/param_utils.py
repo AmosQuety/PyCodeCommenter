@@ -11,9 +11,79 @@ now use instead.
 """
 
 import ast
-from typing import List, NamedTuple, Optional, Union
+from typing import Iterator, List, NamedTuple, Optional, Union
 
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
+
+
+def _walk_until(node: ast.AST, boundary_types: tuple) -> Iterator[ast.AST]:
+    """Shared traversal for the two scope-bounded walkers below: yields every
+    descendant of *node*, without descending past a node whose type is in
+    *boundary_types*. The boundary node itself is still yielded, just not
+    expanded further.
+
+    Args:
+        node (ast.AST): The node whose descendants should be walked.
+        boundary_types (tuple): AST node types to yield but not expand into.
+
+    Yields:
+        ast.AST: Every descendant node up to each boundary.
+    """
+    stack = list(ast.iter_child_nodes(node))
+    while stack:
+        child = stack.pop()
+        yield child
+        if isinstance(child, boundary_types):
+            continue
+        stack.extend(ast.iter_child_nodes(child))
+
+
+def walk_own_scope(node: ast.AST) -> Iterator[ast.AST]:
+    """Yields every descendant of *node* without crossing into a nested
+    function/class scope.
+
+    ``ast.walk(node)`` descends into nested ``FunctionDef``/
+    ``AsyncFunctionDef``/``ClassDef`` bodies too, so e.g. a ``return``/
+    ``yield``/``raise`` inside a nested ``def`` gets misattributed to
+    *node*'s own scope. This stops at those boundaries instead. *node*
+    itself is not yielded, matching ``ast.walk``'s behavior of yielding
+    only descendants.
+
+    Use this for anything that must belong to *exactly* this function --
+    a ``return``/``yield``/``raise`` inside a nested ``def`` is the nested
+    function's, never the outer one's. For a ``self.x = ...`` scan, where a
+    nested *closure* (not a nested class) legitimately shares the same
+    ``self``, use :func:`walk_skipping_nested_classes` instead.
+
+    Args:
+        node (ast.AST): The node whose own scope should be walked (typically
+            a function or async function node's body).
+
+    Returns:
+        Iterator[ast.AST]: Every descendant node in *node*'s own scope.
+    """
+    return _walk_until(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+
+
+def walk_skipping_nested_classes(node: ast.AST) -> Iterator[ast.AST]:
+    """Yields every descendant of *node* without crossing into a nested
+    class's body -- but *does* descend into nested functions/closures.
+
+    A nested ``def`` inside e.g. ``__init__`` still closes over the same
+    ``self``, so ``self.x = ...`` inside it is a real attribute of the
+    instance being constructed and must still be found. A nested ``class``
+    inside ``__init__`` has its own, different ``self`` in its own methods,
+    so ``self.x = ...`` there belongs to *that* class, not *node*'s.
+
+    Args:
+        node (ast.AST): The node whose scope should be walked (typically a
+            function or async function node's body).
+
+    Returns:
+        Iterator[ast.AST]: Every descendant node, excluding nested classes'
+            internals.
+    """
+    return _walk_until(node, (ast.ClassDef,))
 
 
 class Parameter(NamedTuple):
