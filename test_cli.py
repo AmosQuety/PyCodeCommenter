@@ -117,6 +117,42 @@ def test_generate_directory_rejects_output_flag(project, monkeypatch, capsys):
     assert "--output cannot be used with a directory" in out
 
 
+def test_generate_directory_output_dir_mirrors_tree_without_touching_originals(
+    project, monkeypatch, capsys
+):
+    """Regression test for AUDIT_REPORT.md §6: a directory target must be
+    writable to a separate, fully-documented output tree, leaving the
+    originals untouched -- the gap that made document_folder.py necessary
+    as a hand-rolled external script."""
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", "out"], monkeypatch, capsys
+    )
+    assert exit_code == 0
+    assert (project / "out" / "a.py").exists()
+    assert (project / "out" / "sub" / "b.py").exists()
+    assert '"""' in (project / "out" / "a.py").read_text()
+    # Originals must be untouched.
+    assert (project / "a.py").read_text() == "def foo(x, y):\n    return x + y\n"
+    assert "Wrote 2/2 file(s)" in out
+
+
+def test_generate_directory_output_dir_rejects_inplace(project, monkeypatch, capsys):
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", "out", "--inplace"], monkeypatch, capsys
+    )
+    assert exit_code == 1
+    assert "--output-dir cannot be combined with --inplace" in out
+    assert not (project / "out").exists()
+
+
+def test_generate_single_file_rejects_output_dir(project, monkeypatch, capsys):
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--output-dir", "out"], monkeypatch, capsys
+    )
+    assert exit_code == 1
+    assert "--output-dir cannot be used with a single-file target" in out
+
+
 # --- exclude: CLI flag and config wiring ------------------------------------
 
 
@@ -212,3 +248,172 @@ def test_coverage_single_file_syntax_error_exits_cleanly(tmp_path, monkeypatch, 
     exit_code, _, err = run_cli(["coverage", str(bad_file)], monkeypatch, capsys)
     assert exit_code == 1
     assert "broken.py" in err
+
+
+# --- generate: --ai-draft flag gating (no real network calls in any of
+# these -- urlopen is mocked, and the consent file is isolated to a tmp
+# home directory so tests never touch the real ~/.pycodecommenter/) -------
+
+
+class _FakeAIResponse:
+    def __init__(self, body):
+        self._body = json.dumps(body).encode("utf-8")
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+@pytest.fixture
+def isolated_consent_home(tmp_path, monkeypatch):
+    """Points consent.py's ~/.pycodecommenter/ at a throwaway directory, so
+    a test that records real consent (e.g. via --yes-send-code-to-hosted-ai)
+    never writes to the actual developer machine's consent file."""
+    import PyCodeCommenter.consent as consent
+
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    monkeypatch.setattr(consent.Path, "home", staticmethod(lambda: fake_home))
+    return fake_home
+
+
+@pytest.fixture
+def fake_ai_backend(monkeypatch, isolated_consent_home):
+    """Mocks the hosted backend's HTTP response and pre-grants consent, so
+    CLI wiring (flag gating, consent gate, provider construction) is proven
+    without touching the network or the real consent file."""
+    import PyCodeCommenter.consent as consent
+
+    consent.record_consent()
+
+    captured = {"calls": 0}
+
+    def fake_urlopen(request, timeout):
+        captured["calls"] += 1
+        return _FakeAIResponse({"description": "A fake AI-drafted description."})
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+    return captured
+
+
+def test_ai_draft_with_inplace_requires_accept_ai_drafts(project, monkeypatch, capsys):
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--ai-draft", "--inplace"], monkeypatch, capsys
+    )
+    assert exit_code == 1
+    assert "--accept-ai-drafts" in out
+    # Must not have written anything.
+    assert "def foo" in (project / "a.py").read_text()
+    assert "AI-drafted" not in (project / "a.py").read_text()
+
+
+def test_ai_draft_without_consent_prompts_and_aborts_on_decline(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    monkeypatch.setattr("builtins.input", lambda: "n")
+
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
+    )
+
+    assert exit_code == 1
+    assert "consent" in out.lower()
+    assert "def foo" in (project / "a.py").read_text()
+
+
+def test_ai_draft_with_dry_run_needs_no_extra_flag(
+    project, monkeypatch, capsys, fake_ai_backend
+):
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
+    )
+    assert exit_code == 1  # dry-run's own "changes detected" exit code
+    assert "A fake AI-drafted description." in out
+
+
+def test_ai_draft_with_inplace_and_accept_flag_writes_marked_text(
+    project, monkeypatch, capsys, fake_ai_backend
+):
+    exit_code, out, _ = run_cli(
+        [
+            "generate",
+            "a.py",
+            "--ai-draft",
+            "--accept-ai-drafts",
+            "--inplace",
+        ],
+        monkeypatch,
+        capsys,
+    )
+    assert exit_code == 0
+    patched = (project / "a.py").read_text()
+    assert "A fake AI-drafted description." in patched
+    assert "(AI-drafted, unreviewed)" in patched
+
+
+def test_ai_draft_yes_flag_records_consent_non_interactively(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    import PyCodeCommenter.consent as consent
+
+    assert consent.has_given_consent() is False
+    monkeypatch.setattr(
+        "builtins.input", lambda: (_ for _ in ()).throw(AssertionError())
+    )
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen",
+        lambda request, timeout: _FakeAIResponse({"description": "ok."}),
+    )
+
+    exit_code, out, _ = run_cli(
+        [
+            "generate",
+            "a.py",
+            "--ai-draft",
+            "--dry-run",
+            "--yes-send-code-to-hosted-ai",
+        ],
+        monkeypatch,
+        capsys,
+    )
+
+    assert exit_code == 1  # dry-run's own "changes detected" exit code
+    assert consent.has_given_consent() is True
+
+
+def test_ai_draft_backend_url_is_overridable_via_env_var(
+    project, monkeypatch, capsys, fake_ai_backend
+):
+    monkeypatch.setenv("PYCODECOMMENTER_AI_BACKEND_URL", "https://staging.example.test")
+    captured_url = {}
+
+    def fake_urlopen(request, timeout):
+        captured_url["url"] = request.full_url
+        return _FakeAIResponse({"description": "ok."})
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+
+    run_cli(["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys)
+
+    assert captured_url["url"] == "https://staging.example.test/v1/draft-description"
+
+
+def test_ai_draft_shared_across_directory_run(
+    project, monkeypatch, capsys, fake_ai_backend
+):
+    """Both files in the `project` fixture (2 functions total) should be
+    processed in one run without errors, sharing the same provider
+    instance."""
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--ai-draft", "--dry-run"], monkeypatch, capsys
+    )
+    assert fake_ai_backend["calls"] >= 1

@@ -110,6 +110,15 @@ def main():
         "-o", "--output", help="Output file path (single-file targets only)"
     )
     generate_parser.add_argument(
+        "--output-dir",
+        help=(
+            "Write a fully-documented copy of a directory target's tree to "
+            "PATH, mirroring each file's relative path, leaving the "
+            "originals untouched (directory targets only). Mutually "
+            "exclusive with --inplace."
+        ),
+    )
+    generate_parser.add_argument(
         "--dry-run", action="store_true", help="Show diff without writing any files"
     )
     generate_parser.add_argument(
@@ -124,7 +133,50 @@ def main():
         default=config_exclude,
         help="Patterns to exclude (directory targets only)",
     )
-
+    generate_parser.add_argument(
+        "--include-module-docstrings",
+        action="store_true",
+        help=(
+            "Also generate a module-level docstring for a file that has "
+            "none at all. Off by default: unlike a missing function/class "
+            "docstring, this touches the output of nearly every file that "
+            "lacks a module docstring, not just ones that need it most."
+        ),
+    )
+    generate_parser.add_argument(
+        "--ai-draft",
+        action="store_true",
+        help=(
+            "Opt in to AI-assisted drafting for descriptions the "
+            "deterministic generator has no real signal for, via a "
+            "hosted backend (no local API keys required). Every "
+            "AI-drafted description carries a permanent '(AI-drafted, "
+            "unreviewed)' marker. Requires one-time consent to send "
+            "source code to the hosted backend (see "
+            "--yes-send-code-to-hosted-ai for non-interactive use). "
+            "Combined with --inplace, also requires --accept-ai-drafts; "
+            "works with --dry-run/--output-dir alone, since those are "
+            "already review-first."
+        ),
+    )
+    generate_parser.add_argument(
+        "--accept-ai-drafts",
+        action="store_true",
+        help=(
+            "Required alongside --ai-draft when also using --inplace -- an "
+            "explicit, separate acknowledgment that unreviewed AI-drafted "
+            "text is being written straight to your source files."
+        ),
+    )
+    generate_parser.add_argument(
+        "--yes-send-code-to-hosted-ai",
+        action="store_true",
+        help=(
+            "Skip the interactive consent prompt for --ai-draft and "
+            "record consent automatically -- for non-interactive/CI use. "
+            "Has no effect if consent is already on file."
+        ),
+    )
     # Validate command
     validate_parser = subparsers.add_parser(
         "validate", help="Validate docstrings for a file or directory"
@@ -180,9 +232,57 @@ def main():
     args = parser.parse_args()
 
     if args.command == "generate":
+        description_provider = None
+        if args.ai_draft:
+            if args.inplace and not args.accept_ai_drafts:
+                print(
+                    "Error: --ai-draft with --inplace also requires "
+                    "--accept-ai-drafts -- an explicit acknowledgment that "
+                    "unreviewed AI-drafted text is being written straight "
+                    "to your source files. Review with --dry-run or "
+                    "--output-dir first, or pass --accept-ai-drafts."
+                )
+                sys.exit(1)
+
+            # Imported lazily: importing the CLI at all must never require
+            # these modules to matter unless --ai-draft is actually used.
+            try:
+                from .consent import ensure_consent
+                from .remote_provider import (
+                    DEFAULT_BACKEND_URL,
+                    RemoteDescriptionProvider,
+                )
+            except ImportError:
+                from consent import ensure_consent
+                from remote_provider import (
+                    DEFAULT_BACKEND_URL,
+                    RemoteDescriptionProvider,
+                )
+
+            if not ensure_consent(assume_yes=args.yes_send_code_to_hosted_ai):
+                print(
+                    "Error: --ai-draft requires consent to send source code "
+                    "to the hosted AI-drafting backend. Aborting -- no code "
+                    "was sent."
+                )
+                sys.exit(1)
+
+            # A single shared instance across the whole run (not one per
+            # file), matching the direct-Gemini provider's own convention --
+            # there's no per-run state to share here (the backend enforces
+            # its own daily cap/rate limit), but constructing it once still
+            # avoids redundant work per file.
+            backend_url = os.environ.get(
+                "PYCODECOMMENTER_AI_BACKEND_URL", DEFAULT_BACKEND_URL
+            )
+            description_provider = RemoteDescriptionProvider(backend_url=backend_url)
+
         if os.path.isdir(args.file):
             if args.output:
                 print("Error: --output cannot be used with a directory target.")
+                sys.exit(1)
+            if args.output_dir and args.inplace:
+                print("Error: --output-dir cannot be combined with --inplace.")
                 sys.exit(1)
 
             targets = _collect_py_files(args.file, args.exclude)
@@ -195,14 +295,36 @@ def main():
 
             any_changed = False
             any_failed = False
+            written_count = 0
             for target in targets:
-                commenter = PyCodeCommenter().from_file(target)
+                commenter = PyCodeCommenter(
+                    description_provider=description_provider,
+                    include_module_docstrings=args.include_module_docstrings,
+                ).from_file(target)
                 if not commenter.parsed_code:
-                    print(f"Error: Could not parse {target}")
+                    print(f"[FAIL] Could not parse {target}")
                     any_failed = True
                     continue
 
                 patched_code = commenter.get_patched_code()
+
+                if args.output_dir:
+                    # Mirror this file's relative path under --output-dir,
+                    # same as document_folder.py-style external scripts
+                    # had to hand-roll to get a full, on-disk documented
+                    # copy without touching the originals or reconstructing
+                    # a tree from a diff by hand.
+                    rel_path = os.path.relpath(target, args.file)
+                    out_path = Path(args.output_dir) / rel_path
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    # newline="": patched_code may contain a CRLF file's
+                    # real "\r\n" (get_patched_code() restores the source's
+                    # own convention), which must be written verbatim.
+                    with open(out_path, "w", encoding="utf-8", newline="") as f:
+                        f.write(patched_code)
+                    print(f"[OK] {target} -> {out_path}")
+                    written_count += 1
+                    continue
 
                 if args.dry_run:
                     with open(target, "r", encoding="utf-8") as f:
@@ -222,12 +344,19 @@ def main():
                     continue
 
                 if args.inplace:
-                    with open(target, "r", encoding="utf-8") as f:
+                    # newline="" on both sides: patched_code may contain a
+                    # CRLF file's real "\r\n" (get_patched_code() restores
+                    # the source's own convention), so the comparison and
+                    # the write must see it without any translation, or a
+                    # CRLF file would look "changed" on every run even when
+                    # nothing did, and (on Windows) risk double-translating
+                    # to "\r\r\n" on write.
+                    with open(target, "r", encoding="utf-8", newline="") as f:
                         original_code = f.read()
                     if patched_code != original_code:
                         if args.backup:
                             shutil.copy2(target, target + ".bak")
-                        with open(target, "w", encoding="utf-8") as f:
+                        with open(target, "w", encoding="utf-8", newline="") as f:
                             f.write(patched_code)
                         print(f"Successfully patched {target}")
                         any_changed = True
@@ -235,6 +364,12 @@ def main():
                     print(f"# File: {target}")
                     print(patched_code)
 
+            if args.output_dir:
+                print(
+                    f"Wrote {written_count}/{len(targets)} file(s) to "
+                    f"{args.output_dir}"
+                )
+                sys.exit(1 if any_failed else 0)
             if args.dry_run:
                 if not any_changed:
                     print("No changes detected.")
@@ -243,7 +378,14 @@ def main():
                 sys.exit(1)
             return
 
-        commenter = PyCodeCommenter().from_file(args.file)
+        if args.output_dir:
+            print("Error: --output-dir cannot be used with a single-file target.")
+            sys.exit(1)
+
+        commenter = PyCodeCommenter(
+            description_provider=description_provider,
+            include_module_docstrings=args.include_module_docstrings,
+        ).from_file(args.file)
         if not commenter.parsed_code:
             print(f"Error: Could not parse {args.file}")
             sys.exit(1)
@@ -278,11 +420,15 @@ def main():
             # Backup if requested
             if args.backup:
                 shutil.copy2(args.file, args.file + ".bak")
-            with open(args.file, "w", encoding="utf-8") as f:
+            # newline="": patched_code may contain a CRLF file's real
+            # "\r\n" (get_patched_code() restores the source's own
+            # convention), which must be written verbatim, not
+            # double-translated to "\r\r\n" on Windows.
+            with open(args.file, "w", encoding="utf-8", newline="") as f:
                 f.write(patched_code)
             print(f"Successfully patched {args.file}")
         elif args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
+            with open(args.output, "w", encoding="utf-8", newline="") as f:
                 f.write(patched_code)
             print(f"Successfully wrote patched code to {args.output}")
         else:
