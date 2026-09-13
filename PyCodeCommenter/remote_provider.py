@@ -34,14 +34,11 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
-# The Render deployment this ships against -- see the pycodecommenter-ai-
-# backend repo's render.yaml (service name `pycodecommenter-ai-backend`).
-# Confirm this is the real, live URL once that service is actually deployed
-# (Render assigns <service-name>.onrender.com by default, but that isn't
-# guaranteed until the deploy exists); override for local/staging testing
-# with the PYCODECOMMENTER_AI_BACKEND_URL environment variable instead of
+# The real, live Render deployment (pycodecommenter-ai-backend repo),
+# confirmed reachable at this URL. Override for local/staging testing with
+# the PYCODECOMMENTER_AI_BACKEND_URL environment variable instead of
 # editing this constant.
-DEFAULT_BACKEND_URL = "https://pycodecommenter-ai-backend.onrender.com"
+DEFAULT_BACKEND_URL = "https://pycodecommenter-backend.onrender.com"
 
 
 class RemoteDescriptionProvider(DescriptionProvider):
