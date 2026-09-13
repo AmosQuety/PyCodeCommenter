@@ -12,15 +12,22 @@ Classes:
 """
 
 import ast
+import re
 import tokenize
 import io
 import logging
+from pathlib import Path
 from typing import Union, Dict, Any, Optional
 import libcst as cst
 from libcst.metadata import PositionProvider
 
 try:
-    from .inference import infer_description, humanize_identifier, GUESS_MARKER
+    from .inference import (
+        infer_description,
+        humanize_identifier,
+        GUESS_MARKER,
+        AI_DRAFT_MARKER,
+    )
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
     from .param_utils import (
@@ -29,8 +36,18 @@ try:
         walk_own_scope,
         walk_skipping_nested_classes,
     )
+    from .description_provider import (
+        DescriptionProvider,
+        FunctionContext,
+        ParameterFact,
+    )
 except (ImportError, ValueError):
-    from inference import infer_description, humanize_identifier, GUESS_MARKER
+    from inference import (
+        infer_description,
+        humanize_identifier,
+        GUESS_MARKER,
+        AI_DRAFT_MARKER,
+    )
     from type_analyzer import TypeAnalyzer
     from docstring_parser import DocstringParser
     from param_utils import (
@@ -39,9 +56,18 @@ except (ImportError, ValueError):
         walk_own_scope,
         walk_skipping_nested_classes,
     )
+    from description_provider import DescriptionProvider, FunctionContext, ParameterFact
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Matches the tool's own " (default: ...)" suffix (see the Args: loop's
+# append in _generate_function_docstring), wherever it trails a re-parsed
+# parameter description -- regardless of what value it names. It must be
+# recognized unconditionally, not only when it happens to match the
+# parameter's *current* default: the append step immediately below always
+# re-adds the correct, current one regardless of what's stripped here.
+_TRAILING_DEFAULT_ANNOTATION_RE = re.compile(r" \(default: .*\)$")
 
 
 class PyCodeCommenter:
@@ -49,24 +75,76 @@ class PyCodeCommenter:
     Main class for generating and patching Python docstrings.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        description_provider: Optional[DescriptionProvider] = None,
+        include_module_docstrings: bool = False,
+    ):
+        """
+        Args:
+            description_provider (Optional[DescriptionProvider]): Opt-in
+                source of AI-assisted free-text descriptions (see
+                ``description_provider.py``). ``None`` (the default)
+                preserves the tool's entire deterministic behavior -- no
+                CLI command passes one unless ``--ai-draft`` is given, so
+                this is only reachable by explicit opt-in.
+            include_module_docstrings (bool): Opt-in module-level docstring
+                generation for a module that has none at all (see
+                ``_generate_module_docstring``). ``False`` by default:
+                unlike a missing function/class docstring, a missing
+                module docstring touches the output of nearly every input
+                (any file/snippet with no module docstring, not just a
+                main.py-shaped project file), so this stays off unless a
+                caller explicitly asks for it -- consistent with every
+                other consequential behavior in this tool (``--inplace``,
+                ``--backup``, an AI description provider) requiring
+                explicit opt-in rather than a silent default change.
+        """
         self.code = ""
         self.parsed_code = None
         self.comments = []
         self.tokenized_comments = []
         self.type_analyzer = TypeAnalyzer()
         self.file_path = None
+        self._description_provider = description_provider
+        self._include_module_docstrings = include_module_docstrings
+        self._newline = "\n"
+
+    def _normalize_newlines(self, raw_code: str) -> str:
+        """Detects the source's newline convention and normalizes to
+        ``\\n`` for internal processing.
+
+        AST/libcst parsing and every regex/docstring-generation literal in
+        this codebase assume ``\\n``; remembering the original convention
+        here lets ``get_patched_code()`` restore it on output, instead of
+        every CRLF file silently coming out as LF -- turning a documentation
+        PR on such a file into a full-file line-ending diff even when zero
+        docstrings actually changed.
+
+        Args:
+            raw_code (str): The source text, in its original line-ending
+                convention.
+
+        Returns:
+            str: The same text with ``\\r\\n`` normalized to ``\\n``.
+        """
+        if "\r\n" in raw_code:
+            self._newline = "\r\n"
+            return raw_code.replace("\r\n", "\n")
+        self._newline = "\n"
+        return raw_code
 
     def from_string(self, code_string: str) -> "PyCodeCommenter":
         """Initializes the commenter from a string of code."""
         self.file_path = None
+        self._newline = "\n"
         try:
             if code_string is None or code_string.strip() == "":
                 logger.warning("No code provided. Proceeding with an empty string.")
                 self.code = ""
                 self.parsed_code = ast.Module(body=[])
             else:
-                self.code = code_string
+                self.code = self._normalize_newlines(code_string)
                 self.parsed_code = ast.parse(self.code)
                 self._extract_comments()
         except SyntaxError as e:
@@ -90,9 +168,14 @@ class PyCodeCommenter:
     def from_file(self, file_path: str) -> "PyCodeCommenter":
         """Initializes the commenter from a file path."""
         self.file_path = file_path
+        self._newline = "\n"
         try:
-            with open(file_path, "r", encoding="utf-8") as file:
-                self.code = file.read()
+            # newline="" disables universal-newlines translation, so a
+            # CRLF file's "\r\n" is still there to detect -- the default
+            # text mode would have already silently converted it to "\n"
+            # before we ever saw it.
+            with open(file_path, "r", encoding="utf-8", newline="") as file:
+                self.code = self._normalize_newlines(file.read())
             self.parsed_code = ast.parse(self.code)
             self._extract_comments()
         except (FileNotFoundError, IOError) as e:
@@ -142,7 +225,7 @@ class PyCodeCommenter:
         visitor = DocstringVisitor(self)
         visitor.visit(self.parsed_code)
 
-        if not visitor.results:
+        if not visitor.results and visitor.module_docstring is None:
             return self.code
 
         edits = {
@@ -157,14 +240,97 @@ class PyCodeCommenter:
             return self.code
 
         wrapper = cst.MetadataWrapper(module)
-        patched_module = wrapper.visit(_DocstringCSTPatcher(edits))
-        return patched_module.code
+        patched_module = wrapper.visit(
+            _DocstringCSTPatcher(edits, module_docstring=visitor.module_docstring)
+        )
+        result = patched_module.code
+        if self._newline == "\r\n":
+            # Every internal literal in this codebase is written in "\n";
+            # restore the source's original convention only at this final
+            # boundary, so a CRLF file's documentation PR doesn't touch
+            # every line's ending along with the actual docstring changes.
+            result = result.replace("\n", "\r\n")
+        return result
+
+    def _default_module_summary(self) -> str:
+        """Derives a module docstring's summary line when there's no
+        existing one to preserve.
+
+        A module has no name of its own the way a function/class node
+        does -- the closest real signal is the file it came from, when
+        there is one (``from_file``, or the CLI, which is how this gap
+        matters in practice). ``from_string`` input has no such signal at
+        all, so it gets a neutral, honest placeholder rather than an
+        invented one.
+
+        Returns:
+            str: The summary line, without a trailing period already
+                applied by the caller (a bare word/phrase).
+        """
+        if self.file_path:
+            stem = Path(self.file_path).stem
+            return humanize_identifier(stem).capitalize() + "."
+        return "Module docstring."
+
+    def _generate_module_docstring(self, module_node: ast.Module) -> str:
+        """Generates a Google-style module docstring.
+
+        Only ever called for a module with no existing docstring at all
+        (see DocstringVisitor.visit_Module) -- unlike function/class
+        docstrings, this never attempts to merge into an existing one.
+        Module docstrings are much more free-form/hand-written prose than
+        function/class ones; parsing and reconstructing an existing one
+        risks corrupting it for no real benefit, when the actual gap this
+        closes (AUDIT_REPORT.md §2) is files with *no* docstring at all.
+
+        Args:
+            module_node (ast.Module): The module node.
+
+        Returns:
+            str: The generated module docstring, including the enclosing
+                triple quotes.
+        """
+        try:
+            summary = self._default_module_summary()
+
+            # A real, AST-derived fact about the module -- what it defines
+            # -- costs nothing to include and mirrors the Attributes:/
+            # Methods: pattern already used for classes, one level up.
+            classes = [n.name for n in module_node.body if isinstance(n, ast.ClassDef)]
+            functions = [
+                n.name
+                for n in module_node.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+
+            sections = []
+            if classes:
+                sections.append(
+                    "Classes:\n" + "".join(f"    {name}\n" for name in classes)
+                )
+            if functions:
+                sections.append(
+                    "Functions:\n" + "".join(f"    {name}\n" for name in functions)
+                )
+
+            if not sections:
+                # Nothing to list beyond the summary -- close on the same
+                # line rather than a gratuitous two-line docstring for a
+                # single sentence.
+                return f'"""{summary}"""'
+
+            body = "\n".join(sections).rstrip("\n")
+            return f'"""{summary}\n\n{body}\n"""'
+        except Exception as e:
+            logger.error(f"Error generating module docstring: {e}")
+            return '"""Error generating docstring."""'
 
     def _generate_function_docstring(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> str:
         """Generates a Google-style docstring for a function node, merging
         existing info."""
+        existing_doc = None
         try:
             existing_doc = ast.get_docstring(func_node)
             parser = DocstringParser(existing_doc)
@@ -175,16 +341,29 @@ class PyCodeCommenter:
             )
 
             if func_node.name == "__init__":
+                # "Initialize the class." is still a fixed literal (not
+                # derived from humanize_identifier("__init__") == "init",
+                # which reads worse than the boilerplate it would replace)
+                # -- but unlike before, it's the *only* fixed part. The
+                # description no longer defaults to the boilerplate
+                # "Initialize a new instance." on every constructor
+                # regardless of what the class does: it now follows the
+                # same rule as every other function below.
                 summary = "Initialize the class."
-                description = (
-                    parsed_info.get("description") or "Initialize a new instance."
-                )
-            else:
-                # A preserved existing description is the author's real
-                # words (a fact); anything templates.py.get_function_description()
-                # would have guessed from the function's name alone is not,
-                # so it's marked rather than presented as finished prose.
-                description = parsed_info.get("description") or GUESS_MARKER
+
+            # A parsed description is the author's real words (a fact) and
+            # wins outright. Otherwise, an opt-in description provider gets
+            # a chance (fails closed to "" -- see
+            # _draft_description_via_provider); with no provider configured
+            # (the default), this is always "". Only then does the slot
+            # stay empty rather than fabricating a placeholder: the summary
+            # above it is either the author's own text or, when there's no
+            # existing docstring at all, itself just derived from the
+            # function's name -- a second "nothing to add" paragraph under
+            # a name-derived summary is noise, not new honesty.
+            description = parsed_info.get(
+                "description"
+            ) or self._draft_description_via_provider(func_node)
 
             if description and description.lower().rstrip(
                 "."
@@ -225,9 +404,23 @@ class PyCodeCommenter:
                     if param.default is not None
                     else None
                 )
-                param_desc = parsed_info.get("params", {}).get(
+                parsed_param_desc = parsed_info.get("params", {}).get(
                     param.display_name
-                ) or self._get_parameter_description(
+                )
+                if parsed_param_desc:
+                    # A previous generation pass may have appended this
+                    # exact " (default: ...)" suffix onto this same
+                    # description (see the append below). Re-parsing it back
+                    # as preserved text and appending the suffix again would
+                    # compound it a little more on every regeneration --
+                    # strip it first (unconditionally, not only when it
+                    # matches the *current* default -- see the method's own
+                    # docstring for why) so the append below restores
+                    # exactly one, correct, up-to-date copy.
+                    parsed_param_desc = self._strip_own_default_annotation(
+                        parsed_param_desc
+                    )
+                param_desc = parsed_param_desc or self._get_parameter_description(
                     func_name=func_node.name,
                     param_name=param.name,
                     inferred_type=inferred_type,
@@ -253,6 +446,18 @@ class PyCodeCommenter:
             section_label = "Yields" if is_generator else "Returns"
 
             existing_return_desc = parsed_info.get("returns")
+            if existing_return_desc == "None.":
+                # The bare "None." sentence is this tool's own literal for
+                # "no return value to describe" (the `elif return_type ==
+                # "None":` branch below), not real preserved author text --
+                # unlike a real return description, it never carries a
+                # "type: " prefix for the branch below to recognize and
+                # strip. Treating it as absent here (rather than as existing
+                # text to re-wrap into "None: None.") keeps regeneration
+                # stable, and correctly falls through to a fresh
+                # GUESS_MARKER if the function has since been edited to
+                # actually return something.
+                existing_return_desc = None
             if existing_return_desc:
                 return_desc = existing_return_desc
                 if ":" in return_desc:
@@ -283,24 +488,49 @@ class PyCodeCommenter:
                     f"\n{section_label}:\n    {display_return_type}: {GUESS_MARKER}\n"
                 )
 
+            # The exception *class* at a raise site is a fact straight from
+            # the source; only why/when it's raised is unknowable from the
+            # AST alone, so that half stays an explicit, honest guess marker.
+            raised = self._get_raised_exceptions(func_node)
+            if raised:
+                docstring += "\nRaises:\n"
+                for exc_name in raised:
+                    docstring += (
+                        f"    {exc_name}: {GUESS_MARKER} when this is raised.\n"
+                    )
+
             docstring += '"""'
             return docstring
         except Exception as e:
             logger.error(
                 f"Error generating function docstring for {func_node.name}: {e}"
             )
+            if existing_doc is not None:
+                # An unexpected failure mid-generation must not silently
+                # discard whatever the author's real, existing docstring
+                # was -- that's quiet data loss, not a safe fallback.
+                # Falling back to the original text (matching the fallback
+                # discipline already used for a libcst parse failure
+                # elsewhere in this file) is always safer than replacing
+                # real content with a placeholder.
+                return f'"""{existing_doc}"""'
             return '"""Error generating docstring."""'
 
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
         """Generates a Google-style docstring for a class node, merging
         existing info."""
+        existing_doc = None
         try:
             existing_doc = ast.get_docstring(class_node)
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
 
             summary = parsed_info.get("summary") or f"{class_node.name} class."
-            description = parsed_info.get("description") or GUESS_MARKER
+            # See the matching comment in _generate_function_docstring: a
+            # parsed description wins outright, otherwise the slot stays
+            # empty rather than duplicating the (possibly name-derived)
+            # summary with a placeholder that adds no information.
+            description = parsed_info.get("description") or ""
 
             docstring = f'"""{summary}\n\n'
             if description:
@@ -310,16 +540,33 @@ class PyCodeCommenter:
             if attributes:
                 docstring += "Attributes:\n"
                 for attr, attr_type in attributes.items():
-                    # We could also parse existing attributes if we added
-                    # that to DocstringParser
-                    docstring += f"    {attr} ({attr_type}): {GUESS_MARKER}\n"
+                    # Same name/type signal Args: already runs through
+                    # infer_description() for parameters -- an attribute
+                    # deserves the same real inference, not an unconditional
+                    # guess marker. We could also parse existing attributes
+                    # if we added that to DocstringParser.
+                    attr_desc = self._get_parameter_description(
+                        func_name=class_node.name,
+                        param_name=attr,
+                        inferred_type=attr_type,
+                    )
+                    docstring += f"    {attr} ({attr_type}): {attr_desc}\n"
 
-            methods = [
+            method_names = [
                 node.name
                 for node in class_node.body
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                 and not node.name.startswith("_")
             ]
+            # A @property's getter/setter/deleter trio is valid Python only
+            # when all three share the property's exact name (the decorator
+            # is literally `<property_name>.setter`/`.deleter`, rebinding
+            # the same name) -- so any duplicate here is always the same
+            # property's accessor trio, never two independently meaningful
+            # methods. dict.fromkeys() dedupes while preserving first-seen
+            # order, so a reader sees "value()" once, not three times with
+            # no indication which is which.
+            methods = list(dict.fromkeys(method_names))
             if methods:
                 docstring += "\nMethods:\n"
                 for method in methods:
@@ -329,6 +576,11 @@ class PyCodeCommenter:
             return docstring
         except Exception as e:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
+            if existing_doc is not None:
+                # See the matching comment in _generate_function_docstring:
+                # never let an unexpected failure silently discard a real,
+                # existing docstring in favor of a placeholder.
+                return f'"""{existing_doc}"""'
             return '"""Error generating docstring."""'
 
     def _get_parameter_description(
@@ -516,6 +768,38 @@ class PyCodeCommenter:
             return f"{sign}{default_node.operand.value!r}"
         return "unknown"
 
+    def _strip_own_default_annotation(self, description: str) -> str:
+        """Removes a trailing " (default: ...)" suffix from a re-parsed
+        parameter description, unconditionally -- not only when it happens
+        to match the parameter's *current* default.
+
+        Generation always appends this exact suffix onto a param's
+        description (see the append in the Args: loop), and that append
+        always uses the parameter's current, real default -- so any prior
+        suffix found here is always safe to discard regardless of what
+        value it names. Re-parsing a previously-generated docstring stores
+        the whole line -- suffix included -- as the parameter's "existing"
+        description, since DocstringParser has no way to distinguish it
+        from real author text.
+
+        Matching only a suffix equal to the *current* default (an earlier
+        version of this method) left a gap: editing a parameter's default
+        in source between `generate` runs (e.g. ``0.1`` -> ``0.2``) left the
+        stale ``" (default: 0.1)"`` suffix in place, since it no longer
+        matched, and the append below still added a fresh ``" (default:
+        0.2)"`` on top -- the same unbounded-compounding failure as a bare
+        rerun, just triggered by a legitimate source edit instead.
+
+        Args:
+            description (str): The re-parsed, possibly suffix-carrying
+                description.
+
+        Returns:
+            str: ``description`` with any trailing "(default: ...)" suffix
+                removed, or unchanged if there is none.
+        """
+        return _TRAILING_DEFAULT_ANNOTATION_RE.sub("", description)
+
     def _is_generator(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> bool:
@@ -579,6 +863,126 @@ class PyCodeCommenter:
         if not filtered_types and value_types:
             return "any"
         return " | ".join(sorted(filtered_types)) if filtered_types else "None"
+
+    def _get_raised_exceptions(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> list:
+        """Collects the exception class names a function's own body raises.
+
+        Only walks the function's own scope (``walk_own_scope``, not
+        ``ast.walk``), same as ``_is_generator``/``_get_return_type``, so a
+        ``raise`` inside a nested ``def`` is never misattributed to the
+        outer function.
+
+        A bare ``raise`` (a re-raise inside ``except``) and a ``raise`` of an
+        already-constructed instance (``raise err``, where ``.exc`` is a
+        plain ``Name``/``Attribute`` rather than a ``Call``) are both
+        skipped: neither lets the exception class be read off the raise site
+        without data-flow analysis, so guessing here would be exactly the
+        kind of unfounded guess this tool avoids elsewhere.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+
+        Returns:
+            list: Exception class names, in first-seen order, de-duplicated.
+        """
+        names = []
+        seen = set()
+        for node in walk_own_scope(func_node):
+            if not isinstance(node, ast.Raise) or node.exc is None:
+                continue
+            if not isinstance(node.exc, ast.Call):
+                continue
+            call_target = node.exc.func
+            if isinstance(call_target, ast.Name):
+                name = call_target.id
+            elif isinstance(call_target, ast.Attribute):
+                name = call_target.attr
+            else:
+                continue
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+        return names
+
+    def _build_function_context(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> FunctionContext:
+        """Gathers a function's AST-derived facts for a description provider.
+
+        Reuses the same primitives Args:/Returns:/Raises: generation
+        already calls, so a provider is grounded in exactly the facts this
+        tool has already verified from the code -- never from the
+        function's name alone.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+
+        Returns:
+            FunctionContext: The gathered facts.
+        """
+        all_params = exclude_self_cls(get_all_parameters(func_node))
+        parameters = [
+            ParameterFact(
+                name=param.display_name,
+                type_hint=self._infer_param_type(param),
+                default=(
+                    self._get_default_value(param.default)
+                    if param.default is not None
+                    else None
+                ),
+            )
+            for param in all_params
+        ]
+        local_types = self._get_local_types(func_node)
+        source = ast.get_source_segment(self.code, func_node) or ""
+        return FunctionContext(
+            name=func_node.name,
+            parameters=parameters,
+            return_type=self._get_return_type(func_node, local_types),
+            is_generator=self._is_generator(func_node),
+            raised_exceptions=self._get_raised_exceptions(func_node),
+            source=source,
+        )
+
+    def _draft_description_via_provider(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> str:
+        """Asks the configured description provider for a description,
+        failing closed to "" (today's behavior) on any decline or error.
+
+        No exception from a provider ever propagates out of this method,
+        and no partial/malformed draft is ever used -- an error, a ``None``
+        return, an empty string, or a raised exception are all treated
+        identically: fall back to leaving the description slot empty, the
+        same as if no provider were configured at all.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+
+        Returns:
+            str: The drafted description with :data:`AI_DRAFT_MARKER`
+                appended, or ``""`` if no provider is configured, the
+                provider declined, or the provider raised.
+        """
+        if self._description_provider is None:
+            return ""
+        try:
+            context = self._build_function_context(func_node)
+            draft = self._description_provider.draft_function_description(context)
+        except Exception as e:
+            logger.warning(
+                f"Description provider failed for {func_node.name}, "
+                f"falling back to no description: {e}"
+            )
+            return ""
+        if not draft:
+            return ""
+        return f"{draft.strip()} {AI_DRAFT_MARKER}"
 
     def _get_local_types(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
@@ -666,6 +1070,21 @@ class DocstringVisitor(ast.NodeVisitor):
     def __init__(self, commenter):
         self.commenter = commenter
         self.results = []
+        self.module_docstring: Optional[str] = None
+
+    def visit_Module(self, node):
+        # Opt-in only -- see PyCodeCommenter.__init__'s docstring for why.
+        # Unlike functions/classes, a module with an existing docstring is
+        # never touched at all -- see _generate_module_docstring for why.
+        # An empty module (no body at all, e.g. a blank or whitespace-only
+        # file) has nothing to describe, so it's left alone too.
+        if (
+            self.commenter._include_module_docstrings
+            and ast.get_docstring(node) is None
+            and node.body
+        ):
+            self.module_docstring = self.commenter._generate_module_docstring(node)
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
         self.results.append((node, self.commenter._generate_function_docstring(node)))
@@ -688,12 +1107,20 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
     keep reusing the existing ast-based DocstringVisitor to decide *what*
     docstring text each node needs, while this transformer handles *where*
     and *how* to apply it at the concrete-syntax-tree level.
+
+    A module docstring is handled separately (``module_docstring``, applied
+    in ``leave_Module``) rather than through the position-keyed ``edits``
+    dict: ``ast.Module`` has no ``.lineno``/``.col_offset`` at all (unlike
+    every other node this transformer handles), and there's always at most
+    one module docstring, always at the very top of the file, so no
+    position lookup is needed to place it.
     """
 
     METADATA_DEPENDENCIES = (PositionProvider,)
 
-    def __init__(self, edits: Dict[Any, str]):
+    def __init__(self, edits: Dict[Any, str], module_docstring: Optional[str] = None):
         self._edits = edits
+        self._module_docstring = module_docstring
 
     @staticmethod
     def _is_docstring_stmt(stmt) -> bool:
@@ -762,3 +1189,28 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
 
     def leave_ClassDef(self, original_node, updated_node):
         return self._patch(original_node, updated_node)
+
+    def leave_Module(self, original_node, updated_node):
+        if self._module_docstring is None:
+            return updated_node
+
+        doc_line = cst.SimpleStatementLine(
+            body=[cst.Expr(value=cst.SimpleString(value=self._module_docstring))]
+        )
+
+        stmts = list(updated_node.body)
+        if stmts and self._is_docstring_stmt(stmts[0]):
+            # Defensive only: DocstringVisitor sets module_docstring solely
+            # when ast.get_docstring() found none, so this should never
+            # actually trigger -- mirrors _patch's own replace-or-insert
+            # handling for consistency.
+            stmts[0] = stmts[0].with_changes(
+                body=[
+                    stmts[0]
+                    .body[0]
+                    .with_changes(value=cst.SimpleString(value=self._module_docstring))
+                ]
+            )
+        else:
+            stmts.insert(0, doc_line)
+        return updated_node.with_changes(body=stmts)

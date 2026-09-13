@@ -23,9 +23,11 @@ from enum import Enum
 try:
     from .docstring_parser import DocstringParser
     from .param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
+    from .inference import AI_DRAFT_MARKER
 except (ImportError, ValueError):
     from docstring_parser import DocstringParser
     from param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
+    from inference import AI_DRAFT_MARKER
 
 logger = logging.getLogger(__name__)
 
@@ -619,16 +621,32 @@ class DocstringValidator:
         issues = []
         parser = DocstringParser(docstring)
 
-        # Find all return statements. walk_own_scope (not ast.walk) so a
-        # return inside a nested def isn't misattributed to this function.
-        has_return_value = False
+        # Find a real output value: either a `return <value>` or a
+        # generator's `yield <value>` -- both are the function producing a
+        # real value for the caller, which is exactly what a Returns:/
+        # Yields: section documents (DocstringParser stores either under
+        # the same `returns` field; see its _parse_google). walk_own_scope
+        # (not ast.walk) so one inside a nested def isn't misattributed to
+        # this function.
+        has_output_value = False
         for node in walk_own_scope(func_node):
-            if isinstance(node, ast.Return) and node.value is not None:
-                has_return_value = True
+            if (isinstance(node, ast.Return) and node.value is not None) or (
+                isinstance(node, (ast.Yield, ast.YieldFrom)) and node.value is not None
+            ):
+                has_output_value = True
                 break
 
+        # The tool's own generated convention for "no output value" is a
+        # literal "None." sentence (commenter.py's `Returns:\n    None.\n`)
+        # -- that's the section correctly documenting an *absence*, not a
+        # claim that the function returns something, so it must not be
+        # treated as one here.
+        documents_output_value = (
+            bool(parser.returns) and parser.returns.strip() != "None."
+        )
+
         # Check consistency
-        if has_return_value and not parser.returns:
+        if has_output_value and not parser.returns:
             issues.append(
                 ValidationIssue(
                     severity=Severity.WARNING,
@@ -641,7 +659,11 @@ class DocstringValidator:
                     suggestion="Add a Returns section documenting the return value",
                 )
             )
-        elif not has_return_value and parser.returns and func_node.name != "__init__":
+        elif (
+            not has_output_value
+            and documents_output_value
+            and func_node.name != "__init__"
+        ):
             issues.append(
                 ValidationIssue(
                     severity=Severity.INFO,
@@ -764,6 +786,26 @@ class DocstringValidator:
                         suggestion="Replace placeholder with actual documentation",
                     )
                 )
+
+        # AI-drafted content (see description_provider.py) must never be
+        # silently laundered into either "done" (indistinguishable from
+        # verified content) or "still a TODO" (the GUESS_MARKER placeholder
+        # check above, which this text deliberately doesn't match) -- it
+        # gets its own category so a validate/coverage report always shows
+        # it as a distinct, still-needs-human-review state.
+        if AI_DRAFT_MARKER in docstring:
+            issues.append(
+                ValidationIssue(
+                    severity=Severity.WARNING,
+                    category="ai_draft",
+                    location=location,
+                    message="AI-drafted content found and not yet reviewed",
+                    suggestion=(
+                        "Have a human verify this description against the "
+                        "actual code before relying on it"
+                    ),
+                )
+            )
 
         # Check summary length
         if parser.summary and len(parser.summary) < 10:

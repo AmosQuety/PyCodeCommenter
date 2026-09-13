@@ -85,6 +85,77 @@ def greet(name):
     assert report.stats.warnings > 0
 
 
+def test_void_function_with_honest_none_returns_section_not_flagged():
+    """Regression test for AUDIT_REPORT.md §1.6: the generator's own
+    convention for "no return value" is a literal `Returns:\\n    None.\\n`
+    sentence -- that correctly documents an absence, not a claim of a real
+    return value, and must not trip "has Returns section but doesn't return
+    a value".
+    """
+    code = '''
+def refresh_cache():
+    """Refresh cache.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    pass
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    returns_issues = [i for i in report.issues if i.category == "returns"]
+    assert not returns_issues
+
+
+def test_generator_with_real_yield_and_yields_section_not_flagged():
+    """Regression test for AUDIT_REPORT.md §1.6's second instance: a
+    generator with a real `yield <value>` and a correctly generated
+    `Yields:` section describing it must not be flagged as "has Returns
+    section but doesn't return a value" -- the old check only recognized
+    `ast.Return`, so a generator's real yielded value was invisible to it.
+    """
+    code = '''
+def iter_batches(items):
+    """Iter batches.
+
+    Args:
+        items: The items.
+
+    Yields:
+        Any: A batch of items.
+    """
+    for i in items:
+        yield i
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    returns_issues = [i for i in report.issues if i.category == "returns"]
+    assert not returns_issues
+
+
+def test_generator_missing_yields_section_still_flagged():
+    """The fix for the false positives above must not create a false
+    negative: a generator that really yields a value but has no Returns/
+    Yields section documenting it at all must still be flagged -- broadening
+    the check to recognize `yield` must catch this case too, not just avoid
+    the two false positives."""
+    code = '''
+def iter_batches(items):
+    """Iter batches.
+
+    Args:
+        items: The items.
+    """
+    for i in items:
+        yield i
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    returns_issues = [i for i in report.issues if i.category == "returns"]
+    assert len(returns_issues) == 1
+    assert returns_issues[0].severity == Severity.WARNING
+
+
 def test_content_quality_placeholder():
     """Test 6 – Placeholder text in docstring → WARNING."""
     code = """

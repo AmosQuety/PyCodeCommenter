@@ -324,6 +324,63 @@ def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
     assert "start_path (Optional[str]): Directory to start the search from." in patched
 
 
+def test_numpy_raises_section_not_corrupted_on_regeneration(commenter):
+    """Regression test for AUDIT_REPORT.md §1.3, using config.py's real
+    load_config() docstring verbatim, this time with a real raise in the
+    body (the prior test above doesn't have one, so it never exercised
+    this path).
+
+    Before the fix, an unrecognized NumPy Raises section was folded into
+    `description`, producing a malformed, un-styled "Raises\\nConfigError\\n
+    ..." block floating above Args:/Returns: -- and, once Tier 2a's real
+    Raises: generation existed, a *second*, correct, freshly-generated
+    Raises: section describing the exact same exception, so the exception
+    ended up documented twice, once correctly and once malformed.
+    """
+    code = '''from typing import Dict, Any, Optional
+
+def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
+    """Load configuration for PyCodeCommenter.
+
+    Parameters
+    ----------
+    start_path: str | None, optional
+        Directory to start the search from.  Defaults to the current working
+        directory.
+
+    Returns
+    -------
+    dict
+        Parsed configuration dictionary.  Returns an empty dictionary if no
+        ``.pycodecommenter.yaml`` file is discovered.
+
+    Raises
+    ------
+    ConfigError
+        If a config file is discovered but parsing fails.
+    """
+    raise ConfigError("bad")
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    ast.parse(patched)
+
+    # Exactly one Raises: section, in valid Google style, naming the
+    # exception exactly once within the docstring -- not the malformed
+    # leftover NumPy block (which would show up as a bare "Raises" header
+    # with no colon). A second "ConfigError" is expected and correct: the
+    # actual `raise ConfigError(...)` statement in the real code, below the
+    # docstring.
+    assert patched.count("Raises:") == 1
+    assert "\nRaises\n" not in patched
+    docstring_only = patched.split('"""', 2)[1]
+    assert docstring_only.count("ConfigError") == 1
+    raises_section = patched.split("Raises:", 1)[1].split('"""', 1)[0]
+    assert "ConfigError:" in raises_section
+    # Raises: must come after Args:/Returns:, matching Google-style order.
+    assert patched.index("Args:") < patched.index("Returns:") < patched.index("Raises:")
+
+
 def test_dunder_init_parameter_description_not_garbled(commenter):
     """Regression test for Phase 6 bug 6c, using ConfigError.__init__'s
     real (undocumented) signature from config.py.
@@ -382,6 +439,79 @@ def test_generator_function_gets_yields_not_returns(commenter):
     patched = commenter.get_patched_code()
     assert "Yields:" in patched
     assert "Returns:" not in patched
+
+
+def test_function_that_raises_gets_raises_section(commenter):
+    """A function with a `raise SomeError(...)` in its own body must get a
+    Raises: section naming the exception class (fixture case #3, and the
+    generator's own generated output used to trip its own validator's
+    "raises exceptions but has no Raises section" warning)."""
+    code = """def parse_positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise ValueError(f"{value} must not be negative")
+    return parsed
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "Raises:" in patched
+    raises_section = patched.split("Raises:", 1)[1]
+    assert "ValueError:" in raises_section
+
+    validator = PyCodeCommenter()
+    validator.from_string(patched)
+    report = validator.validate()
+    raises_warnings = [i for i in report.issues if "has no Raises section" in i.message]
+    assert not raises_warnings
+
+
+def test_bare_reraise_and_preconstructed_exception_get_no_raises_entry(commenter):
+    """A bare `raise` (re-raise) and `raise err` (an already-constructed
+    instance) can't have their exception class read off the raise site
+    without data-flow analysis -- both must be skipped rather than guessed.
+    """
+    code = """def f(x):
+    try:
+        pass
+    except Exception:
+        raise
+    err = ValueError("already built")
+    raise err
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "Raises:" not in patched
+
+
+def test_raise_via_module_attribute_uses_short_exception_name(commenter):
+    """`raise module.MyError(...)` must render as just "MyError" in
+    Raises: (matching how a Raises section is conventionally written),
+    not the fully qualified "module.MyError"."""
+    code = """def f(x):
+    if x:
+        raise exceptions.MyError("bad")
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    raises_section = patched.split("Raises:", 1)[1].split('"""', 1)[0]
+    assert "MyError:" in raises_section
+    assert "exceptions.MyError" not in raises_section
+
+
+def test_raise_in_nested_function_not_attributed_to_outer(commenter):
+    """A raise inside a nested def must not make the *outer* function look
+    like it raises that exception (same scope-boundary concern as yield/
+    return)."""
+    code = """def outer(x):
+    def inner():
+        raise KeyError("nested")
+    return inner
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    outer_doc = patched.split('"""Outer.', 1)[1].split('"""', 1)[0]
+    assert "Raises:" not in outer_doc
+    assert "KeyError" in patched  # still present, just on inner's own docstring
 
 
 def test_yield_in_nested_function_not_attributed_to_outer(commenter):
@@ -528,6 +658,188 @@ def test_generated_output_with_unresolved_guesses_fails_own_validator(commenter)
     assert placeholder_issues, "generated guesses should trip the placeholder check"
 
 
+def test_already_complete_docstring_gets_no_phantom_description(commenter):
+    """Regression test for the PyPI-dogfooding audit's #1 finding: merging
+    into an already-complete Google-style docstring (summary + Args +
+    Returns, no separate description paragraph) must not inject a
+    TODO(pycodecommenter) placeholder paragraph that was never asked for.
+    The output must reproduce the original byte-for-byte.
+    """
+    code = '''def slugify(text: str) -> str:
+    """Convert text into a URL-friendly slug.
+
+    Args:
+        text (str): The text to slugify.
+
+    Returns:
+        str: The lowercased, hyphen-joined slug.
+    """
+    return text.lower()
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "TODO(pycodecommenter)" not in patched
+    assert patched == code
+
+
+def test_fresh_function_gets_no_phantom_description_either(commenter):
+    """A function with no existing docstring at all still gets no free-text
+    description paragraph: the name-derived summary immediately above it is
+    already an honest best-effort, and a second "TODO: describe" paragraph
+    duplicating that same lack of information is noise, not new honesty.
+    Per-field placeholders (Args/Returns, where the tool genuinely cannot
+    infer more than a bare type) are unaffected and still appear.
+    """
+    code = """def calculate_discount(price, rate=0.1):
+    return price * (1 - rate)
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    summary_to_args = patched.split('"""Calculate discount.', 1)[1].split("Args:", 1)[0]
+    assert "TODO(pycodecommenter)" not in summary_to_args
+    assert "TODO(pycodecommenter): describe" in patched  # still present in Args/Returns
+
+
+def test_multiline_hand_wrapped_summary_preserved_as_one_summary(commenter):
+    """Regression test for the audit's #2 finding: a hand-wrapped summary
+    sentence spanning multiple physical lines, with no blank line between
+    them, must stay one summary -- not get chopped at the wrap point into a
+    summary plus a spurious, mid-sentence description paragraph.
+    """
+    code = '''def _walk_until(node, boundary_types):
+    """Shared traversal for the two scope-bounded walkers below: yields every
+    descendant of *node*, without descending past a node whose type is in
+    *boundary_types*.
+
+    Args:
+        node: The node whose descendants should be walked.
+        boundary_types: AST node types to yield but not expand into.
+    """
+    pass
+'''
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    summary_line = patched.splitlines()[1]
+    assert summary_line == (
+        '    """Shared traversal for the two scope-bounded walkers below: '
+        "yields every descendant of *node*, without descending past a node "
+        "whose type is in *boundary_types*."
+    )
+    assert (
+        "descendant of *node*" not in patched.split("\n\n", 1)[1].split("Args:", 1)[0]
+    )
+
+
+def test_defaulted_parameter_description_stable_across_regeneration():
+    """Regression test for the idempotency bug in
+    Another_Test_PyCodeCommenter/Feedback/IDEMPOTENCY_BUG.md: generation
+    unconditionally appends " (default: ...)" to a parameter's description,
+    but a re-parsed docstring stores that suffix as part of the "existing"
+    description too -- so regenerating used to compound another copy of the
+    suffix onto the same line on every single pass, without bound.
+
+    A single before/after diff isn't enough here: the bug doesn't show up
+    until the *second* pass, and without this test it could easily reappear
+    on only the third or fourth pass while a two-pass check stayed green.
+    Regenerates 4 times and asserts every pass after the first is
+    byte-identical to it.
+    """
+    code = (
+        "def calculate_discount(price: float, rate: float = 0.1) -> float:\n"
+        "    return price * (1 - rate)\n"
+    )
+    passes = []
+    out = code
+    for _ in range(4):
+        out = PyCodeCommenter().from_string(out).get_patched_code()
+        passes.append(out)
+
+    assert "rate (float): float value. (default: 0.1)" in passes[0]
+    for i in range(1, 4):
+        assert passes[i] == passes[0], f"pass {i + 1} diverged from pass 1"
+    # The specific compounding shape from the bug report must never appear.
+    assert "(default: 0.1). (default: 0.1)" not in passes[-1]
+
+
+def test_stale_default_value_does_not_compound_when_default_changes():
+    """A narrower gap in the fix above: _strip_own_default_annotation used
+    to only strip a suffix matching the parameter's *current* default, so
+    editing a default in source between `generate` runs (a normal
+    workflow: change a default, forget to touch the docstring, rerun the
+    tool to fix it) left the stale suffix in place -- the append step then
+    added a second, current one on top of it, e.g. "(default: 0.1).
+    (default: 0.2)". The fix strips any trailing "(default: ...)" suffix
+    unconditionally, since the append immediately below always re-adds the
+    correct, current one regardless of what was stripped.
+    """
+    code_v1 = (
+        "def calculate_discount(price: float, rate: float = 0.1) -> float:\n"
+        "    return price * (1 - rate)\n"
+    )
+    pass1 = PyCodeCommenter().from_string(code_v1).get_patched_code()
+    assert "rate (float): float value. (default: 0.1)" in pass1
+
+    # Simulate a source edit: the default changes, the docstring doesn't.
+    edited = pass1.replace("rate: float = 0.1", "rate: float = 0.2")
+    pass2 = PyCodeCommenter().from_string(edited).get_patched_code()
+
+    rate_line = [
+        line for line in pass2.splitlines() if line.strip().startswith("rate ")
+    ][0]
+    assert rate_line.endswith("(default: 0.2)")
+    assert rate_line.count("(default:") == 1
+    assert "0.1" not in rate_line
+
+
+def test_niladic_function_none_return_stable_across_regeneration():
+    """Regression test for the second idempotency-bug instance: a
+    niladic/void function's special-cased "Returns:\\n    None.\\n" sentence
+    has no "type: " prefix for the existing-description merge logic to
+    recognize, so a re-parsed docstring treated the bare "None." as real
+    preserved text and re-wrapped it as "None: None." on the very next
+    regeneration pass.
+
+    Regenerates 4 times and asserts every pass after the first is
+    byte-identical to it -- the duplication only appears starting on pass 2,
+    so a single before/after diff would miss a regression here too.
+    """
+    code = "def refresh_cache() -> None:\n    pass\n"
+    passes = []
+    out = code
+    for _ in range(4):
+        out = PyCodeCommenter().from_string(out).get_patched_code()
+        passes.append(out)
+
+    assert "Returns:\n        None.\n" in passes[0]
+    for i in range(1, 4):
+        assert passes[i] == passes[0], f"pass {i + 1} diverged from pass 1"
+    assert "None: None." not in passes[-1]
+
+
+def test_stale_none_return_resets_when_function_starts_returning_a_value():
+    """The "None." recognition above must not blindly preserve a stale
+    Returns: section forever: if a previously-void function is edited to
+    actually return a value, the old "None." text must be discarded in
+    favor of a fresh description for the new, real return type -- not
+    compounded into "int: None."."""
+    stale_doc = '''def f():
+    """F.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    return 42
+'''
+    commenter = PyCodeCommenter()
+    commenter.from_string(stale_doc)
+    patched = commenter.get_patched_code()
+    assert "Returns:\n        int: TODO(pycodecommenter): describe" in patched
+    assert "None." not in patched.split("Returns:", 1)[1]
+
+
 def test_legitimate_lightweight_inference_stays_unmarked(commenter):
     """Name-pattern and type-hint based inference (infer_description's rules
     1-3) are still presented as real descriptions, not the guess marker --
@@ -640,3 +952,292 @@ def test_class_attribute_types_match_init_args_section(commenter):
     assert "host (str)" in attrs_section
     assert "port (int)" in attrs_section
     assert "extra (dict)" in attrs_section
+
+
+def test_class_attributes_get_real_inference_not_unconditional_guess_marker(commenter):
+    """Attributes: descriptions must go through the same infer_description()
+    pipeline Args: already uses -- a name/type pattern that would produce a
+    real description for a parameter must produce the same real description
+    for an attribute, not an unconditional TODO. An attribute with no
+    matching name/type pattern must still correctly get the guess marker.
+    """
+    code = """class OrderProcessor:
+    def __init__(self, customer_id: str, items: list):
+        self.customer_id = customer_id
+        self.items = items
+        self.total = 0.0
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    attrs_section = patched.split("Attributes:", 1)[1].split("\n\n", 1)[0]
+    assert "customer_id (str): Unique identifier for the customer." in attrs_section
+    assert "items (list): List of items." in attrs_section
+    # total's type (float) has a generic-but-real fallback -- not a guess.
+    assert "total (float): float value." in attrs_section
+    assert "TODO(pycodecommenter)" not in attrs_section
+
+
+def test_property_getter_setter_deleter_listed_once_in_methods(commenter):
+    """Regression test for AUDIT_REPORT.md §1.8: a @property's getter,
+    @x.setter, and @x.deleter are three separate FunctionDef nodes sharing
+    one name (valid Python requires this -- the decorator is literally
+    `<property_name>.setter`/`.deleter`, rebinding the same name), so the
+    Methods: list must deduplicate by name rather than listing "value()"
+    three times with no indication which is which.
+    """
+    code = """class Box:
+    def __init__(self):
+        self._value = None
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, v):
+        self._value = v
+
+    @value.deleter
+    def value(self):
+        del self._value
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    methods_section = patched.split("Methods:", 1)[1].split('"""', 1)[0]
+    assert methods_section.count("value()") == 1
+
+
+def test_property_trio_does_not_hide_a_distinct_method(commenter):
+    """The dedup fix above must not accidentally collapse two genuinely
+    different methods -- only a real, same-named accessor trio."""
+    code = """class Widget:
+    def render(self):
+        return 1
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, v):
+        self._size = v
+
+    def close(self):
+        pass
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    methods_section = patched.split("Methods:", 1)[1].split('"""', 1)[0]
+    assert methods_section.count("size()") == 1
+    assert "render()" in methods_section
+    assert "close()" in methods_section
+
+
+# ---------------------------------------------------------------------------
+# Module-level docstring generation (AUDIT_REPORT.md §2) -- opt-in only via
+# include_module_docstrings, since unlike a missing function/class
+# docstring, a missing module docstring would otherwise touch the output of
+# nearly every input.
+# ---------------------------------------------------------------------------
+
+
+def test_module_docstrings_off_by_default():
+    """The default constructor must not add a module docstring -- this is
+    opt-in, unlike every other kind of docstring this tool generates, since
+    it would otherwise change the output of nearly every existing input
+    (any file/snippet with no module docstring already)."""
+    code = "def foo():\n    pass\n"
+    commenter = PyCodeCommenter()
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert not patched.startswith('"""')
+
+
+def test_module_docstring_generated_when_opted_in_and_missing():
+    """Regression test for AUDIT_REPORT.md §2: a file with zero docstrings
+    anywhere (module or otherwise) -- the main.py-shaped gap -- must get a
+    module docstring when the caller opts in."""
+    code = "def foo():\n    pass\n"
+    commenter = PyCodeCommenter(include_module_docstrings=True)
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert patched.startswith('"""')
+    assert patched.splitlines()[0] == '"""Module docstring.'
+
+
+def test_module_docstring_uses_filename_when_available():
+    """A module docstring generated via from_file has a real name signal
+    (the file itself) to derive its summary from, unlike from_string."""
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "cache_utils.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("CACHE_SIZE = 100\n")
+        commenter = PyCodeCommenter(include_module_docstrings=True)
+        commenter.from_file(path)
+        patched = commenter.get_patched_code()
+        assert patched.startswith('"""Cache utils."""')
+
+
+def test_module_with_existing_docstring_is_never_touched():
+    """A module docstring is only ever generated when there is none at
+    all -- unlike function/class docstrings, this tool never attempts to
+    merge into an existing module docstring (see _generate_module_docstring
+    for why: much more free-form prose, real risk of corrupting it for no
+    benefit, since the actual gap is files with none at all)."""
+    code = '''"""Already has a module docstring."""
+def foo():
+    pass
+'''
+    commenter = PyCodeCommenter(include_module_docstrings=True)
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert patched.startswith('"""Already has a module docstring."""')
+    assert patched.count('"""Already has a module docstring."""') == 1
+
+
+def test_module_docstring_lists_real_classes_and_functions():
+    """A module's top-level classes/functions are real AST facts, costing
+    nothing to include -- mirrors the Attributes:/Methods: pattern already
+    used for classes, one level up."""
+    code = """class Foo:
+    pass
+
+
+def bar():
+    pass
+"""
+    commenter = PyCodeCommenter(include_module_docstrings=True)
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    module_doc = patched.split('"""', 2)[1]
+    assert "Classes:\n    Foo" in module_doc
+    assert "Functions:\n    bar" in module_doc
+
+
+def test_empty_module_gets_no_docstring_even_when_opted_in():
+    """A module with no body at all (blank/whitespace-only input) has
+    nothing to describe -- must not get a docstring even with the flag on,
+    matching the existing, already-tested behavior for a genuinely empty
+    file."""
+    commenter = PyCodeCommenter(include_module_docstrings=True)
+    commenter.from_string("")
+    assert commenter.get_patched_code() == ""
+
+
+def test_module_docstring_does_not_disturb_leading_comment():
+    """A leading module comment (e.g. main.py's own commented-out import)
+    must stay above the newly inserted module docstring, not be swallowed
+    or reordered."""
+    code = "# a leading comment\nX = 1\n"
+    commenter = PyCodeCommenter(include_module_docstrings=True)
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    lines = patched.splitlines()
+    assert lines[0] == "# a leading comment"
+    assert lines[1] == '"""Module docstring."""'
+
+
+# ---------------------------------------------------------------------------
+# AUDIT_REPORT.md §3 -- CRLF files must round-trip as CRLF, not be silently
+# normalized to LF on every generation run.
+# ---------------------------------------------------------------------------
+
+
+def test_crlf_file_round_trips_as_crlf(commenter, tmp_path):
+    """A CRLF source file must come out CRLF, including on lines the
+    generator itself wrote -- not just the untouched ones -- so a
+    documentation PR on such a file doesn't turn into a full-file
+    line-ending diff."""
+    path = tmp_path / "crlf_sample.py"
+    path.write_bytes(b"def foo(x):\r\n    return x\r\n")
+    commenter.from_file(str(path))
+    patched = commenter.get_patched_code()
+    assert "\r\n" in patched
+    assert "\n" not in patched.replace("\r\n", "")
+
+
+def test_lf_file_unaffected_by_crlf_handling(commenter):
+    """The CRLF-preservation fix must not affect a normal LF file."""
+    code = "def foo(x):\n    return x\n"
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert "\r" not in patched
+
+
+# ---------------------------------------------------------------------------
+# AUDIT_REPORT.md §5 -- an unexpected exception mid-generation must not
+# silently discard a real, existing docstring in favor of a placeholder.
+# ---------------------------------------------------------------------------
+
+
+def test_function_generation_failure_preserves_existing_docstring(commenter):
+    """Regression test for AUDIT_REPORT.md §5: a failure inside
+    _generate_function_docstring must fall back to the original docstring,
+    not the destructive '\"\"\"Error generating docstring.\"\"\"' placeholder."""
+    from unittest.mock import patch
+    from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
+
+    code = '''def foo(x):
+    """An existing, hand-written docstring that must survive."""
+    return x
+'''
+    commenter.from_string(code)
+    with patch.object(_PCC, "_get_return_type", side_effect=RuntimeError("boom")):
+        patched = commenter.get_patched_code()
+    assert '"""An existing, hand-written docstring that must survive."""' in patched
+    assert "Error generating docstring" not in patched
+
+
+def test_function_generation_failure_with_no_existing_docstring_unchanged(commenter):
+    """The fix above must not regress the no-docstring-to-preserve case:
+    when there was nothing to fall back to, the placeholder is still used,
+    same as before."""
+    from unittest.mock import patch
+    from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
+
+    code = "def bar(x):\n    return x\n"
+    commenter.from_string(code)
+    with patch.object(_PCC, "_get_return_type", side_effect=RuntimeError("boom")):
+        patched = commenter.get_patched_code()
+    assert '"""Error generating docstring."""' in patched
+
+
+def test_class_generation_failure_preserves_existing_docstring(commenter):
+    """Same fix, for _generate_class_docstring."""
+    from unittest.mock import patch
+    from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
+
+    code = '''class Foo:
+    """An existing class docstring that must survive."""
+    def method(self):
+        pass
+'''
+    commenter.from_string(code)
+    with patch.object(_PCC, "_get_class_attributes", side_effect=RuntimeError("boom")):
+        patched = commenter.get_patched_code()
+    assert '"""An existing class docstring that must survive."""' in patched
+
+
+# ---------------------------------------------------------------------------
+# The "Initialize the class." / "Initialize a new instance." boilerplate --
+# the description no longer defaults to fixed boilerplate text on every
+# constructor, consistent with every other function.
+# ---------------------------------------------------------------------------
+
+
+def test_init_no_longer_gets_boilerplate_description(commenter):
+    """A fresh __init__ with no existing docstring keeps its recognizable
+    "Initialize the class." summary, but no longer gets the identical
+    "Initialize a new instance." description paragraph on every single
+    constructor regardless of what the class does."""
+    code = """class OrderProcessor:
+    def __init__(self, customer_id: str):
+        self.customer_id = customer_id
+"""
+    commenter.from_string(code)
+    patched = commenter.get_patched_code()
+    assert '"""Initialize the class.' in patched
+    assert "Initialize a new instance." not in patched

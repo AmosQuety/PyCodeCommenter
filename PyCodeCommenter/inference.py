@@ -23,6 +23,17 @@ from typing import List, Optional
 # has unresolved guesses in it visibly fails validation.
 GUESS_MARKER = "TODO(pycodecommenter): describe"
 
+# Text drafted by an opt-in AI description provider (see
+# description_provider.py) is never presented as an equal, finished fact
+# alongside deterministic, AST-grounded content -- it carries this marker
+# permanently in the generated text itself, not just at generation time, so
+# anyone reading the file later (not just whoever ran the tool) can tell the
+# difference. validator.py's check_content_quality() recognizes this marker
+# as its own category, distinct from both "documented" and the GUESS_MARKER
+# placeholder above, so an AI draft can never be silently laundered into
+# either "done" or "still a TODO" in a validate/coverage report.
+AI_DRAFT_MARKER = "(AI-drafted, unreviewed)"
+
 
 def humanize_identifier(name: str) -> str:
     """Strip leading/trailing underscores and collapse any remaining run of
@@ -67,6 +78,51 @@ def _human_readable(name: str) -> str:
     return name.lower()
 
 
+def _name_ending_in(lowered: str, *suffixes: str) -> Optional[str]:
+    """If ``lowered`` is exactly one of ``suffixes`` or ends with
+    ``_<suffix>``, return the human-readable prefix before the suffix
+    (``""`` when there is no prefix, i.e. the name is the bare suffix
+    itself). Returns ``None`` when nothing matches, so callers can
+    distinguish "matched, no prefix" from "didn't match".
+
+    Args:
+        lowered (str): The already-lowercased parameter name to check.
+        *suffixes (str): One or more bare suffixes to match against (e.g.
+            ``"id"``, or ``"index", "idx"`` for two spellings of one concept).
+
+    Returns:
+        Optional[str]: The human-readable prefix, or ``None`` if no suffix matched.
+
+    >>> _name_ending_in('customer_id', 'id')
+    'customer'
+    >>> _name_ending_in('id', 'id')
+    ''
+    >>> _name_ending_in('price', 'id') is None
+    True
+    """
+    for suffix in suffixes:
+        if lowered == suffix:
+            return ""
+        if lowered.endswith("_" + suffix):
+            return _human_readable(lowered[: -(len(suffix) + 1)])
+    return None
+
+
+# Parameter names with no further name/type signal beyond the bare word
+# itself -- each phrase here is deliberately as concrete as the equivalent
+# type-only fallback (e.g. "Mapping of keys to values" for a bare dict), not
+# vaguer, per the rule that a new name pattern only ships when it beats what
+# the existing fallback would already say.
+_STATIC_NAME_DESCRIPTIONS = {
+    "config": "Configuration settings",
+    "configuration": "Configuration settings",
+    "settings": "Configuration settings",
+    "options": "Available options",
+    "result": "The computed result",
+    "output": "The produced output",
+}
+
+
 def _infer_from_name(param_name: str) -> Optional[str]:
     """Return a description based purely on the parameter name, if a known
     pattern matches.
@@ -76,6 +132,21 @@ def _infer_from_name(param_name: str) -> Optional[str]:
 
     Returns:
         Optional[str]: A description if a name pattern matched, otherwise None.
+
+    >>> _infer_from_name('customer_id')
+    'Unique identifier for the customer'
+    >>> _infer_from_name('id')
+    'Unique identifier'
+    >>> _infer_from_name('customer_name')
+    "The customer's name"
+    >>> _infer_from_name('cache_key')
+    'Key identifying the cache'
+    >>> _infer_from_name('row_index')
+    'Index of the row'
+    >>> _infer_from_name('result')
+    'The computed result'
+    >>> _infer_from_name('config_path')
+    'Path to the config'
     """
     lowered = param_name.lower()
     if lowered in {"path", "file_path", "dir_path", "directory"} or lowered.endswith(
@@ -101,6 +172,26 @@ def _infer_from_name(param_name: str) -> Optional[str]:
         return "Timeout in seconds"
     if lowered in {"verbose", "debug"}:
         return "Enable verbose output"
+
+    prefix = _name_ending_in(lowered, "id")
+    if prefix is not None:
+        return f"Unique identifier for the {prefix}" if prefix else "Unique identifier"
+
+    prefix = _name_ending_in(lowered, "name")
+    if prefix is not None:
+        return f"The {prefix}'s name" if prefix else "The name"
+
+    prefix = _name_ending_in(lowered, "key")
+    if prefix is not None:
+        return f"Key identifying the {prefix}" if prefix else "Lookup key"
+
+    prefix = _name_ending_in(lowered, "index", "idx")
+    if prefix is not None:
+        return f"Index of the {prefix}" if prefix else "Index position"
+
+    if lowered in _STATIC_NAME_DESCRIPTIONS:
+        return _STATIC_NAME_DESCRIPTIONS[lowered]
+
     return None
 
 
@@ -214,4 +305,9 @@ def infer_description(
     return GUESS_MARKER
 
 
-__all__ = ["infer_description", "humanize_identifier", "GUESS_MARKER"]
+__all__ = [
+    "infer_description",
+    "humanize_identifier",
+    "GUESS_MARKER",
+    "AI_DRAFT_MARKER",
+]

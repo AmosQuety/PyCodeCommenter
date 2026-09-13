@@ -33,6 +33,16 @@ class DocstringParser:
     _NUMPY_DECL_RE = re.compile(r"^(\S.*?)\s*:\s*(.*)$")
     _TRAILING_OPTIONAL_RE = re.compile(r",?\s*optional\s*$", re.IGNORECASE)
 
+    # Boundaries that end the summary paragraph when scanning forward from
+    # the second physical line: a blank line, or a line that is itself a
+    # recognized section header (so a summary immediately followed by
+    # Args:/etc with no blank line doesn't swallow the header into the
+    # summary text).
+    _GOOGLE_HEADER_RE = re.compile(
+        r"^\s*(Args|Returns|Yields|Raises|Attributes|Methods):\s*$"
+    )
+    _SPHINX_FIELD_RE = re.compile(r"^\s*:(param\b|type\b|returns?\b)")
+
     def __init__(self, docstring: Optional[str] = None):
         self.raw_docstring = docstring or ""
         self.summary = ""
@@ -50,9 +60,32 @@ class DocstringParser:
             return
 
         lines = self.raw_docstring.strip().splitlines()
-        self.summary = lines[0].strip()
 
-        remaining_content = "\n".join(lines[1:]).strip()
+        # The summary is the docstring's first paragraph, not just its
+        # first physical line: a hand-wrapped sentence spanning several
+        # physical lines with no blank line between them is one summary,
+        # not a summary followed by a spurious description fragment
+        # starting mid-sentence. A docstring that starts directly with a
+        # section header (no summary text at all, e.g. a stray blank line
+        # swallowed by the .strip() above) has an empty summary rather than
+        # the header line itself.
+        if self._GOOGLE_HEADER_RE.match(lines[0]) or self._SPHINX_FIELD_RE.match(
+            lines[0]
+        ):
+            summary_end = 0
+        else:
+            summary_end = len(lines)
+            for i, line in enumerate(lines[1:], start=1):
+                if (
+                    not line.strip()
+                    or self._GOOGLE_HEADER_RE.match(line)
+                    or self._SPHINX_FIELD_RE.match(line)
+                ):
+                    summary_end = i
+                    break
+
+        self.summary = " ".join(line.strip() for line in lines[:summary_end])
+        remaining_content = "\n".join(lines[summary_end:]).strip()
 
         # Determine the style: NumPy's dash-underlined headers are checked
         # first since they're the most specific signature and can't be
@@ -105,7 +138,7 @@ class DocstringParser:
         """Parses Google style documentation (Args:, Returns:, Yields:)."""
         # Split by sections, allowing headers to be at the start or after a newline
         sections = re.split(
-            r"(?m)^ *(Args|Returns|Yields|Attributes|Methods):$", content
+            r"(?m)^ *(Args|Returns|Yields|Raises|Attributes|Methods):$", content
         )
 
         # If the first part doesn't match a header, it's the description
@@ -124,6 +157,15 @@ class DocstringParser:
                 # return), and nothing downstream needs to distinguish them
                 # when merging.
                 self.returns = body.strip()
+            elif header == "Raises":
+                # No first-class "raises" field exists in this data model.
+                # Unlike the NumPy path (which has no other way to preserve
+                # this text), the generator always recomputes Raises fresh
+                # from the function's actual `raise` statements on every
+                # run, so there's nothing to merge back in here -- the only
+                # thing that matters is recognizing this as its own section
+                # so its body isn't glued onto Returns/Yields above it.
+                pass
 
     def _parse_google_args(self, body: str) -> None:
         """
@@ -161,14 +203,28 @@ class DocstringParser:
             elif header == "Returns":
                 self._parse_numpy_returns(body)
             elif header == "Raises":
-                # No first-class "raises" field exists in this data model,
-                # and nothing downstream regenerates a Raises section, so
-                # fold it into the description rather than dropping it -
-                # non-lossy, and it can't collide/duplicate later.
-                if body.strip():
-                    self.description = (
-                        self.description + "\n\nRaises\n" + body.strip()
-                    ).strip()
+                # No first-class "raises" field exists in this data model.
+                # This used to fold the body into `description` on the
+                # theory that nothing downstream regenerated a Raises
+                # section, so that was the only non-lossy option -- but
+                # commenter.py's Raises: generation (from the function's
+                # actual `raise` statements) makes that theory stale: it
+                # always recomputes Raises fresh on every run, the same as
+                # the Google-style Raises: header just above already
+                # assumes. Folding the old NumPy body into `description`
+                # now produces two disagreeing Raises sections in the
+                # merged output -- the stale, malformed NumPy text (never
+                # valid Google style; lost its underline without gaining a
+                # colon) floating above Args:/Returns:, *and* a correct,
+                # freshly-generated Raises: section at the bottom naming
+                # the same exception. Discarding the body here, like the
+                # Google-style branch does, is what's actually non-lossy
+                # now: the exception class is a fact re-derived straight
+                # from the source on every run, not preserved text -- the
+                # *why it's raised* prose was never carried forward into a
+                # real Raises: section by either style anyway, so nothing
+                # new is lost by dropping it here too.
+                pass
 
     def _parse_numpy_params(self, body: str) -> None:
         """Helper to parse a NumPy-style Parameters section.

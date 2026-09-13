@@ -83,8 +83,14 @@ ConfigError
     assert info["param_types"]["start_path"] == "str | None"  # ", optional" stripped
     assert info["returns"].startswith("dict:")
     assert "Parsed configuration dictionary." in info["returns"]
-    # Raises has no first-class field; folded into description, non-lossy.
-    assert "ConfigError" in info["description"]
+    # No first-class "raises" field exists in this data model, and
+    # commenter.py's Raises: generation always recomputes it fresh from the
+    # function's actual `raise` statements -- so the NumPy Raises body is
+    # correctly discarded here (AUDIT_REPORT.md §1.3), not folded into
+    # `description`, where it used to produce a second, disagreeing,
+    # malformed Raises block alongside the real generated one.
+    assert "ConfigError" not in info["description"]
+    assert info["description"] == ""
 
 
 def test_parse_numpy_multi_name_shared_type():
@@ -111,6 +117,40 @@ start_path : str, optional
     Directory to search from.
 """
     assert DocstringParser(doc).get_info()["param_types"]["start_path"] == "str"
+
+
+def test_multiline_summary_not_split_at_wrap_point():
+    """A hand-wrapped summary spanning several physical lines with no blank
+    line between them is one summary, not summary + a spurious description
+    fragment starting mid-sentence."""
+    doc = """Shared traversal for the two scope-bounded walkers below: yields every
+descendant of *node*, without descending past a node whose type is in
+*boundary_types*.
+
+Args:
+    node: The node to walk.
+"""
+    info = DocstringParser(doc).get_info()
+    assert info["summary"] == (
+        "Shared traversal for the two scope-bounded walkers below: yields every "
+        "descendant of *node*, without descending past a node whose type is in "
+        "*boundary_types*."
+    )
+    assert info["description"] == ""
+
+
+def test_docstring_starting_with_header_has_empty_summary():
+    """A docstring with no real summary text (only whitespace before the
+    first section header) must not have the header line itself become the
+    summary."""
+    doc = """
+
+    Args:
+        x: Something.
+    """
+    info = DocstringParser(doc).get_info()
+    assert info["summary"] == ""
+    assert info["params"]["x"] == "Something."
 
 
 def test_parse_google_still_used_when_no_numpy_signature():

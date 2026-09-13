@@ -115,8 +115,18 @@ class TypeAnalyzer:
         if isinstance(annotation, ast.Name):
             return annotation.id
 
-        if isinstance(annotation, ast.Constant) and annotation.value is None:
-            return "None"
+        if isinstance(annotation, ast.Constant):
+            if annotation.value is None:
+                return "None"
+            if isinstance(annotation.value, str):
+                # A quoted forward reference (e.g. `-> "ClassName"`, PEP
+                # 484's way of naming a type not yet defined at the
+                # annotation's point in the source -- the standard
+                # fluent-builder self-return pattern, among others). The
+                # string literal *is* the type name, a fact straight from
+                # the source, not a shape to fall through to "any" on.
+                return annotation.value
+            return "any"
 
         if isinstance(annotation, ast.Attribute):
             value_id = self.get_annotation_type(annotation.value)

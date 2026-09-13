@@ -5,6 +5,213 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+Follow-up work from a dogfooding audit run against the tool's own codebase
+(`Another_Test_PyCodeCommenter/Feedback/AUDIT_REPORT.md`) — every numbered
+finding in that audit is now closed; see `Future Work/Audit Remediation
+Log.md` for the full history.
+
+### Added
+- **`generate --output-dir PATH`** (§6): writes a fully-documented copy of
+  a directory target's tree to `PATH`, mirroring each file's relative
+  path, leaving the originals untouched — closing the exact gap that made
+  `document_folder.py` necessary as a hand-rolled external script for the
+  audit. Mutually exclusive with `--inplace`; rejected on a single-file
+  target the same way `--output` is already rejected on a directory one.
+- **Opt-in module-level docstring generation** (§2), for a module that has
+  none at all: `PyCodeCommenter(include_module_docstrings=True)`, or
+  `generate --include-module-docstrings` on the CLI. Off by default —
+  unlike a missing function/class docstring, a missing module docstring
+  would touch the output of nearly every input (any file/snippet with no
+  module docstring, not just a `main.py`-shaped real project file lacking
+  documentation entirely), so this stays behind an explicit flag, the same
+  way `--inplace`/`--backup` already do for other consequential behavior.
+  When enabled, the summary is derived from
+  the file's name (via `from_file`) or a neutral placeholder (via
+  `from_string`, which has no filename to go on), plus a real `Classes:`/
+  `Functions:` listing of what the module defines when it defines
+  anything — mirroring the `Attributes:`/`Methods:` pattern already used
+  for classes. A module with an *existing* docstring is never touched:
+  unlike function/class docstrings, this never attempts to merge into one,
+  since module docstrings are far more free-form prose and reconstructing
+  one risks corrupting it for no benefit.
+
+### Fixed
+- **CRLF files were silently normalized to LF on every generation run**
+  (§3), even on files with zero docstring changes — turning a
+  documentation PR on a CRLF file (common on projects with Windows
+  contributors) into a full-file line-ending diff. `from_file`/
+  `from_string` now detect and remember the source's newline convention,
+  normalizing to `\n` only for internal processing; `get_patched_code()`
+  restores the original convention at the final output boundary. The CLI's
+  `--inplace`/`--output`/`--output-dir` reads and writes now use
+  `newline=""` too, so the before/after comparison isn't fooled by
+  universal-newlines translation and a CRLF file isn't double-translated
+  to `\r\r\n` on write on Windows.
+- **An unexpected exception mid-generation silently discarded a real,
+  existing docstring** (§5), replacing it with the unhelpful literal
+  `"""Error generating docstring."""` — a `document_folder.py`-style
+  driver script's own `[OK]`/`[FAIL]` reporting would never see this,
+  since the failure was per-function, not per-file. `_generate_function_
+  docstring`/`_generate_class_docstring` now fall back to the original
+  docstring when one existed, matching the fallback discipline this file
+  already uses for a libcst parse failure elsewhere. Unobserved in
+  practice before this fix (the audit flagged it as a latent risk, not an
+  encountered bug), so verified by forcing a real exception directly
+  rather than against a naturally-occurring repro.
+- **`__init__` was the one function still getting fixed boilerplate
+  description text on every constructor**, regardless of what the class
+  does (`"Initialize a new instance."`, ten times across this project's
+  own source alone) — inconsistent with the "no placeholder paragraph"
+  principle already applied to every other function earlier in this
+  thread. `__init__`'s description now follows the same rule as
+  everywhere else; only the summary line (`"Initialize the class."`)
+  stays fixed, since the generic name-derived fallback would produce
+  `"Init."` for `__init__`, which reads worse than what it would replace.
+- **A `@property`'s getter/setter/deleter were listed three times under
+  one name in a class's `Methods:` section** (§1.8), with no indication
+  which was which. The `Methods:` list was built from every non-private
+  method in the class body with no deduplication — but a setter/deleter's
+  decorator (`<property_name>.setter`/`.deleter`) is only valid Python
+  when it rebinds the exact same name as the property, so any duplicate
+  name here is always one property's accessor trio, never two distinct
+  methods. Fixed: the method-name list now dedupes via `dict.fromkeys()`,
+  preserving first-seen order.
+- **The validator false-flagged its own honest output on `Returns`/
+  `Yields`** (§1.6). `check_return_documentation` treated any non-empty
+  parsed `Returns:` text as a claim of a real return value, so every void
+  function documented with the generator's own honest `Returns:\n
+  None.\n` convention was flagged "has Returns section but doesn't return
+  a value" — a `generate` → `validate` CI pipeline produced spurious
+  warnings on its own freshly generated, correct output. A real generator
+  got the identical false positive, because the check only recognized
+  `ast.Return`, never `ast.Yield`/`ast.YieldFrom` — a generator's genuine
+  yielded value was invisible to it. Fixed: the output-value scan now
+  includes `yield <value>`, and the literal `"None."` sentence no longer
+  counts as "claims a return value." On the audit's own dogfood fixture,
+  this dropped the validator's `returns`-category issue count from 5 to 0
+  with no new categories introduced.
+- **NumPy `Raises` sections corrupted the merged docstring, and did so
+  worse after `Raises:` generation was added** (§1.3). An unrecognized
+  NumPy `Raises` section used to be folded into the free-text
+  `description`, producing malformed output (no longer valid Google or
+  NumPy style — it lost its `------` underline without gaining a `:`, and
+  floated above `Args:`/`Returns:`). Once real `Raises:` generation
+  existed (see Tier 2a below), regenerating a file with this shape
+  produced *two* disagreeing Raises blocks: the stale, malformed leftover,
+  and a correct, freshly-generated one naming the same exception.
+  `docstring_parser.py`'s NumPy `Raises` handling now discards the body
+  entirely, matching the design already used for the Google-style
+  `Raises:` header: the exception class is always recomputed fresh from
+  the function's actual `raise` statement, so there's nothing to merge
+  back in.
+- **String forward-reference type annotations (`-> "ClassName"`) resolved
+  to `Any` instead of the named type** (§1.4). `type_analyzer.py`'s
+  `get_annotation_type` handled `ast.Constant` only for the `None`
+  annotation; any other constant -- i.e. any quoted forward reference, PEP
+  484's way of naming a type not yet defined at the annotation's point in
+  the source -- fell through to `"any"`. This hit the tool's own public
+  API: `PyCodeCommenter.from_string`/`from_file` both declare `->
+  "PyCodeCommenter"` (the standard fluent-builder self-return pattern) and
+  got `Returns: Any: ...` instead of `Returns: PyCodeCommenter: ...`. Also
+  affects any self-referencing factory/builder method (confirmed on
+  `OrderProcessor.empty(cls, ...) -> "OrderProcessor"` and
+  `Coordinates.distance_to(self, other: "Coordinates")` in the audit's own
+  fixture) and resolves correctly nested inside a generic too (e.g.
+  `Optional["ClassName"]`), since the fix is in the same recursive
+  `get_annotation_type` call every subscript/union branch already goes
+  through.
+- **`generate` was not idempotent: regenerating on already-patched output
+  compounded without bound.** Every rerun on a file with a defaulted
+  parameter appended another copy of `" (default: ...)"` onto that
+  parameter's Args: line (`rate (float): float value. (default: 0.1)` →
+  `... (default: 0.1). (default: 0.1)` → `... (default: 0.1). (default:
+  0.1). (default: 0.1)`, unbounded), and a niladic function's `Returns:
+  None.` became `Returns: None: None.` on the very next regeneration.
+  Root cause: `DocstringParser` re-parses the tool's own previously
+  generated Args-line suffix and bare `"None."` return sentence back as if
+  they were free-form author text, and `commenter.py` re-wrapped them
+  instead of recognizing its own prior output — the same defect shape as
+  the `Raises:`/NumPy-`Returns:` merge bugs above, for two more
+  tool-generated literals. Pre-existing; reproduces identically on the
+  untouched pre-Tier-2a checkout. Fixed: a new
+  `_strip_own_default_annotation` (`commenter.py`) strips *any* trailing
+  `" (default: ...)"` suffix from a re-parsed parameter description before
+  deciding what to append — unconditionally, not only when it happens to
+  match the parameter's current default, since the append immediately
+  below always re-adds the correct, current one regardless. (An earlier
+  version of this fix matched only the current value, which left a gap:
+  editing a parameter's default in source between `generate` runs — a
+  normal workflow — left the stale suffix in place alongside a freshly
+  appended current one, the same compounding failure via a legitimate edit
+  instead of a bare rerun.) The bare `"None."` return sentence is now
+  recognized and treated as absent (not real preserved text) before the
+  existing-description merge branch runs — falling through correctly to a
+  fresh guess marker if the function has since been edited to actually
+  return a value, rather than keeping the stale text forever. Verified
+  stable across 4 consecutive regeneration passes — including across a
+  changed default value — and on the full
+  `docstring_generation_fixture.py`.
+- **Generation injected an unwanted `TODO(pycodecommenter): describe`
+  paragraph into docstrings that were already complete.** `commenter.py`'s
+  `_generate_function_docstring`/`_generate_class_docstring` treated "no
+  free-text description paragraph was parsed" as "a description is
+  missing," even when a docstring's summary + `Args:` + `Returns:` was
+  already complete by design (a normal, common Google-style shape with no
+  separate prose paragraph). Merging into `slugify`'s own already-correct
+  docstring — used as the maintainer's own "leave this alone" regression
+  fixture — reproducibly injected the placeholder instead of leaving the
+  docstring untouched. Fixed: the description slot is now only ever filled
+  with real parsed text; it's left empty otherwise, whether or not a prior
+  docstring existed. (A fresh, never-documented function's summary line is
+  itself just derived from the function's name, so a second "nothing to
+  add" paragraph immediately below it added no information beyond what the
+  summary already didn't have — this now no longer appears either. Per-field
+  placeholders — `Args:`/`Returns:`/`Attributes:`/`Methods:` entries with no
+  other source of truth — are unaffected.)
+- **A hand-wrapped summary sentence spanning multiple physical lines got
+  split at the wrap point.** `DocstringParser.parse()` took only the docstring's
+  first physical line as "the summary," so any existing docstring whose
+  summary sentence wrapped across two or more lines (common style throughout
+  this project's own source, e.g. `param_utils.py`'s `_walk_until`) had its
+  second line treated as a separate description paragraph — severing the
+  sentence mid-thought. Fixed: the summary is now the whole first paragraph
+  (every physical line up to the first blank line or a recognized section
+  header), joined back into one line.
+
+### Added
+- **Class `Attributes:` descriptions now go through the same
+  `infer_description()` pipeline `Args:` already uses**, instead of an
+  unconditional `TODO(pycodecommenter): describe` for every attribute.
+  `OrderProcessor.customer_id` now reads "Unique identifier for the
+  customer." instead of a guess marker; an attribute with no matching
+  name/type signal (e.g. `ConfigError.original`, typed
+  `Optional[Exception]`) still correctly gets the guess marker.
+- **Functions that `raise` now get a `Raises:` section naming the exception
+  class.** Previously the generator only ever wrote `Args:`/`Returns:`/
+  `Yields:` — even for a function whose body raised, which meant running
+  `validate` against the tool's own generated output flagged its own
+  docstrings ("Function raises exceptions {'ValueError'} but has no Raises
+  section"). The exception *class* at a `raise SomeError(...)` site is a
+  literal token in the source (a fact); only *why*/*when* it's raised is
+  unknowable from the AST, so that part is still an explicit
+  `TODO(pycodecommenter): describe when this is raised.` marker. A bare
+  `raise` (re-raise) and `raise err` (an already-constructed instance) are
+  correctly skipped rather than guessed, since neither lets the exception
+  class be read off the raise site without data-flow analysis.
+  `docstring_parser.py` also now recognizes `Raises:` as a real Google-style
+  section header (it previously didn't), so re-running `generate` on
+  already-Raises-documented output doesn't glue the Raises block onto the
+  `Returns:` text above it — the same corruption shape as the pre-existing
+  NumPy-`Raises` bug, now pre-empted for this new section too.
+- **`inference.py`'s name-pattern vocabulary widened**: `id`/`*_id`,
+  `name`/`*_name`, `key`/`*_key`, `index`/`idx`, `config`/`configuration`/
+  `settings`/`options`, `result`/`output` now produce a real, specific
+  description (e.g. `customer_id` → "Unique identifier for the customer.")
+  instead of falling through to the generic type-only fallback or the
+  guess marker. Existing, more specific rules (`*_path`, `is_`/`has_`/
+  `can_`, `count`/`num`) keep priority — the new rules are checked last and
+  never shadow them.
+
 ## [2.5.0] - 2026-09-05
 
 ### Added
