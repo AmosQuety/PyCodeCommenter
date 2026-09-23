@@ -24,6 +24,7 @@ from libcst.metadata import PositionProvider
 try:
     from .inference import (
         infer_description,
+        has_name_signal,
         humanize_identifier,
         GUESS_MARKER,
         AI_DRAFT_MARKER,
@@ -46,9 +47,19 @@ try:
         describe_raise_condition,
         raise_sites,
     )
+    from .function_doc import (
+        ArgEntry,
+        DocPart,
+        FunctionDoc,
+        Origin,
+        RaisesEntry,
+        ReturnsEntry,
+        render_function_doc,
+    )
 except (ImportError, ValueError):
     from inference import (
         infer_description,
+        has_name_signal,
         humanize_identifier,
         GUESS_MARKER,
         AI_DRAFT_MARKER,
@@ -63,6 +74,15 @@ except (ImportError, ValueError):
     )
     from description_provider import DescriptionProvider, FunctionContext, ParameterFact
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
+    from function_doc import (
+        ArgEntry,
+        DocPart,
+        FunctionDoc,
+        Origin,
+        RaisesEntry,
+        ReturnsEntry,
+        render_function_doc,
+    )
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -349,173 +369,8 @@ class PyCodeCommenter:
         existing_doc = None
         try:
             existing_doc = ast.get_docstring(func_node)
-            parser = DocstringParser(existing_doc)
-            parsed_info = parser.get_info()
-
-            summary = parsed_info.get("summary") or (
-                humanize_identifier(func_node.name).capitalize() + "."
-            )
-
-            if func_node.name == "__init__":
-                # "Initialize the class." is still a fixed literal (not
-                # derived from humanize_identifier("__init__") == "init",
-                # which reads worse than the boilerplate it would replace)
-                # -- but unlike before, it's the *only* fixed part. The
-                # description no longer defaults to the boilerplate
-                # "Initialize a new instance." on every constructor
-                # regardless of what the class does: it now follows the
-                # same rule as every other function below.
-                summary = "Initialize the class."
-
-            # A parsed description is the author's real words (a fact) and
-            # wins outright. Otherwise, an opt-in description provider gets
-            # a chance (fails closed to "" -- see
-            # _draft_description_via_provider); with no provider configured
-            # (the default), this is always "". Only then does the slot
-            # stay empty rather than fabricating a placeholder: the summary
-            # above it is either the author's own text or, when there's no
-            # existing docstring at all, itself just derived from the
-            # function's name -- a second "nothing to add" paragraph under
-            # a name-derived summary is noise, not new honesty.
-            description = parsed_info.get(
-                "description"
-            ) or self._draft_description_via_provider(func_node)
-
-            if description and description.lower().rstrip(
-                "."
-            ) == summary.lower().rstrip("."):
-                description = ""
-
-            docstring = f'"""{summary}\n\n'
-            if description:
-                docstring += f"{description}\n\n"
-
-            docstring += "Args:\n"
-
-            # get_all_parameters() covers positional-only, positional-or-
-            # keyword, *args, keyword-only, and **kwargs params -- the full
-            # ast.arguments grammar, not just func_node.args.args -- so
-            # signatures using any of those are no longer silently dropped.
-            all_params = exclude_self_cls(get_all_parameters(func_node))
-            sibling_params = [p.name for p in all_params]
-
-            found_args = False
-            for param in all_params:
-                found_args = True
-                # A real static type annotation is provably correct from
-                # the code and always wins. Only fall back to a type
-                # documented in an existing docstring when static
-                # inference has nothing to offer ("any").
-                static_type = self._infer_param_type(param)
-                docstring_type = parsed_info.get("param_types", {}).get(
-                    param.display_name
-                )
-                inferred_type = (
-                    static_type
-                    if static_type != "any"
-                    else (docstring_type or static_type)
-                )
-                default_str = (
-                    self._get_default_value(param.default)
-                    if param.default is not None
-                    else None
-                )
-                parsed_param_desc = parsed_info.get("params", {}).get(
-                    param.display_name
-                )
-                if parsed_param_desc:
-                    # A previous generation pass may have appended this
-                    # exact " (default: ...)" suffix onto this same
-                    # description (see the append below). Re-parsing it back
-                    # as preserved text and appending the suffix again would
-                    # compound it a little more on every regeneration --
-                    # strip it first (unconditionally, not only when it
-                    # matches the *current* default -- see the method's own
-                    # docstring for why) so the append below restores
-                    # exactly one, correct, up-to-date copy.
-                    parsed_param_desc = self._strip_own_default_annotation(
-                        parsed_param_desc
-                    )
-                param_desc = parsed_param_desc or self._get_parameter_description(
-                    func_name=func_node.name,
-                    param_name=param.name,
-                    inferred_type=inferred_type,
-                    default_value=default_str,
-                    sibling_params=sibling_params,
-                )
-
-                display_type = "Any" if inferred_type == "any" else inferred_type
-                arg_line = f"    {param.display_name} ({display_type}): {param_desc}"
-                if not any(param_desc.endswith(p) for p in {".", "!", "?"}):
-                    arg_line += "."
-                if param.default is not None:
-                    arg_line += f" (default: {self._get_default_value(param.default)})"
-                docstring += arg_line + "\n"
-
-            if not found_args:
-                docstring += "    None.\n"
-
-            local_types = self._get_local_types(func_node)
-            is_generator = self._is_generator(func_node)
-            return_type = self._get_return_type(func_node, local_types)
-            display_return_type = "Any" if return_type == "any" else return_type
-            section_label = "Yields" if is_generator else "Returns"
-
-            existing_return_desc = parsed_info.get("returns")
-            if existing_return_desc == "None.":
-                # The bare "None." sentence is this tool's own literal for
-                # "no return value to describe" (the `elif return_type ==
-                # "None":` branch below), not real preserved author text --
-                # unlike a real return description, it never carries a
-                # "type: " prefix for the branch below to recognize and
-                # strip. Treating it as absent here (rather than as existing
-                # text to re-wrap into "None: None.") keeps regeneration
-                # stable, and correctly falls through to a fresh
-                # GUESS_MARKER if the function has since been edited to
-                # actually return something.
-                existing_return_desc = None
-            if existing_return_desc:
-                return_desc = existing_return_desc
-                if ":" in return_desc:
-                    prefix, rest = return_desc.split(":", 1)
-                    prefix_clean = prefix.strip()
-                    if (
-                        prefix_clean == return_type
-                        or " " not in prefix_clean
-                        or "[" in prefix_clean
-                        or "|" in prefix_clean
-                    ):
-                        return_desc = rest.strip()
-                docstring += (
-                    f"\n{section_label}:\n    {display_return_type}: {return_desc}\n"
-                )
-            elif func_node.name == "__init__" and not is_generator:
-                # Constructors implicitly return None -- Google style omits
-                # Returns entirely rather than prompting to describe a value
-                # that's never returned.
-                pass
-            elif return_type == "None":
-                # No return statement anywhere in the body (or only bare
-                # `return`s): there's nothing to describe, so skip the
-                # guess-marker prompt.
-                docstring += f"\n{section_label}:\n    None.\n"
-            else:
-                return_desc = (
-                    describe_bool_return(func_node)
-                    if return_type == "bool" and not is_generator
-                    else None
-                )
-                docstring += (
-                    f"\n{section_label}:\n    {display_return_type}: "
-                    f"{return_desc or GUESS_MARKER}\n"
-                )
-
-            docstring += self._build_raises_section(
-                func_node, parsed_info.get("raises", {})
-            )
-
-            docstring += '"""'
-            return docstring
+            parsed_info = DocstringParser(existing_doc).get_info()
+            return render_function_doc(self._build_function_doc(func_node, parsed_info))
         except Exception as e:
             logger.error(
                 f"Error generating function docstring for {func_node.name}: {e}"
@@ -530,6 +385,207 @@ class PyCodeCommenter:
                 # real content with a placeholder.
                 return f'"""{existing_doc}"""'
             return '"""Error generating docstring."""'
+
+    def _build_function_doc(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+    ) -> FunctionDoc:
+        """Collects every part of a function's docstring, each tagged with
+        where its text came from (see ``function_doc.Origin``).
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            FunctionDoc: The parts, ready to render.
+        """
+        summary = self._summary_part(func_node, parsed_info)
+        return FunctionDoc(
+            summary=summary,
+            description=self._description_part(func_node, parsed_info, summary),
+            args=self._arg_entries(func_node, parsed_info),
+            returns=self._returns_entry(func_node, parsed_info),
+            raises=self._raises_entries(func_node, parsed_info.get("raises", {})),
+        )
+
+    def _summary_part(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+    ) -> DocPart:
+        if func_node.name == "__init__":
+            # "Initialize the class." is a fixed literal rather than derived
+            # from humanize_identifier("__init__") == "init", which reads
+            # worse than the boilerplate it would replace.
+            return DocPart("Initialize the class.", Origin.FACT)
+        if parsed_info.get("summary"):
+            return DocPart(parsed_info["summary"], Origin.AUTHOR)
+        # Derived from the function's name alone: true, but says little.
+        return DocPart(
+            humanize_identifier(func_node.name).capitalize() + ".", Origin.WEAK
+        )
+
+    def _description_part(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+        summary: DocPart,
+    ) -> Optional[DocPart]:
+        # A parsed description is the author's real words and wins
+        # outright. Otherwise an opt-in description provider gets a chance
+        # (failing closed to "" -- see _draft_description_via_provider).
+        # With neither, the slot stays empty rather than holding a
+        # placeholder: a "nothing to add" paragraph under a summary is
+        # noise, not honesty.
+        if parsed_info.get("description"):
+            part = DocPart(parsed_info["description"], Origin.AUTHOR)
+        else:
+            drafted = self._draft_description_via_provider(func_node)
+            part = DocPart(drafted, Origin.AI) if drafted else None
+        if part is None:
+            return None
+        if part.text.lower().rstrip(".") == summary.text.lower().rstrip("."):
+            return None
+        return part
+
+    def _arg_entries(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+    ) -> list:
+        # get_all_parameters() covers positional-only, positional-or-
+        # keyword, *args, keyword-only, and **kwargs params -- the full
+        # ast.arguments grammar, not just func_node.args.args.
+        all_params = exclude_self_cls(get_all_parameters(func_node))
+        sibling_params = [p.name for p in all_params]
+        entries = []
+        for param in all_params:
+            # A real static type annotation is provably correct from the
+            # code and always wins. Only fall back to a type documented in
+            # an existing docstring when static inference has nothing to
+            # offer ("any").
+            static_type = self._infer_param_type(param)
+            docstring_type = parsed_info.get("param_types", {}).get(param.display_name)
+            inferred_type = (
+                static_type if static_type != "any" else (docstring_type or static_type)
+            )
+            default_str = (
+                self._get_default_value(param.default)
+                if param.default is not None
+                else None
+            )
+            entries.append(
+                ArgEntry(
+                    name=param.display_name,
+                    display_type="Any" if inferred_type == "any" else inferred_type,
+                    part=self._arg_part(
+                        func_node, parsed_info, param, inferred_type, sibling_params
+                    ),
+                    default=default_str,
+                )
+            )
+        return entries
+
+    def _arg_part(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+        param: Any,
+        inferred_type: str,
+        sibling_params: list,
+    ) -> DocPart:
+        parsed_desc = parsed_info.get("params", {}).get(param.display_name)
+        if parsed_desc:
+            # A previous generation pass may have appended the
+            # " (default: ...)" suffix onto this description; re-parsing and
+            # re-appending would compound it on every run, so strip it
+            # first (see _strip_own_default_annotation).
+            return DocPart(
+                self._strip_own_default_annotation(parsed_desc), Origin.AUTHOR
+            )
+
+        default_str = (
+            self._get_default_value(param.default)
+            if param.default is not None
+            else None
+        )
+        desc = self._get_parameter_description(
+            func_name=func_node.name,
+            param_name=param.name,
+            inferred_type=inferred_type,
+            default_value=default_str,
+            sibling_params=sibling_params,
+        )
+        if desc == GUESS_MARKER:
+            return DocPart(desc, Origin.GUESS)
+        return DocPart(
+            desc, Origin.FACT if has_name_signal(param.name) else Origin.WEAK
+        )
+
+    def _returns_entry(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+    ) -> Optional[ReturnsEntry]:
+        local_types = self._get_local_types(func_node)
+        is_generator = self._is_generator(func_node)
+        return_type = self._get_return_type(func_node, local_types)
+        display_type = "Any" if return_type == "any" else return_type
+        label = "Yields" if is_generator else "Returns"
+
+        existing_desc = parsed_info.get("returns")
+        if existing_desc == "None.":
+            # This tool's own literal for "no return value to describe",
+            # not author text -- treated as absent so regeneration stays
+            # stable and a function since edited to return something falls
+            # through to a fresh entry below.
+            existing_desc = None
+
+        if existing_desc:
+            return ReturnsEntry(
+                label,
+                display_type,
+                DocPart(
+                    self._strip_return_type_prefix(existing_desc, return_type),
+                    Origin.AUTHOR,
+                ),
+            )
+        if func_node.name == "__init__" and not is_generator:
+            # Constructors implicitly return None; Google style omits
+            # Returns rather than describing a value that's never returned.
+            return None
+        if return_type == "None":
+            # No value returned anywhere in the body: nothing to describe.
+            return ReturnsEntry(label, None, DocPart("None.", Origin.FACT))
+
+        bool_desc = (
+            describe_bool_return(func_node)
+            if return_type == "bool" and not is_generator
+            else None
+        )
+        if bool_desc:
+            return ReturnsEntry(label, display_type, DocPart(bool_desc, Origin.FACT))
+        return ReturnsEntry(label, display_type, DocPart(GUESS_MARKER, Origin.GUESS))
+
+    @staticmethod
+    def _strip_return_type_prefix(description: str, return_type: str) -> str:
+        """Removes a leading "type:" from a parsed return description, so
+        re-rendering it under the current type doesn't repeat the type."""
+        if ":" not in description:
+            return description
+        prefix, rest = description.split(":", 1)
+        prefix_clean = prefix.strip()
+        if (
+            prefix_clean == return_type
+            or " " not in prefix_clean
+            or "[" in prefix_clean
+            or "|" in prefix_clean
+        ):
+            return rest.strip()
+        return description
 
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
         """Generates a Google-style docstring for a class node, merging
@@ -947,12 +1003,12 @@ class PyCodeCommenter:
         """
         return list(raise_sites(func_node))
 
-    def _build_raises_section(
+    def _raises_entries(
         self,
         func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         documented: Dict[str, str],
-    ) -> str:
-        """Builds the Raises: section, never discarding an author's entries.
+    ) -> list:
+        """Builds the Raises: entries, never discarding an author's.
 
         Each exception the code raises is described, in order of preference,
         by the author's existing text, the condition read off the code
@@ -967,8 +1023,7 @@ class PyCodeCommenter:
                 entries, by exception name as the author wrote it.
 
         Returns:
-            str: The section, starting with a blank line, or ``""`` when
-                there is nothing to document.
+            list: ``RaisesEntry`` items, code-raised exceptions first.
         """
         # An author may write `errors.ConfigError` for a bare
         # `raise ConfigError(...)`; both name the same exception.
@@ -978,19 +1033,22 @@ class PyCodeCommenter:
         entries = []
         for exc_name, nodes in raise_sites(func_node).items():
             _, author_desc = by_short_name.pop(exc_name, (None, None))
-            desc = (
-                author_desc
-                if _is_carried_forward(author_desc)
-                else describe_raise_condition(func_node, nodes)
-                or f"{GUESS_MARKER} when this is raised."
-            )
-            entries.append(f"    {exc_name}: {desc}")
+            if _is_carried_forward(author_desc):
+                part = DocPart(author_desc, Origin.AUTHOR)
+            else:
+                condition = describe_raise_condition(func_node, nodes)
+                part = (
+                    DocPart(condition, Origin.FACT)
+                    if condition
+                    else DocPart(f"{GUESS_MARKER} when this is raised.", Origin.GUESS)
+                )
+            entries.append(RaisesEntry(exc_name, part))
         entries.extend(
-            f"    {name}: {desc}"
+            RaisesEntry(name, DocPart(desc, Origin.AUTHOR))
             for name, desc in by_short_name.values()
             if _is_carried_forward(desc)
         )
-        return "\nRaises:\n" + "\n".join(entries) + "\n" if entries else ""
+        return entries
 
     def _build_function_context(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
