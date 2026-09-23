@@ -172,10 +172,7 @@ class TypeAnalyzer:
 
         if isinstance(annotation, ast.Subscript):
             base_type = self.get_annotation_type(annotation.value)
-            # Python 3.9+ uses Slice for index in some cases, but 3.10+ simplified it
             index = annotation.slice
-            if isinstance(index, ast.Index):  # Older Python
-                index = index.value
 
             # Handle Tuple/List of types inside subscript
             if isinstance(index, ast.Tuple):

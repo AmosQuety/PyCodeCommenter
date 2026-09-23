@@ -13,7 +13,6 @@ any other error leaves that one function's gaps as they are.
 """
 
 import logging
-import sys
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -189,11 +188,9 @@ class DirectProvider(DescriptionProvider):
         raise NotImplementedError
 
     def _missing_sdk(self) -> ProviderUnavailable:
-        needs_newer_python = sys.version_info < (3, 10)
         return ProviderUnavailable(
             f"The {self.label} provider needs its SDK: "
             f'pip install "pycodecommenter[{self.extra}]"'
-            + (" (requires Python 3.10 or newer)" if needs_newer_python else "")
         )
 
     def _raise_if_run_should_stop(self, error: Exception) -> None:

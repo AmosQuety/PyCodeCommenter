@@ -26,7 +26,7 @@ It works entirely on your local machine — no AI, no API calls, no rate limits.
 pip install pycodecommenter
 ```
 
-Python 3.9 or later is required. After install, the `pycodecommenter` command is available on your PATH.
+Python 3.10 or later is required. After install, the `pycodecommenter` command is available on your PATH.
 
 ---
 
@@ -91,13 +91,13 @@ If you wrote a good summary and parameter descriptions, they will survive a re-r
 
 ## What Python versions does PyCodeCommenter support?
 
-**Python 3.9, 3.10, 3.11, and 3.12.**
+**Python 3.10, 3.11, 3.12, and 3.13.**
 
 ```toml
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 ```
 
-(Python 3.8 support was dropped in v2.3.0, forced by the `libcst` dependency added that release — its current release requires Python ≥3.9.)
+(Python 3.8 support was dropped in v2.3.0, forced by the `libcst` dependency. Python 3.9 support was dropped in v2.6.0: it reached end-of-life in October 2025, and the SDKs used by `--ai-provider` require 3.10.)
 
 Python 2.x is not supported and will not be.
 

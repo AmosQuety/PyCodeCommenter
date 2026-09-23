@@ -66,7 +66,7 @@ Documentation fixes are always welcome — no discussion needed for small correc
 |------|-------|
 | [black](https://github.com/psf/black) | Code formatting — run `black .` before committing |
 | Google-style docstrings | All new functions and classes must have docstrings |
-| Python 3.9+ | Do not use syntax or stdlib features introduced after 3.9 |
+| Python 3.10+ | Do not use syntax or stdlib features introduced after 3.10 |
 
 Run PyCodeCommenter itself on any new code you write:
 

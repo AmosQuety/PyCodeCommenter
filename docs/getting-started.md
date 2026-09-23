@@ -18,7 +18,7 @@ We recommend installing PyCodeCommenter inside an active virtual environment so 
 pip install pycodecommenter
 ```
 
-*Requires Python 3.9 or later.*
+*Requires Python 3.10 or later.*
 
 Verify the installation:
 
