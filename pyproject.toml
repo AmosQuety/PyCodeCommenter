@@ -84,3 +84,7 @@ pycodecommenter = "PyCodeCommenter.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules PyCodeCommenter"
+
+[tool.black]
+# Explicit, so formatting doesn't depend on which Python runs Black.
+target-version = ["py310", "py311", "py312", "py313"]

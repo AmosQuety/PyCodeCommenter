@@ -9,6 +9,8 @@ preferred over plausible-sounding text.
 """
 
 import ast
+import builtins
+import re
 from typing import Dict, List, Optional
 
 try:
@@ -24,9 +26,11 @@ MAX_CONDITION_LENGTH = 60
 def raise_sites(func_node: FunctionNode) -> Dict[str, List[ast.Raise]]:
     """Groups the function's own ``raise`` statements by exception class.
 
-    Only ``raise SomeError(...)`` names its class at the raise site. A bare
-    re-raise and ``raise err`` (an already-constructed instance) are skipped:
-    reading their class would need data-flow analysis.
+    ``raise SomeError(...)`` names its class at the raise site. So does a
+    bare ``raise SomeError`` -- but only when the name is recognisably a
+    class (see :func:`_names_exception_class`), since ``raise err`` raises
+    an already-constructed instance whose class would need data-flow
+    analysis. A bare re-raise (``raise``) is skipped.
 
     Args:
         func_node (FunctionNode): The function to inspect.
@@ -38,14 +42,36 @@ def raise_sites(func_node: FunctionNode) -> Dict[str, List[ast.Raise]]:
     raises = [
         node
         for node in walk_own_scope(func_node)
-        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call)
+        if isinstance(node, ast.Raise) and node.exc is not None
     ]
     sites: Dict[str, List[ast.Raise]] = {}
     for node in sorted(raises, key=lambda n: (n.lineno, n.col_offset)):
-        name = _short_name(node.exc.func)
+        name = _raised_class_name(node.exc)
         if name is not None:
             sites.setdefault(name, []).append(node)
     return sites
+
+
+# CapWords ending the way exception classes are conventionally named.
+_EXCEPTION_CLASS_NAME = re.compile(r"^[A-Z]\w*(Error|Exception|Warning)$")
+
+
+def _raised_class_name(exc: ast.expr) -> Optional[str]:
+    """The exception class a ``raise`` names, or ``None`` if it can't be read
+    off the raise site."""
+    if isinstance(exc, ast.Call):
+        return _short_name(exc.func)
+    name = _short_name(exc)
+    return name if name is not None and _names_exception_class(name) else None
+
+
+def _names_exception_class(name: str) -> bool:
+    """Whether a bare name is a class rather than an exception instance: a
+    built-in exception, or named like one (``ConfigError``)."""
+    builtin = getattr(builtins, name, None)
+    if isinstance(builtin, type) and issubclass(builtin, BaseException):
+        return True
+    return bool(_EXCEPTION_CLASS_NAME.match(name))
 
 
 def describe_raise_condition(
