@@ -80,12 +80,12 @@ patched = commenter.get_patched_code()
 
 When `get_patched_code()` encounters a function that already has a docstring:
 
-1. `DocstringParser` reads the existing docstring and extracts the summary, description, parameter descriptions, and return description.
+1. `DocstringParser` reads the existing docstring and extracts the summary, description, parameter, return, exception (`Raises:`) and attribute descriptions, and any `Methods:` section.
 2. Those extracted values are used as the base for the new docstring.
 3. Only missing pieces are filled in with generated text.
 4. The result is written back in place of the original docstring.
 
-If you wrote a good summary and parameter descriptions, they will survive a re-run of `generate --inplace`. The tool only fills in what is absent.
+If you wrote a good summary and parameter descriptions, they will survive a re-run of `generate --inplace`. The tool only fills in what is absent. Exceptions and attributes you documented are kept even when the code doesn't raise or assign them directly (for example, an exception propagated from a call).
 
 ---
 

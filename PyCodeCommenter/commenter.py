@@ -41,6 +41,11 @@ try:
         FunctionContext,
         ParameterFact,
     )
+    from .code_facts import (
+        describe_bool_return,
+        describe_raise_condition,
+        raise_sites,
+    )
 except (ImportError, ValueError):
     from inference import (
         infer_description,
@@ -57,9 +62,20 @@ except (ImportError, ValueError):
         walk_skipping_nested_classes,
     )
     from description_provider import DescriptionProvider, FunctionContext, ParameterFact
+    from code_facts import describe_bool_return, describe_raise_condition, raise_sites
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _is_carried_forward(text: Optional[str]) -> bool:
+    """Whether existing docstring text is real content worth keeping.
+
+    Text containing the guess marker was written by an earlier run of this
+    tool, not by an author, so it is regenerated rather than preserved.
+    """
+    return bool(text) and GUESS_MARKER not in text
+
 
 # Matches the tool's own " (default: ...)" suffix (see the Args: loop's
 # append in _generate_function_docstring), wherever it trails a re-parsed
@@ -484,20 +500,19 @@ class PyCodeCommenter:
                 # guess-marker prompt.
                 docstring += f"\n{section_label}:\n    None.\n"
             else:
+                return_desc = (
+                    describe_bool_return(func_node)
+                    if return_type == "bool" and not is_generator
+                    else None
+                )
                 docstring += (
-                    f"\n{section_label}:\n    {display_return_type}: {GUESS_MARKER}\n"
+                    f"\n{section_label}:\n    {display_return_type}: "
+                    f"{return_desc or GUESS_MARKER}\n"
                 )
 
-            # The exception *class* at a raise site is a fact straight from
-            # the source; only why/when it's raised is unknowable from the
-            # AST alone, so that half stays an explicit, honest guess marker.
-            raised = self._get_raised_exceptions(func_node)
-            if raised:
-                docstring += "\nRaises:\n"
-                for exc_name in raised:
-                    docstring += (
-                        f"    {exc_name}: {GUESS_MARKER} when this is raised.\n"
-                    )
+            docstring += self._build_raises_section(
+                func_node, parsed_info.get("raises", {})
+            )
 
             docstring += '"""'
             return docstring
@@ -536,41 +551,17 @@ class PyCodeCommenter:
             if description:
                 docstring += f"{description}\n\n"
 
-            attributes = self._get_class_attributes(class_node)
-            if attributes:
-                docstring += "Attributes:\n"
-                for attr, attr_type in attributes.items():
-                    # Same name/type signal Args: already runs through
-                    # infer_description() for parameters -- an attribute
-                    # deserves the same real inference, not an unconditional
-                    # guess marker. We could also parse existing attributes
-                    # if we added that to DocstringParser.
-                    attr_desc = self._get_parameter_description(
-                        func_name=class_node.name,
-                        param_name=attr,
-                        inferred_type=attr_type,
-                    )
-                    docstring += f"    {attr} ({attr_type}): {attr_desc}\n"
+            attribute_lines = self._build_attribute_lines(class_node, parsed_info)
+            if attribute_lines:
+                docstring += "Attributes:\n" + "".join(attribute_lines)
 
-            method_names = [
-                node.name
-                for node in class_node.body
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and not node.name.startswith("_")
-            ]
-            # A @property's getter/setter/deleter trio is valid Python only
-            # when all three share the property's exact name (the decorator
-            # is literally `<property_name>.setter`/`.deleter`, rebinding
-            # the same name) -- so any duplicate here is always the same
-            # property's accessor trio, never two independently meaningful
-            # methods. dict.fromkeys() dedupes while preserving first-seen
-            # order, so a reader sees "value()" once, not three times with
-            # no indication which is which.
-            methods = list(dict.fromkeys(method_names))
+            # Methods: is never generated: it isn't a standard Google-style
+            # section, each public method carries its own docstring, and
+            # nothing the AST knows fits in one line per method without
+            # guessing. An author's own Methods: entries are kept.
+            methods = self._carried_forward_methods(parsed_info.get("methods", ""))
             if methods:
-                docstring += "\nMethods:\n"
-                for method in methods:
-                    docstring += f"    {method}(): {GUESS_MARKER}\n"
+                docstring += "\nMethods:\n" + methods + "\n"
 
             docstring += '"""'
             return docstring
@@ -582,6 +573,82 @@ class PyCodeCommenter:
                 # existing docstring in favor of a placeholder.
                 return f'"""{existing_doc}"""'
             return '"""Error generating docstring."""'
+
+    def _build_attribute_lines(
+        self, class_node: ast.ClassDef, parsed_info: Dict[str, Any]
+    ) -> list:
+        """Builds the Attributes: entries, never discarding an author's.
+
+        Detected attributes use the author's existing description when there
+        is one, otherwise the same name/type inference Args: uses. Attributes
+        the author documented but detection didn't find (class constants,
+        properties) are kept as written.
+
+        Args:
+            class_node (ast.ClassDef): The class node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            list: One formatted, newline-terminated line per attribute.
+        """
+        documented = dict(parsed_info.get("attributes", {}))
+        documented_types = parsed_info.get("attribute_types", {})
+        lines = []
+        for attr, attr_type in self._get_class_attributes(class_node).items():
+            if attr_type == "any":
+                attr_type = documented_types.get(attr, attr_type)
+            author_desc = documented.pop(attr, None)
+            desc = (
+                author_desc
+                if _is_carried_forward(author_desc)
+                else self._get_parameter_description(
+                    func_name=class_node.name,
+                    param_name=attr,
+                    inferred_type=attr_type,
+                )
+            )
+            display_type = "Any" if attr_type == "any" else attr_type
+            lines.append(f"    {attr} ({display_type}): {desc}\n")
+        for attr, desc in documented.items():
+            if not _is_carried_forward(desc):
+                continue
+            attr_type = documented_types.get(attr)
+            type_part = f" ({attr_type})" if attr_type else ""
+            lines.append(f"    {attr}{type_part}: {desc}\n")
+        return lines
+
+    @staticmethod
+    def _carried_forward_methods(section_body: str) -> str:
+        """An author's Methods: section, minus entries this tool generated.
+
+        Entries are the least-indented lines; deeper lines continue the
+        entry above them. An entry containing the guess marker came from an
+        earlier run of this tool and is dropped along with its continuation.
+
+        Args:
+            section_body (str): The existing Methods: section body.
+
+        Returns:
+            str: The kept lines, re-indented under a Methods: header, or
+                ``""`` if none remain.
+        """
+        lines = [line for line in section_body.splitlines() if line.strip()]
+        if not lines:
+            return ""
+        base = min(len(line) - len(line.lstrip()) for line in lines)
+        entries = []
+        for line in lines:
+            indent = len(line) - len(line.lstrip())
+            if indent == base or not entries:
+                entries.append([])
+            entries[-1].append(" " * (4 + indent - base) + line.strip())
+        kept = [
+            line
+            for entry in entries
+            if _is_carried_forward(" ".join(entry))
+            for line in entry
+        ]
+        return "\n".join(kept)
 
     def _get_parameter_description(
         self,
@@ -869,43 +936,61 @@ class PyCodeCommenter:
     ) -> list:
         """Collects the exception class names a function's own body raises.
 
-        Only walks the function's own scope (``walk_own_scope``, not
-        ``ast.walk``), same as ``_is_generator``/``_get_return_type``, so a
-        ``raise`` inside a nested ``def`` is never misattributed to the
-        outer function.
-
-        A bare ``raise`` (a re-raise inside ``except``) and a ``raise`` of an
-        already-constructed instance (``raise err``, where ``.exc`` is a
-        plain ``Name``/``Attribute`` rather than a ``Call``) are both
-        skipped: neither lets the exception class be read off the raise site
-        without data-flow analysis, so guessing here would be exactly the
-        kind of unfounded guess this tool avoids elsewhere.
+        See ``code_facts.raise_sites`` for which raise statements count.
 
         Args:
             func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
                 function node.
 
         Returns:
-            list: Exception class names, in first-seen order, de-duplicated.
+            list: Exception class names, in source order, de-duplicated.
         """
-        names = []
-        seen = set()
-        for node in walk_own_scope(func_node):
-            if not isinstance(node, ast.Raise) or node.exc is None:
-                continue
-            if not isinstance(node.exc, ast.Call):
-                continue
-            call_target = node.exc.func
-            if isinstance(call_target, ast.Name):
-                name = call_target.id
-            elif isinstance(call_target, ast.Attribute):
-                name = call_target.attr
-            else:
-                continue
-            if name not in seen:
-                seen.add(name)
-                names.append(name)
-        return names
+        return list(raise_sites(func_node))
+
+    def _build_raises_section(
+        self,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        documented: Dict[str, str],
+    ) -> str:
+        """Builds the Raises: section, never discarding an author's entries.
+
+        Each exception the code raises is described, in order of preference,
+        by the author's existing text, the condition read off the code
+        (``code_facts.describe_raise_condition``), or the guess marker.
+        Exceptions the author documented but the body doesn't raise directly
+        -- typically ones propagated from a call -- are kept as written.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            documented (Dict[str, str]): The existing docstring's Raises
+                entries, by exception name as the author wrote it.
+
+        Returns:
+            str: The section, starting with a blank line, or ``""`` when
+                there is nothing to document.
+        """
+        # An author may write `errors.ConfigError` for a bare
+        # `raise ConfigError(...)`; both name the same exception.
+        by_short_name = {
+            name.split(".")[-1]: (name, desc) for name, desc in documented.items()
+        }
+        entries = []
+        for exc_name, nodes in raise_sites(func_node).items():
+            _, author_desc = by_short_name.pop(exc_name, (None, None))
+            desc = (
+                author_desc
+                if _is_carried_forward(author_desc)
+                else describe_raise_condition(func_node, nodes)
+                or f"{GUESS_MARKER} when this is raised."
+            )
+            entries.append(f"    {exc_name}: {desc}")
+        entries.extend(
+            f"    {name}: {desc}"
+            for name, desc in by_short_name.values()
+            if _is_carried_forward(desc)
+        )
+        return "\nRaises:\n" + "\n".join(entries) + "\n" if entries else ""
 
     def _build_function_context(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]

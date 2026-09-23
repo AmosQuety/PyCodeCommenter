@@ -977,14 +977,11 @@ def test_class_attributes_get_real_inference_not_unconditional_guess_marker(comm
     assert "TODO(pycodecommenter)" not in attrs_section
 
 
-def test_property_getter_setter_deleter_listed_once_in_methods(commenter):
-    """Regression test for AUDIT_REPORT.md §1.8: a @property's getter,
-    @x.setter, and @x.deleter are three separate FunctionDef nodes sharing
-    one name (valid Python requires this -- the decorator is literally
-    `<property_name>.setter`/`.deleter`, rebinding the same name), so the
-    Methods: list must deduplicate by name rather than listing "value()"
-    three times with no indication which is which.
-    """
+def test_property_accessor_trio_not_listed_as_methods(commenter):
+    """AUDIT_REPORT.md §1.8 listed a property's getter/setter/deleter three
+    times under Methods:. Methods: is no longer generated at all (see
+    test_merge_preservation.py), so no accessor can be listed, once or
+    three times."""
     code = """class Box:
     def __init__(self):
         self._value = None
@@ -1003,34 +1000,8 @@ def test_property_getter_setter_deleter_listed_once_in_methods(commenter):
 """
     commenter.from_string(code)
     patched = commenter.get_patched_code()
-    methods_section = patched.split("Methods:", 1)[1].split('"""', 1)[0]
-    assert methods_section.count("value()") == 1
-
-
-def test_property_trio_does_not_hide_a_distinct_method(commenter):
-    """The dedup fix above must not accidentally collapse two genuinely
-    different methods -- only a real, same-named accessor trio."""
-    code = """class Widget:
-    def render(self):
-        return 1
-
-    @property
-    def size(self):
-        return self._size
-
-    @size.setter
-    def size(self, v):
-        self._size = v
-
-    def close(self):
-        pass
-"""
-    commenter.from_string(code)
-    patched = commenter.get_patched_code()
-    methods_section = patched.split("Methods:", 1)[1].split('"""', 1)[0]
-    assert methods_section.count("size()") == 1
-    assert "render()" in methods_section
-    assert "close()" in methods_section
+    assert "Methods:" not in patched
+    assert "value()" not in patched
 
 
 # ---------------------------------------------------------------------------

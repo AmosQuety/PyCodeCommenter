@@ -17,6 +17,28 @@ from typing import Any, Dict, Optional
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Built-ins whose result is always a bool, whatever the arguments.
+_BOOL_BUILTINS = frozenset(
+    {"isinstance", "issubclass", "callable", "hasattr", "all", "any"}
+)
+
+# str methods that return a str, recognised only when called directly on a
+# string literal (`" ".join(...)`), where the receiver's type is certain.
+_STR_RETURNING_STR_METHODS = frozenset(
+    {
+        "join",
+        "format",
+        "upper",
+        "lower",
+        "strip",
+        "lstrip",
+        "rstrip",
+        "replace",
+        "title",
+        "capitalize",
+    }
+)
+
 
 class TypeAnalyzer:
     """
@@ -89,6 +111,22 @@ class TypeAnalyzer:
             if expr.id == "None":
                 return "NoneType"
             return self.local_types.get(expr.id, "any")
+
+        # Like the Div -> float rule below, this assumes built-in operator
+        # semantics; an overloaded __eq__ (NumPy, SQLAlchemy) can return
+        # something else.
+        if isinstance(expr, ast.Compare) or (
+            isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not)
+        ):
+            return "bool"
+
+        if isinstance(expr, ast.BoolOp):
+            # `and`/`or` return one of their operands, not a coerced bool.
+            operand_types = {self.infer_expr_type(v) for v in expr.values}
+            return operand_types.pop() if len(operand_types) == 1 else "any"
+
+        if isinstance(expr, ast.JoinedStr):
+            return "str"
 
         if isinstance(expr, ast.BinOp):
             return self._infer_binop_type(expr)
@@ -196,6 +234,16 @@ class TypeAnalyzer:
                 return name
             if name == "len":
                 return "int"
+            if name in _BOOL_BUILTINS:
+                return "bool"
+
+        if (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Constant)
+            and isinstance(node.func.value.value, str)
+            and node.func.attr in _STR_RETURNING_STR_METHODS
+        ):
+            return "str"
 
         if isinstance(node.func, ast.Attribute) and isinstance(
             node.func.value, ast.Name

@@ -34,6 +34,8 @@ GUESS_MARKER = "TODO(pycodecommenter): describe"
 # either "done" or "still a TODO" in a validate/coverage report.
 AI_DRAFT_MARKER = "(AI-drafted, unreviewed)"
 
+_COUNT_WORDS = frozenset({"count", "num", "number"})
+
 
 def humanize_identifier(name: str) -> str:
     """Strip leading/trailing underscores and collapse any remaining run of
@@ -163,11 +165,13 @@ def _infer_from_name(param_name: str) -> Optional[str]:
         # Boolean flag – convert to a question‑style description.
         base = _human_readable(param_name[3:])
         return f"Flag indicating whether {base}"
-    if "count" in lowered or "num" in lowered or "number" in lowered:
-        base = _human_readable(param_name)
-        stripped = base.replace("count", "").replace("num", "")
-        stripped = stripped.replace("number", "").strip()
-        return f"Number of {stripped}"
+    # Whole words only: a substring match turned "discount" into
+    # "Number of dis" and "country" into "Number of try".
+    words = _human_readable(param_name).split()
+    if _COUNT_WORDS.intersection(words):
+        counted = [w for w in words if w not in _COUNT_WORDS and w != "of"]
+        if counted:
+            return f"Number of {' '.join(counted)}"
     if lowered in {"timeout", "delay"}:
         return "Timeout in seconds"
     if lowered in {"verbose", "debug"}:

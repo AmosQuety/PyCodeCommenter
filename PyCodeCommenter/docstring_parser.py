@@ -11,7 +11,7 @@ Classes:
 
 import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,10 @@ class DocstringParser:
     )
     _SPHINX_FIELD_RE = re.compile(r"^\s*:(param\b|type\b|returns?\b)")
 
+    # One "name (type): description" entry in a Google-style Raises: or
+    # Attributes: section. The name may be dotted (`errors.ConfigError`).
+    _GOOGLE_ENTRY_RE = re.compile(r"^(\s+)([\w.]+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)$")
+
     def __init__(self, docstring: Optional[str] = None):
         self.raw_docstring = docstring or ""
         self.summary = ""
@@ -50,6 +54,12 @@ class DocstringParser:
         self.params = {}  # type: Dict[str, str]
         self.param_types = {}  # type: Dict[str, str]
         self.returns = ""
+        self.raises = {}  # type: Dict[str, str]
+        self.attributes = {}  # type: Dict[str, str]
+        self.attribute_types = {}  # type: Dict[str, str]
+        # Kept verbatim: Methods: is not a section the generator produces,
+        # so there is nothing to merge -- only author text to carry forward.
+        self.methods = ""
 
         if self.raw_docstring:
             self.parse()
@@ -120,6 +130,13 @@ class DocstringParser:
                     self.param_types[match.group(1)] = match.group(2).strip()
                 continue
 
+            if line.startswith(":raise"):
+                match = re.match(r":raises?\s+([\w.]+):\s*(.*)", line)
+                if match:
+                    self.raises[match.group(1)] = match.group(2).strip()
+                current_param = None
+                continue
+
             if line.startswith(":return"):
                 match = re.match(r":returns?:\s*(.*)", line)
                 if match:
@@ -158,14 +175,50 @@ class DocstringParser:
                 # when merging.
                 self.returns = body.strip()
             elif header == "Raises":
-                # No first-class "raises" field exists in this data model.
-                # Unlike the NumPy path (which has no other way to preserve
-                # this text), the generator always recomputes Raises fresh
-                # from the function's actual `raise` statements on every
-                # run, so there's nothing to merge back in here -- the only
-                # thing that matters is recognizing this as its own section
-                # so its body isn't glued onto Returns/Yields above it.
-                pass
+                self.raises, _ = self._parse_google_entries(body)
+            elif header == "Attributes":
+                self.attributes, self.attribute_types = self._parse_google_entries(body)
+            elif header == "Methods":
+                self.methods = body.strip("\n").rstrip()
+
+    def _parse_google_entries(self, body: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Parses the "name (type): description" entries of a Google-style
+        Raises: or Attributes: section.
+
+        A line indented deeper than the entries continues the current
+        entry's description; a line at or above the section's own
+        indentation that isn't an entry (e.g. a following ``Note:`` header)
+        ends it, rather than being glued onto the last description.
+
+        Args:
+            body (str): The section body, below its header line.
+
+        Returns:
+            Tuple[Dict[str, str], Dict[str, str]]: Descriptions by name, and
+                the types of the entries that declared one.
+        """
+        descriptions: Dict[str, str] = {}
+        types: Dict[str, str] = {}
+        entry_indent = None
+        current = None
+        for line in body.splitlines():
+            if not line.strip():
+                continue
+            indent = len(line) - len(line.lstrip())
+            match = self._GOOGLE_ENTRY_RE.match(line)
+            if match and (entry_indent is None or indent <= entry_indent):
+                entry_indent = indent
+                current = match.group(2)
+                descriptions[current] = match.group(4).strip()
+                if match.group(3):
+                    types[current] = match.group(3).strip()
+            elif current is not None and indent > entry_indent:
+                descriptions[current] = (
+                    f"{descriptions[current]} {line.strip()}".strip()
+                )
+            else:
+                current = None
+        return descriptions, types
 
     def _parse_google_args(self, body: str) -> None:
         """
@@ -203,28 +256,10 @@ class DocstringParser:
             elif header == "Returns":
                 self._parse_numpy_returns(body)
             elif header == "Raises":
-                # No first-class "raises" field exists in this data model.
-                # This used to fold the body into `description` on the
-                # theory that nothing downstream regenerated a Raises
-                # section, so that was the only non-lossy option -- but
-                # commenter.py's Raises: generation (from the function's
-                # actual `raise` statements) makes that theory stale: it
-                # always recomputes Raises fresh on every run, the same as
-                # the Google-style Raises: header just above already
-                # assumes. Folding the old NumPy body into `description`
-                # now produces two disagreeing Raises sections in the
-                # merged output -- the stale, malformed NumPy text (never
-                # valid Google style; lost its underline without gaining a
-                # colon) floating above Args:/Returns:, *and* a correct,
-                # freshly-generated Raises: section at the bottom naming
-                # the same exception. Discarding the body here, like the
-                # Google-style branch does, is what's actually non-lossy
-                # now: the exception class is a fact re-derived straight
-                # from the source on every run, not preserved text -- the
-                # *why it's raised* prose was never carried forward into a
-                # real Raises: section by either style anyway, so nothing
-                # new is lost by dropping it here too.
-                pass
+                # Parsed into `raises`, never folded into `description`:
+                # that used to leave a malformed NumPy block floating above
+                # Args: alongside the generated Google-style Raises: section.
+                self._parse_numpy_raises(body)
 
     def _parse_numpy_params(self, body: str) -> None:
         """Helper to parse a NumPy-style Parameters section.
@@ -258,6 +293,23 @@ class DocstringParser:
                 for name in current_names:
                     self.params[name] = (self.params[name] + " " + piece).strip()
 
+    def _parse_numpy_raises(self, body: str) -> None:
+        """Helper to parse a NumPy-style Raises section: an exception name
+        at column 0, followed by its indented description.
+
+        Args:
+            body (str): The body of the Raises section.
+        """
+        current = None
+        for line in body.splitlines():
+            if not line.strip():
+                continue
+            if line[:1] not in (" ", "\t"):
+                current = line.strip()
+                self.raises[current] = ""
+            elif current is not None:
+                self.raises[current] = f"{self.raises[current]} {line.strip()}".strip()
+
     def _parse_numpy_returns(self, body: str) -> None:
         """Helper to parse a NumPy-style Returns section (bare "type" or
         "name : type" on the first line, followed by an indented
@@ -281,4 +333,8 @@ class DocstringParser:
             "params": self.params,
             "param_types": self.param_types,
             "returns": self.returns,
+            "raises": self.raises,
+            "attributes": self.attributes,
+            "attribute_types": self.attribute_types,
+            "methods": self.methods,
         }

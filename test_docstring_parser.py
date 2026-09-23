@@ -83,14 +83,15 @@ ConfigError
     assert info["param_types"]["start_path"] == "str | None"  # ", optional" stripped
     assert info["returns"].startswith("dict:")
     assert "Parsed configuration dictionary." in info["returns"]
-    # No first-class "raises" field exists in this data model, and
-    # commenter.py's Raises: generation always recomputes it fresh from the
-    # function's actual `raise` statements -- so the NumPy Raises body is
-    # correctly discarded here (AUDIT_REPORT.md §1.3), not folded into
+    # The NumPy Raises body is parsed into `raises`, never folded into
     # `description`, where it used to produce a second, disagreeing,
-    # malformed Raises block alongside the real generated one.
+    # malformed Raises block alongside the generated one (AUDIT_REPORT.md
+    # §1.3).
     assert "ConfigError" not in info["description"]
     assert info["description"] == ""
+    assert info["raises"] == {
+        "ConfigError": "If a config file is discovered but parsing fails."
+    }
 
 
 def test_parse_numpy_multi_name_shared_type():
