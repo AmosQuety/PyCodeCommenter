@@ -44,6 +44,11 @@ try:
         ParameterFact,
     )
     from .ai_drafting import apply_draft, known_text, slots_for
+    from .comment_docs import (
+        CommentDocstring,
+        comment_block_text,
+        leading_comment_block,
+    )
     from .code_facts import (
         describe_bool_return,
         describe_raise_condition,
@@ -80,6 +85,7 @@ except (ImportError, ValueError):
         ParameterFact,
     )
     from ai_drafting import apply_draft, known_text, slots_for
+    from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
     from function_doc import (
         ArgEntry,
@@ -165,6 +171,9 @@ class PyCodeCommenter:
         # example, the daily allowance is spent); later functions keep
         # their gaps and the CLI reports why.
         self.drafting_stopped: Optional[DraftingStopped] = None
+        # Definitions whose docstring came from the comment block above
+        # them (the comment is left in place), for the run report.
+        self.comment_docstrings: list = []
         self._include_module_docstrings = include_module_docstrings
         self._newline = "\n"
 
@@ -383,6 +392,31 @@ class PyCodeCommenter:
             logger.error(f"Error generating module docstring: {e}")
             return '"""Error generating docstring."""'
 
+    def _docstring_source(self, node: ast.AST) -> "tuple[Optional[str], str]":
+        """The author's text for a definition's docstring: its existing
+        docstring, or failing that the comment block written directly above
+        it (see ``comment_docs``), which is recorded in
+        ``comment_docstrings``.
+
+        Args:
+            node (ast.AST): A function or class node.
+
+        Returns:
+            tuple[Optional[str], str]: The text (``None`` if the author wrote
+                neither) and the string prefix to write it back with.
+        """
+        existing = self._existing_docstring(node)
+        if existing[0] is not None:
+            return existing
+        found = leading_comment_block(self.code.split("\n"), node)
+        text = comment_block_text(found[2]) if found else None
+        if text is None:
+            return None, ""
+        used = CommentDocstring(node.name, found[0], found[1])
+        if used not in self.comment_docstrings:
+            self.comment_docstrings.append(used)
+        return text, ""
+
     def _existing_docstring(self, node: ast.AST) -> "tuple[Optional[str], str]":
         """A node's docstring as written in the source, and its prefix.
 
@@ -421,7 +455,7 @@ class PyCodeCommenter:
         existing info."""
         existing_doc, prefix = None, ""
         try:
-            existing_doc, prefix = self._existing_docstring(func_node)
+            existing_doc, prefix = self._docstring_source(func_node)
             parsed_info = DocstringParser(existing_doc).get_info()
             return prefix + render_function_doc(
                 self._build_function_doc(func_node, parsed_info)
@@ -719,7 +753,7 @@ class PyCodeCommenter:
         existing info."""
         existing_doc, prefix = None, ""
         try:
-            existing_doc, prefix = self._existing_docstring(class_node)
+            existing_doc, prefix = self._docstring_source(class_node)
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
 
