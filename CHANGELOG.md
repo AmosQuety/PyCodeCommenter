@@ -11,6 +11,13 @@ finding in that audit is now closed; see `Future Work/Audit Remediation
 Log.md` for the full history.
 
 ### Added
+- **A `#` comment block above an undocumented function or class becomes
+  its docstring**: the first sentence as the summary, the rest as the
+  description. It counts as the author's own text, so AI drafting never
+  replaces it. The comment is left in place -- the tool never deletes
+  code. Notes (`TODO`), tool directives (`noqa`, `type:`), commented-out
+  code and section banners (blocks with a `# -----` line) are not used,
+  and neither is a comment separated from the definition by a blank line.
 - **`--ai-draft` fills every gap, not just the description.** A
   name-derived summary, parameters with a TODO or type-only description,
   an undescribed return value, and exceptions without a readable condition

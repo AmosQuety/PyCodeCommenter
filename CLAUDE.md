@@ -20,6 +20,9 @@ Note: the repo root (this directory) contains the installable package
 directory `PyCodeCommenter/`, one level deep (not nested further). All
 commands below assume you're in this top-level directory unless noted.
 
+For the current state of work in progress, decisions already made, and
+where to begin, read `Future Work/v2.6.0 — Work Log and Handoff.md` first.
+
 ## Commands
 
 Install for development:
@@ -110,6 +113,10 @@ re-exports the public API):
     `**kwargs`, plus scope-bounded AST walkers (`walk_own_scope` etc.) so a
     `return`/`yield`/`raise` in a nested `def` isn't attributed to the
     outer function. Use it rather than reading `func_node.args.args`.
+  - `comment_docs.py` — finds the `#` comment block directly above an
+    undocumented function/class and turns it into docstring text (author
+    text; the comment is never removed). Skips notes, tool directives,
+    commented-out code, and section banners.
   - `code_facts.py` — pure functions that phrase facts read straight off a
     function's AST: the condition guarding each `raise` (`raise_sites`,
     `describe_raise_condition`) and a boolean function's single return
