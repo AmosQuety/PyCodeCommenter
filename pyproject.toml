@@ -63,6 +63,17 @@ dev = [
     "black>=23.0",
     "flake8>=6.0",
 ]
+# SDKs for --ai-draft with your own key (--ai-provider). Each needs Python
+# 3.10+; on 3.9 these install nothing and the hosted service still works.
+# Lower bounds are the versions the provider code was verified against.
+gemini = ["google-genai>=2.25; python_version >= '3.10'"]
+openai = ["openai>=3.19; python_version >= '3.10'"]
+anthropic = ["anthropic>=1.8; python_version >= '3.10'"]
+ai = [
+    "google-genai>=2.25; python_version >= '3.10'",
+    "openai>=3.19; python_version >= '3.10'",
+    "anthropic>=1.8; python_version >= '3.10'",
+]
 
 [project.urls]
 Homepage = "https://github.com/AmosQuety/PyCodeCommenter"

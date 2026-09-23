@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -175,6 +175,54 @@ class DescriptionProvider(ABC):
         return DocstringDraft(description=self.draft_function_description(context))
 
 
+class SwitchOnStop(DescriptionProvider):
+    """Wraps a provider and, the first time it stops (for example, the free
+    daily allowance is spent), asks for a replacement -- typically the
+    user's own API key -- and carries on with it from the same function.
+
+    The replacement is asked for once per run. If none is given, the
+    original stop propagates and drafting ends for the run as usual.
+
+    Attributes:
+        on_stop (Callable[[DraftingStopped], Optional[DescriptionProvider]]):
+            Called with the reason drafting stopped; returns the provider to
+            continue with, or ``None`` to stop.
+    """
+
+    def __init__(
+        self,
+        primary: DescriptionProvider,
+        on_stop: Callable[[DraftingStopped], Optional[DescriptionProvider]],
+    ):
+        self._active = primary
+        self._switched = False
+        self.on_stop = on_stop
+        # Why drafting ended for the run, once it has.
+        self.stopped: Optional[DraftingStopped] = None
+
+    @property
+    def active(self) -> DescriptionProvider:
+        """The provider currently doing the drafting."""
+        return self._active
+
+    def draft_docstring(
+        self, context: FunctionContext, known: KnownText, slots: DraftSlots
+    ) -> DocstringDraft:
+        try:
+            return self._active.draft_docstring(context, known, slots)
+        except DraftingStopped as stopped:
+            if self._switched:
+                self.stopped = stopped
+                raise
+            self._switched = True
+            replacement = self.on_stop(stopped)
+            if replacement is None:
+                self.stopped = stopped
+                raise
+            self._active = replacement
+            return self.draft_docstring(context, known, slots)
+
+
 class NullDescriptionProvider(DescriptionProvider):
     """The default provider: always declines.
 
@@ -195,5 +243,6 @@ __all__ = [
     "DocstringDraft",
     "DraftingStopped",
     "DescriptionProvider",
+    "SwitchOnStop",
     "NullDescriptionProvider",
 ]

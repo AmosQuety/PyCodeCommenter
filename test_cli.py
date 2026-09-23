@@ -417,3 +417,150 @@ def test_ai_draft_shared_across_directory_run(
         ["generate", ".", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
     assert fake_ai_backend["calls"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Choosing a provider, own keys, and the limit-reached hand-off
+# ---------------------------------------------------------------------------
+
+import io as _io  # noqa: E402
+import urllib.error as _urllib_error  # noqa: E402
+from email.message import Message as _Message  # noqa: E402
+
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    DescriptionProvider,
+    DocstringDraft,
+)
+
+
+class _OwnKeyProvider(DescriptionProvider):
+    """Stands in for a direct provider built from the user's own key."""
+
+    model = "test-model"
+
+    def draft_docstring(self, context, known, slots):
+        return DocstringDraft(summary="Drafted with my own key.")
+
+
+def _limit_reached(request, timeout):
+    headers = _Message()
+    headers["Retry-After"] = "3600"
+    body = {"error": "user_daily_limit_reached", "message": "Free drafts used up."}
+    raise _urllib_error.HTTPError(
+        request.full_url,
+        429,
+        "Too Many",
+        headers,
+        _io.BytesIO(json.dumps(body).encode()),
+    )
+
+
+def test_own_key_provider_without_a_key_in_ci_fails_with_the_variable_name(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("PyCodeCommenter.ai_setup.is_interactive", lambda: False)
+
+    exit_code, out, _ = run_cli(
+        [
+            "generate",
+            "a.py",
+            "--ai-draft",
+            "--ai-provider",
+            "anthropic",
+            "--yes-send-code-to-ai",
+            "--dry-run",
+        ],
+        monkeypatch,
+        capsys,
+    )
+
+    assert exit_code == 1
+    assert "ANTHROPIC_API_KEY" in out
+
+
+def test_own_key_provider_announces_its_model_and_how_to_change_it(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "PyCodeCommenter.ai_setup.make_provider",
+        lambda name, key, model=None, base_url=None: _OwnKeyProvider(),
+    )
+
+    exit_code, out, _ = run_cli(
+        [
+            "generate",
+            "a.py",
+            "--ai-draft",
+            "--ai-provider",
+            "gemini",
+            "--yes-send-code-to-ai",
+            "--dry-run",
+        ],
+        monkeypatch,
+        capsys,
+    )
+
+    assert (
+        "AI drafting: Gemini, model test-model (choose another with --ai-model)" in out
+    )
+    assert "Drafted with my own key." in out
+
+
+def test_help_documents_default_models_and_that_they_can_be_changed(
+    monkeypatch, capsys
+):
+    exit_code, out, _ = run_cli(["generate", "--help"], monkeypatch, capsys)
+    text = " ".join(out.split())  # argparse wraps lines
+
+    assert "anthropic=claude-opus-5" in text
+    assert "you can always choose your own" in text
+
+
+def test_hosted_limit_in_ci_reports_how_to_continue_with_own_key(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    import PyCodeCommenter.consent as consent
+
+    consent.record_consent()
+    monkeypatch.setattr("PyCodeCommenter.ai_setup.is_interactive", lambda: False)
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", _limit_reached
+    )
+
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
+    )
+
+    assert "AI drafting stopped: Free drafts used up." in out
+    assert "--ai-provider gemini" in out
+    assert "TODO(pycodecommenter)" in out  # gaps stay marked, nothing guessed
+
+
+def test_hosted_limit_interactively_continues_with_own_key_in_the_same_run(
+    project, monkeypatch, capsys, isolated_consent_home
+):
+    import PyCodeCommenter.consent as consent
+
+    consent.record_consent()
+    consent.record_consent("gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("PyCodeCommenter.ai_setup.is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "gemini")
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", _limit_reached
+    )
+    monkeypatch.setattr(
+        "PyCodeCommenter.ai_setup.make_provider",
+        lambda name, key, model=None, base_url=None: _OwnKeyProvider(),
+    )
+
+    exit_code, out, _ = run_cli(
+        ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
+    )
+
+    assert "Free drafts used up." in out
+    assert "Continue with your own API key?" in out
+    assert "Drafted with my own key." in out
+    assert "AI drafting stopped" not in out

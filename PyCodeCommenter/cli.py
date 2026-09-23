@@ -14,6 +14,14 @@ from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
 from .coverage import CoverageAnalyzer, shields_badge_dict
 from .config import load_config, ConfigError
+from .ai_setup import (
+    AI_PROVIDER_CHOICES,
+    AISetupError,
+    build_ai_provider,
+    report_ai_outcome,
+)
+from .direct_providers import PROVIDERS
+from .remote_provider import DEFAULT_BACKEND_URL
 
 # Directories that are never treated as source when recursively collecting
 # .py files for `generate`/`validate` on a directory target. These are all
@@ -74,6 +82,171 @@ def _collect_py_files(directory, exclude_patterns=None):
         for py_file in sorted(Path(directory).rglob("*.py"))
         if not _path_is_excluded(py_file, patterns)
     ]
+
+
+def _generate(args, description_provider):
+    """Runs the generate command for a file or directory target.
+
+    Args:
+        args (argparse.Namespace): The parsed command-line arguments.
+        description_provider (Optional[DescriptionProvider]): The AI
+            provider for --ai-draft, or ``None``.
+    """
+    if os.path.isdir(args.file):
+        if args.output:
+            print("Error: --output cannot be used with a directory target.")
+            sys.exit(1)
+        if args.output_dir and args.inplace:
+            print("Error: --output-dir cannot be combined with --inplace.")
+            sys.exit(1)
+
+        targets = _collect_py_files(args.file, args.exclude)
+        if not targets:
+            print(f"No Python files found in {args.file}")
+            sys.exit(0)
+
+        if args.backup and not args.inplace:
+            print("Warning: --backup has no effect without --inplace")
+
+        any_changed = False
+        any_failed = False
+        written_count = 0
+        for target in targets:
+            commenter = PyCodeCommenter(
+                description_provider=description_provider,
+                include_module_docstrings=args.include_module_docstrings,
+            ).from_file(target)
+            if not commenter.parsed_code:
+                print(f"[FAIL] Could not parse {target}")
+                any_failed = True
+                continue
+
+            patched_code = commenter.get_patched_code()
+
+            if args.output_dir:
+                # Mirror this file's relative path under --output-dir,
+                # same as document_folder.py-style external scripts
+                # had to hand-roll to get a full, on-disk documented
+                # copy without touching the originals or reconstructing
+                # a tree from a diff by hand.
+                rel_path = os.path.relpath(target, args.file)
+                out_path = Path(args.output_dir) / rel_path
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                # newline="": patched_code may contain a CRLF file's
+                # real "\r\n" (get_patched_code() restores the source's
+                # own convention), which must be written verbatim.
+                with open(out_path, "w", encoding="utf-8", newline="") as f:
+                    f.write(patched_code)
+                print(f"[OK] {target} -> {out_path}")
+                written_count += 1
+                continue
+
+            if args.dry_run:
+                with open(target, "r", encoding="utf-8") as f:
+                    original_code = f.read()
+                diff_lines = list(
+                    difflib.unified_diff(
+                        original_code.splitlines(),
+                        patched_code.splitlines(),
+                        fromfile=target,
+                        tofile=target,
+                        lineterm="",
+                    )
+                )
+                if diff_lines:
+                    print("\n".join(diff_lines))
+                    any_changed = True
+                continue
+
+            if args.inplace:
+                # newline="" on both sides: patched_code may contain a
+                # CRLF file's real "\r\n" (get_patched_code() restores
+                # the source's own convention), so the comparison and
+                # the write must see it without any translation, or a
+                # CRLF file would look "changed" on every run even when
+                # nothing did, and (on Windows) risk double-translating
+                # to "\r\r\n" on write.
+                with open(target, "r", encoding="utf-8", newline="") as f:
+                    original_code = f.read()
+                if patched_code != original_code:
+                    if args.backup:
+                        shutil.copy2(target, target + ".bak")
+                    with open(target, "w", encoding="utf-8", newline="") as f:
+                        f.write(patched_code)
+                    print(f"Successfully patched {target}")
+                    any_changed = True
+            else:
+                print(f"# File: {target}")
+                print(patched_code)
+
+        if args.output_dir:
+            print(
+                f"Wrote {written_count}/{len(targets)} file(s) to " f"{args.output_dir}"
+            )
+            sys.exit(1 if any_failed else 0)
+        if args.dry_run:
+            if not any_changed:
+                print("No changes detected.")
+            sys.exit(1 if any_changed else 0)
+        if any_failed:
+            sys.exit(1)
+        return
+
+    if args.output_dir:
+        print("Error: --output-dir cannot be used with a single-file target.")
+        sys.exit(1)
+
+    commenter = PyCodeCommenter(
+        description_provider=description_provider,
+        include_module_docstrings=args.include_module_docstrings,
+    ).from_file(args.file)
+    if not commenter.parsed_code:
+        print(f"Error: Could not parse {args.file}")
+        sys.exit(1)
+
+    patched_code = commenter.get_patched_code()
+
+    if args.backup and not args.inplace:
+        print("Warning: --backup has no effect without --inplace")
+
+    # Dry-run: show diff and exit without writing
+    if args.dry_run:
+        with open(args.file, "r", encoding="utf-8") as f:
+            original_code = f.read()
+        diff_lines = list(
+            difflib.unified_diff(
+                original_code.splitlines(),
+                patched_code.splitlines(),
+                fromfile=args.file,
+                tofile=args.file,
+                lineterm="",
+            )
+        )
+        if diff_lines:
+            print("\n".join(diff_lines))
+            # Exit with code 1 to indicate there are changes
+            sys.exit(1)
+        else:
+            print("No changes detected.")
+            sys.exit(0)
+
+    if args.inplace:
+        # Backup if requested
+        if args.backup:
+            shutil.copy2(args.file, args.file + ".bak")
+        # newline="": patched_code may contain a CRLF file's real
+        # "\r\n" (get_patched_code() restores the source's own
+        # convention), which must be written verbatim, not
+        # double-translated to "\r\r\n" on Windows.
+        with open(args.file, "w", encoding="utf-8", newline="") as f:
+            f.write(patched_code)
+        print(f"Successfully patched {args.file}")
+    elif args.output:
+        with open(args.output, "w", encoding="utf-8", newline="") as f:
+            f.write(patched_code)
+        print(f"Successfully wrote patched code to {args.output}")
+    else:
+        print(patched_code)
 
 
 def main():
@@ -147,16 +320,53 @@ def main():
         "--ai-draft",
         action="store_true",
         help=(
-            "Opt in to AI-assisted drafting for descriptions the "
-            "deterministic generator has no real signal for, via a "
-            "hosted backend (no local API keys required). Every "
-            "AI-drafted description carries a permanent '(AI-drafted, "
-            "unreviewed)' marker. Requires one-time consent to send "
-            "source code to the hosted backend (see "
-            "--yes-send-code-to-hosted-ai for non-interactive use). "
-            "Combined with --inplace, also requires --accept-ai-drafts; "
-            "works with --dry-run/--output-dir alone, since those are "
-            "already review-first."
+            "Opt in to AI drafting for the parts of a docstring the code "
+            "can't state: summaries, and parameter, return and exception "
+            "descriptions that would otherwise be TODO markers or say "
+            "nothing beyond the type. Uses PyCodeCommenter's free hosted "
+            "service (daily limit) unless --ai-provider names your own. "
+            "Every drafted line carries a permanent '(AI-drafted, "
+            "unreviewed)' marker. Asks once for consent before sending "
+            "code anywhere (see --yes-send-code-to-ai for CI). With "
+            "--inplace, also requires --accept-ai-drafts; --dry-run and "
+            "--output-dir work alone, since those are already review-first."
+        ),
+    )
+    generate_parser.add_argument(
+        "--ai-provider",
+        choices=AI_PROVIDER_CHOICES,
+        default="hosted",
+        help=(
+            "Where --ai-draft sends code: 'hosted' (default, free, daily "
+            "limit, no key needed) or your own key with "
+            + ", ".join(
+                f"{name} (reads {spec.env_var})" for name, spec in PROVIDERS.items()
+            )
+            + ". If the variable isn't set you're asked for the key "
+            '(hidden). Extras: pip install "pycodecommenter[gemini]", '
+            "[openai] (also deepseek, openai-compatible) or [anthropic]."
+        ),
+    )
+    generate_parser.add_argument(
+        "--ai-model",
+        metavar="MODEL",
+        help=(
+            "The model to use with --ai-provider; you can always choose your "
+            "own. Defaults: "
+            + ", ".join(
+                f"{name}={spec.default_model}"
+                for name, spec in PROVIDERS.items()
+                if spec.default_model
+            )
+            + ". Required for openai-compatible."
+        ),
+    )
+    generate_parser.add_argument(
+        "--ai-base-url",
+        metavar="URL",
+        help=(
+            "API endpoint for --ai-provider openai-compatible (e.g. a Mistral, "
+            "Groq or local Ollama server)."
         ),
     )
     generate_parser.add_argument(
@@ -169,12 +379,15 @@ def main():
         ),
     )
     generate_parser.add_argument(
+        "--yes-send-code-to-ai",
         "--yes-send-code-to-hosted-ai",
+        dest="yes_send_code_to_ai",
         action="store_true",
         help=(
             "Skip the interactive consent prompt for --ai-draft and "
-            "record consent automatically -- for non-interactive/CI use. "
-            "Has no effect if consent is already on file."
+            "record consent for the chosen provider automatically -- for "
+            "non-interactive/CI use. Has no effect if consent is already "
+            "on file."
         ),
     )
     # Validate command
@@ -243,196 +456,27 @@ def main():
                     "--output-dir first, or pass --accept-ai-drafts."
                 )
                 sys.exit(1)
-
-            # Imported lazily: importing the CLI at all must never require
-            # these modules to matter unless --ai-draft is actually used.
             try:
-                from .consent import ensure_consent
-                from .remote_provider import (
-                    DEFAULT_BACKEND_URL,
-                    RemoteDescriptionProvider,
+                description_provider = build_ai_provider(
+                    args.ai_provider,
+                    args.ai_model,
+                    args.ai_base_url,
+                    backend_url=os.environ.get(
+                        "PYCODECOMMENTER_AI_BACKEND_URL", DEFAULT_BACKEND_URL
+                    ),
+                    assume_consent=args.yes_send_code_to_ai,
                 )
-            except ImportError:
-                from consent import ensure_consent
-                from remote_provider import (
-                    DEFAULT_BACKEND_URL,
-                    RemoteDescriptionProvider,
-                )
-
-            if not ensure_consent(assume_yes=args.yes_send_code_to_hosted_ai):
-                print(
-                    "Error: --ai-draft requires consent to send source code "
-                    "to the hosted AI-drafting backend. Aborting -- no code "
-                    "was sent."
-                )
+            except AISetupError as e:
+                print(f"Error: {e}")
                 sys.exit(1)
 
-            # A single shared instance across the whole run (not one per
-            # file), matching the direct-Gemini provider's own convention --
-            # there's no per-run state to share here (the backend enforces
-            # its own daily cap/rate limit), but constructing it once still
-            # avoids redundant work per file.
-            backend_url = os.environ.get(
-                "PYCODECOMMENTER_AI_BACKEND_URL", DEFAULT_BACKEND_URL
-            )
-            description_provider = RemoteDescriptionProvider(backend_url=backend_url)
-
-        if os.path.isdir(args.file):
-            if args.output:
-                print("Error: --output cannot be used with a directory target.")
-                sys.exit(1)
-            if args.output_dir and args.inplace:
-                print("Error: --output-dir cannot be combined with --inplace.")
-                sys.exit(1)
-
-            targets = _collect_py_files(args.file, args.exclude)
-            if not targets:
-                print(f"No Python files found in {args.file}")
-                sys.exit(0)
-
-            if args.backup and not args.inplace:
-                print("Warning: --backup has no effect without --inplace")
-
-            any_changed = False
-            any_failed = False
-            written_count = 0
-            for target in targets:
-                commenter = PyCodeCommenter(
-                    description_provider=description_provider,
-                    include_module_docstrings=args.include_module_docstrings,
-                ).from_file(target)
-                if not commenter.parsed_code:
-                    print(f"[FAIL] Could not parse {target}")
-                    any_failed = True
-                    continue
-
-                patched_code = commenter.get_patched_code()
-
-                if args.output_dir:
-                    # Mirror this file's relative path under --output-dir,
-                    # same as document_folder.py-style external scripts
-                    # had to hand-roll to get a full, on-disk documented
-                    # copy without touching the originals or reconstructing
-                    # a tree from a diff by hand.
-                    rel_path = os.path.relpath(target, args.file)
-                    out_path = Path(args.output_dir) / rel_path
-                    out_path.parent.mkdir(parents=True, exist_ok=True)
-                    # newline="": patched_code may contain a CRLF file's
-                    # real "\r\n" (get_patched_code() restores the source's
-                    # own convention), which must be written verbatim.
-                    with open(out_path, "w", encoding="utf-8", newline="") as f:
-                        f.write(patched_code)
-                    print(f"[OK] {target} -> {out_path}")
-                    written_count += 1
-                    continue
-
-                if args.dry_run:
-                    with open(target, "r", encoding="utf-8") as f:
-                        original_code = f.read()
-                    diff_lines = list(
-                        difflib.unified_diff(
-                            original_code.splitlines(),
-                            patched_code.splitlines(),
-                            fromfile=target,
-                            tofile=target,
-                            lineterm="",
-                        )
-                    )
-                    if diff_lines:
-                        print("\n".join(diff_lines))
-                        any_changed = True
-                    continue
-
-                if args.inplace:
-                    # newline="" on both sides: patched_code may contain a
-                    # CRLF file's real "\r\n" (get_patched_code() restores
-                    # the source's own convention), so the comparison and
-                    # the write must see it without any translation, or a
-                    # CRLF file would look "changed" on every run even when
-                    # nothing did, and (on Windows) risk double-translating
-                    # to "\r\r\n" on write.
-                    with open(target, "r", encoding="utf-8", newline="") as f:
-                        original_code = f.read()
-                    if patched_code != original_code:
-                        if args.backup:
-                            shutil.copy2(target, target + ".bak")
-                        with open(target, "w", encoding="utf-8", newline="") as f:
-                            f.write(patched_code)
-                        print(f"Successfully patched {target}")
-                        any_changed = True
-                else:
-                    print(f"# File: {target}")
-                    print(patched_code)
-
-            if args.output_dir:
-                print(
-                    f"Wrote {written_count}/{len(targets)} file(s) to "
-                    f"{args.output_dir}"
-                )
-                sys.exit(1 if any_failed else 0)
-            if args.dry_run:
-                if not any_changed:
-                    print("No changes detected.")
-                sys.exit(1 if any_changed else 0)
-            if any_failed:
-                sys.exit(1)
-            return
-
-        if args.output_dir:
-            print("Error: --output-dir cannot be used with a single-file target.")
-            sys.exit(1)
-
-        commenter = PyCodeCommenter(
-            description_provider=description_provider,
-            include_module_docstrings=args.include_module_docstrings,
-        ).from_file(args.file)
-        if not commenter.parsed_code:
-            print(f"Error: Could not parse {args.file}")
-            sys.exit(1)
-
-        patched_code = commenter.get_patched_code()
-
-        if args.backup and not args.inplace:
-            print("Warning: --backup has no effect without --inplace")
-
-        # Dry-run: show diff and exit without writing
-        if args.dry_run:
-            with open(args.file, "r", encoding="utf-8") as f:
-                original_code = f.read()
-            diff_lines = list(
-                difflib.unified_diff(
-                    original_code.splitlines(),
-                    patched_code.splitlines(),
-                    fromfile=args.file,
-                    tofile=args.file,
-                    lineterm="",
-                )
-            )
-            if diff_lines:
-                print("\n".join(diff_lines))
-                # Exit with code 1 to indicate there are changes
-                sys.exit(1)
-            else:
-                print("No changes detected.")
-                sys.exit(0)
-
-        if args.inplace:
-            # Backup if requested
-            if args.backup:
-                shutil.copy2(args.file, args.file + ".bak")
-            # newline="": patched_code may contain a CRLF file's real
-            # "\r\n" (get_patched_code() restores the source's own
-            # convention), which must be written verbatim, not
-            # double-translated to "\r\r\n" on Windows.
-            with open(args.file, "w", encoding="utf-8", newline="") as f:
-                f.write(patched_code)
-            print(f"Successfully patched {args.file}")
-        elif args.output:
-            with open(args.output, "w", encoding="utf-8", newline="") as f:
-                f.write(patched_code)
-            print(f"Successfully wrote patched code to {args.output}")
-        else:
-            print(patched_code)
+        try:
+            _generate(args, description_provider)
+        finally:
+            # Runs however _generate exits (it calls sys.exit on several
+            # paths), so the user always learns how AI drafting went.
+            if description_provider is not None:
+                report_ai_outcome(description_provider)
 
     elif args.command == "validate":
         if os.path.isdir(args.file):

@@ -37,6 +37,7 @@ try:
         FunctionContext,
         KnownText,
     )
+    from .ai_drafting import draft_from_payload
 except (ImportError, ValueError):
     from description_provider import (
         DescriptionProvider,
@@ -46,6 +47,7 @@ except (ImportError, ValueError):
         FunctionContext,
         KnownText,
     )
+    from ai_drafting import draft_from_payload
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +120,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
         for attempt in range(2):
             try:
                 payload = self._post_json("/v2/draft-docstring", body)
-                return _draft_from_payload(payload)
+                return draft_from_payload(payload)
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     return super().draft_docstring(context, known, slots)
@@ -263,28 +265,6 @@ def _known_payload(known: KnownText) -> dict:
         "returns": known.returns,
         "raises": dict(known.raises),
     }
-
-
-def _draft_from_payload(payload: Dict[str, Any]) -> DocstringDraft:
-    """Keeps only string values of the expected shape; everything is checked
-    again before being written."""
-    return DocstringDraft(
-        summary=_str_or_none(payload.get("summary")),
-        description=_str_or_none(payload.get("description")),
-        params=_str_map(payload.get("params")),
-        returns=_str_or_none(payload.get("returns")),
-        raises=_str_map(payload.get("raises")),
-    )
-
-
-def _str_or_none(value: Any) -> Optional[str]:
-    return value if isinstance(value, str) else None
-
-
-def _str_map(value: Any) -> Dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    return {k: v for k, v in value.items() if isinstance(k, str) and isinstance(v, str)}
 
 
 def _int_or_none(value: Any) -> Optional[int]:

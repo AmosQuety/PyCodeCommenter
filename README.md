@@ -135,6 +135,42 @@ pycodecommenter validate src/api.py --output-format json
 
 ---
 
+## AI Drafting (Optional)
+
+Some parts of a docstring can't be read off the code: what a function is *for*, or what an untyped argument means. By default PyCodeCommenter leaves those as `TODO(pycodecommenter): describe` markers. Add `--ai-draft` and an AI model drafts them instead:
+
+```bash
+pycodecommenter generate app.py --ai-draft --dry-run
+```
+
+- **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type.
+- **Every drafted line is labelled** `(AI-drafted, unreviewed)`, permanently, and `pycodecommenter validate` reports those lines until someone reviews them.
+- **Review first.** `--dry-run` and `--output-dir` show the result without touching your files; writing with `--inplace` also requires `--accept-ai-drafts`.
+- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI).
+
+### Providers and models
+
+By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
+
+| `--ai-provider` | Key read from | Install | Default model |
+|---|---|---|---|
+| `hosted` (default) | — | included | chosen by the service |
+| `gemini` | `GEMINI_API_KEY` | `pip install "pycodecommenter[gemini]"` | `gemini-2.5-flash` |
+| `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-astra` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-opus-5` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `pip install "pycodecommenter[openai]"` | `deepseek-flash` |
+| `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | `pip install "pycodecommenter[openai]"` | none: pass `--ai-model` and `--ai-base-url` |
+
+**The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a cheaper one:
+
+```bash
+pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-haiku-4-5 --dry-run
+```
+
+Every run prints the provider and model it is using. If the key's environment variable isn't set, you're asked for the key (input hidden); keys are never read from or written to project files. The provider SDKs need Python 3.10 or newer; on Python 3.9 the hosted service still works.
+
+---
+
 ## Usage Examples
 
 ### Example 1: Generate Docstrings
@@ -260,7 +296,7 @@ PyCodeCommenter is a Python command-line tool and library for automatically gene
 Run `pip install pycodecommenter`. Python 3.9 or later is required.
 
 **Does PyCodeCommenter use AI or LLMs?**
-No. PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse code and generate documentation. There are no API calls, no network requests, and no rate limits.
+Not unless you ask it to. By default it is fully deterministic: it uses Python's built-in `ast` module, makes no network requests, and gives the same output for the same input. With `--ai-draft`, an AI model drafts only the parts the code can't state, every drafted line is labelled `(AI-drafted, unreviewed)`, and nothing is sent without your consent. See [AI Drafting (Optional)](#ai-drafting-optional).
 
 **Does PyCodeCommenter overwrite my hand-written docstrings?**
 No. Existing summaries and parameter, return, exception and attribute descriptions are preserved and merged. Only missing sections are filled in automatically.
@@ -326,7 +362,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 
 - Python 2.x is not supported (EOL).
 - `match` statements (Python 3.10+) have basic support.
-- Generated prose that can't be extracted from the AST (what a parameter or function *means*, as opposed to its name/type/default) is a marked placeholder, `TODO(pycodecommenter): describe`, not finished documentation — running `generate --inplace` will leave these markers in place for a human to fill in.
+- Without `--ai-draft`, prose that can't be extracted from the AST (what a parameter or function *means*, as opposed to its name/type/default) is a marked placeholder, `TODO(pycodecommenter): describe`, for a human to fill in. With `--ai-draft`, it is an AI draft labelled `(AI-drafted, unreviewed)` — still to be reviewed, never presented as finished documentation.
 
 ---
 
@@ -334,15 +370,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 
 - [ ] VS Code extension
 - [ ] Smart docstring updates that preserve human-written content
-- [ ] ~~Optional AI-powered description generation~~
-  > **⚠️ CONSTRAINED — READ BEFORE TOUCHING.** A full cost/benefit review
-  > (money, hallucination risk, non-determinism, source-code privacy, brand
-  > cost) concluded this must NEVER be built as generate-and-write. If picked
-  > up: AI output must never be `--inplace`-writable — it may ONLY ever be
-  > emitted as a diff/preview a human deliberately applies, the same shape as
-  > Mintlify's Workflows agent (drafts, opens a PR, never publishes directly).
-  > A plain "generate docstrings with AI" implementation is explicitly the
-  > wrong shape and should be rejected in review, not merged and fixed later.
+- [x] Optional AI drafting (v2.6.0) — opt-in (`--ai-draft`), fills only the gaps the code can't state, labels every drafted line `(AI-drafted, unreviewed)`, review-first by default (`--dry-run`/`--output-dir`), and writing in place needs a separate `--accept-ai-drafts`
 - [x] NumPy and full Sphinx style support (v2.3.0)
 - [ ] GitHub Action for automated documentation PRs
 - [x] `--fail-below` flag for coverage threshold enforcement in CLI (v2.3.0)
