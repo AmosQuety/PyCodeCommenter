@@ -55,7 +55,7 @@ There is no separate pytest config file (no `pytest.ini`/`setup.cfg`/
 `[tool.pytest.ini_options]` section (the `addopts` behind the `pytest .`
 note above) — that's the only pytest configuration in the repo.
 `.github/workflows/tests.yml` runs the suite (`pytest .`, matrix over Python
-3.9–3.12) on every push and pull request against `main`, alongside the
+3.10–3.13) on every push and pull request against `main`, alongside the
 pre-existing `docs.yml` (MkDocs) and `publish.yml` (PyPI trusted publishing
 on release) — so CI, not just a local run, is a test signal now.
 
@@ -193,7 +193,7 @@ the tool's default behavior.
 - **`direct_providers.py`** — bring-your-own-key providers (Gemini,
   OpenAI, Anthropic, DeepSeek, any OpenAI-compatible API) using each
   vendor's official SDK, installed via optional extras (`[gemini]`,
-  `[openai]`, `[anthropic]`, `[ai]`; Python 3.10+). `PROVIDERS` holds each
+  `[openai]`, `[anthropic]`, `[ai]`). `PROVIDERS` holds each
   one's key variable and default model. SDKs are imported only when chosen;
   tests inject fake clients, so the suite needs no SDK or network.
 - **`ai_setup.py`** — CLI-side setup: provider choice, key from the

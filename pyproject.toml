@@ -17,10 +17,10 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Documentation",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -53,7 +53,7 @@ keywords = [
     "python",
     "cli",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["ruamel.yaml>=0.17", "libcst>=1.1"]
 
 [project.optional-dependencies]
@@ -63,17 +63,12 @@ dev = [
     "black>=23.0",
     "flake8>=6.0",
 ]
-# SDKs for --ai-draft with your own key (--ai-provider). Each needs Python
-# 3.10+; on 3.9 these install nothing and the hosted service still works.
-# Lower bounds are the versions the provider code was verified against.
-gemini = ["google-genai>=2.25; python_version >= '3.10'"]
-openai = ["openai>=3.19; python_version >= '3.10'"]
-anthropic = ["anthropic>=1.8; python_version >= '3.10'"]
-ai = [
-    "google-genai>=2.25; python_version >= '3.10'",
-    "openai>=3.19; python_version >= '3.10'",
-    "anthropic>=1.8; python_version >= '3.10'",
-]
+# SDKs for --ai-draft with your own key (--ai-provider). Lower bounds are
+# the versions the provider code was verified against.
+gemini = ["google-genai>=2.25"]
+openai = ["openai>=3.19"]
+anthropic = ["anthropic>=1.8"]
+ai = ["google-genai>=2.25", "openai>=3.19", "anthropic>=1.8"]
 
 [project.urls]
 Homepage = "https://github.com/AmosQuety/PyCodeCommenter"

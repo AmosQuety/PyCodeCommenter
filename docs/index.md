@@ -45,7 +45,7 @@ keywords: python docstring generator, docstring validator, documentation coverag
 3. **Measures** documentation coverage per file and across entire projects.
 4. **Exports** structured JSON for integration with any downstream tooling.
 
-Install with: `pip install pycodecommenter` · Requires Python 3.9+
+Install with: `pip install pycodecommenter` · Requires Python 3.10+
 
 ---
 
@@ -156,7 +156,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
 |---|---|
 | PyPI package | `pycodecommenter` |
 | Import name | `PyCodeCommenter` |
-| Python support | 3.9, 3.10, 3.11, 3.12 |
+| Python support | 3.10, 3.11, 3.12, 3.13 |
 | Output docstring style | Google |
 | Input parsing | Google (full), Sphinx (full), NumPy (full) |
 | AI / LLM dependency | None — fully deterministic |
@@ -189,7 +189,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
   "version": "2.5.0",
   "license": "https://opensource.org/licenses/MIT",
   "programmingLanguage": "Python",
-  "runtimePlatform": "Python 3.9+",
+  "runtimePlatform": "Python 3.10+",
   "keywords": "python, docstring, documentation, validation, coverage, google-style, AST, CI/CD",
   "author": {
     "@type": "Person",

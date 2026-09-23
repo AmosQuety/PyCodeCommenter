@@ -9,7 +9,7 @@
 
 **PyCodeCommenter** is an open-source Python docstring generator and documentation validator. It automatically generates Google-style docstrings from Python AST, validates existing docstrings against real function signatures, measures documentation coverage, and integrates with CI/CD pipelines — all with zero network calls and zero AI dependency.
 
-> **Install:** `pip install pycodecommenter` · **Python 3.9+** · **MIT License**
+> **Install:** `pip install pycodecommenter` · **Python 3.10+** · **MIT License**
 
 ---
 
@@ -121,7 +121,7 @@ pycodecommenter validate src/api.py --output-format json
 
 ### Modern Python Support
 
-- Python 3.9, 3.10, 3.11, 3.12.
+- Python 3.10, 3.11, 3.12, 3.13.
 - `async def` functions.
 - Complex type hints: `Union`, `Optional`, `Generic`, `list[int]`, `int | str`.
 - PEP 604 unions, PEP 585 generics.
@@ -167,7 +167,7 @@ By default drafts come from PyCodeCommenter's free hosted service: no key needed
 pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-haiku-4-5 --dry-run
 ```
 
-Every run prints the provider and model it is using. If the key's environment variable isn't set, you're asked for the key (input hidden); keys are never read from or written to project files. The provider SDKs need Python 3.10 or newer; on Python 3.9 the hosted service still works.
+Every run prints the provider and model it is using. If the key's environment variable isn't set, you're asked for the key (input hidden); keys are never read from or written to project files.
 
 ---
 
@@ -293,7 +293,7 @@ repos:
 PyCodeCommenter is a Python command-line tool and library for automatically generating Google-style docstrings and validating existing docstrings against real function signatures.
 
 **How do I install PyCodeCommenter?**
-Run `pip install pycodecommenter`. Python 3.9 or later is required.
+Run `pip install pycodecommenter`. Python 3.10 or later is required.
 
 **Does PyCodeCommenter use AI or LLMs?**
 Not unless you ask it to. By default it is fully deterministic: it uses Python's built-in `ast` module, makes no network requests, and gives the same output for the same input. With `--ai-draft`, an AI model drafts only the parts the code can't state, every drafted line is labelled `(AI-drafted, unreviewed)`, and nothing is sent without your consent. See [AI Drafting (Optional)](#ai-drafting-optional).
@@ -352,7 +352,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 ## Supported Platforms & Environments
 
 - **OS**: Linux, macOS, Windows
-- **Python**: 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.10, 3.11, 3.12, 3.13
 - **Environments**: local, CI/CD (GitHub Actions, GitLab CI, Jenkins), pre-commit hooks
 - **Dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching) — no AI/LLM dependency
 
