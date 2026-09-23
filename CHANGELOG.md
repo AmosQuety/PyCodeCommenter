@@ -34,8 +34,43 @@ Log.md` for the full history.
   unlike function/class docstrings, this never attempts to merge into one,
   since module docstrings are far more free-form prose and reconstructing
   one risks corrupting it for no benefit.
+- **`Raises:` entries state the condition when the code states it
+  exactly** (new `code_facts.py`): a `raise` directly under a top-level
+  `if` becomes ``ValueError: If `discount < 0`.``, one in the `else`
+  branch ``If `x in ALLOWED` is false.``, one in a top-level `except`
+  ``If `OSError` occurs.``, and an unconditional one in a function with
+  no `return` ``Always.``. Nested, `elif`, in-loop, and over-long
+  conditions keep the guess marker, since one clause can't state them
+  exactly.
+- **`bool` and `str` return types read off return expressions**:
+  comparisons, `not`, `isinstance`/`hasattr`-style built-ins and
+  `and`/`or` over booleans give `bool`; f-strings and `str` methods on a
+  string literal (`" ".join(...)`) give `str`. A function with a single
+  boolean return expression gets ``True if `expr`, otherwise False.``
+  instead of a guess marker.
+
+### Changed
+- **`Methods:` is no longer generated for classes.** It isn't a standard
+  Google-style section (the validator already reported it as
+  non-standard), every public method carries its own docstring, and the
+  generated entries were guess markers only. An author's own `Methods:`
+  section is kept; entries left over from earlier runs are removed.
 
 ### Fixed
+- **Regeneration overwrote author-written `Raises:`, `Attributes:` and
+  `Methods:` text.** An author's exception and attribute descriptions
+  were replaced with guess markers (or inferred filler) on every run, and
+  a hand-written `Methods:` section was deleted, so running the tool on a
+  fully documented file made it less documented. `DocstringParser` now
+  parses Google, Sphinx (`:raises X:`) and NumPy `Raises` entries, and
+  Google `Attributes:`/`Methods:`, and the generator carries them forward.
+  Exceptions or attributes the author documented but the code doesn't
+  raise/assign directly (propagated exceptions, class constants) are kept.
+- **Name inference matched "count"/"num" inside other words**:
+  `discount` became "Number of dis." and `country` "Number of try.".
+  Matching is now by whole word.
+- **Untyped class attributes were shown as `(any)`** while the same
+  parameter in `Args:` showed `(Any)`.
 - **CRLF files were silently normalized to LF on every generation run**
   (§3), even on files with zero docstring changes — turning a
   documentation PR on a CRLF file (common on projects with Windows

@@ -110,6 +110,17 @@ re-exports the public API):
     `**kwargs`, plus scope-bounded AST walkers (`walk_own_scope` etc.) so a
     `return`/`yield`/`raise` in a nested `def` isn't attributed to the
     outer function. Use it rather than reading `func_node.args.args`.
+  - `code_facts.py` — pure functions that phrase facts read straight off a
+    function's AST: the condition guarding each `raise` (`raise_sites`,
+    `describe_raise_condition`) and a boolean function's single return
+    expression (`describe_bool_return`). Each returns `None` unless the
+    statement is exact, and `None` means "keep the guess marker".
+
+  Two invariants hold across generation: author text always wins over
+  anything derived (text containing `GUESS_MARKER` counts as the tool's
+  own, not the author's), and a TODO may only be removed by stating a fact
+  the code contains, never by a plausible guess. `Methods:` is never
+  generated, but an author's own `Methods:` section is kept.
 
 - **`validator.py`** — `DocstringValidator` walks the AST independently of
   the generator and checks documented functions against six rules: signature
@@ -186,7 +197,12 @@ roughly one file per concern: `test_basic_validation.py`,
 `test_backwards_compatibility.py`, `test_integration.py`,
 `test_docstring_parser.py`, `test_cli.py` (CLI subcommands, including the
 AI-draft flags), `test_consent.py`, and `test_remote_provider.py` (HTTP
-client, with the network mocked — no test hits the real backend). `scratch/` holds
+client, with the network mocked — no test hits the real backend),
+`test_merge_preservation.py` (regeneration never discards author-written
+Raises/Attributes/Methods text), and `test_fact_extraction.py` (raise
+conditions, bool/str return inference, plus end-to-end fixtures with exact
+TODO counts — update those counts deliberately, never to make a test
+pass). `scratch/` holds
 ad hoc/exploratory test scripts not part of the maintained suite.
 
 ### Versioning

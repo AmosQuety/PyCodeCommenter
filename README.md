@@ -263,7 +263,7 @@ Run `pip install pycodecommenter`. Python 3.9 or later is required.
 No. PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse code and generate documentation. There are no API calls, no network requests, and no rate limits.
 
 **Does PyCodeCommenter overwrite my hand-written docstrings?**
-No. Existing summaries, parameter descriptions, and return descriptions are preserved and merged. Only missing sections are filled in automatically.
+No. Existing summaries and parameter, return, exception and attribute descriptions are preserved and merged. Only missing sections are filled in automatically.
 
 **What docstring styles does PyCodeCommenter support?**
 PyCodeCommenter generates Google-style docstrings. It can parse Google-style, Sphinx-style (`:param:`, `:type:`, `:returns:`, `:raises:`), and NumPy-style (`Parameters`/`Returns`/`Raises` with dash-underlined headers) as input.

@@ -9,8 +9,8 @@ PyCodeCommenter generates **Google-style** docstrings and can **parse** Google-s
 | Style | Generation | Parsing (input) | Notes |
 |-------|-----------|-----------------|-------|
 | Google | Yes — always | Yes — full | The only output format |
-| Sphinx (`:param:`, `:return:`) | No | Yes — full, including `:type name: TYPE` | Other Sphinx directives (e.g. `:raises ExcType:`) are silently ignored |
-| NumPy (dash-underlined `Parameters`/`Returns`/`Raises`) | No | Yes — full (since v2.3.0) | `Raises` has no dedicated field; its body is folded into `description` |
+| Sphinx (`:param:`, `:return:`, `:raises:`) | No | Yes — full, including `:type name: TYPE` | Other Sphinx directives are silently ignored |
+| NumPy (dash-underlined `Parameters`/`Returns`/`Raises`) | No | Yes — full (since v2.3.0) | `Raises` entries are parsed into their own `raises` field |
 
 > The README mentions `style: google`, `style: numpy`, and `style: sphinx` as config values, but the `style` key is **not yet wired into the runtime**. Regardless of any config value, the tool always generates Google-style docstrings; the auto-detect logic below governs *parsing* existing docstrings for the merge step, not generation.
 
@@ -79,8 +79,9 @@ The parser (`DocstringParser._parse_google`) splits on these headers:
 | `Args:` | `params` dict |
 | `Returns:` | `returns` string |
 | `Yields:` | `returns` string (shares the same slot — both describe what comes back out of the function) |
-| `Attributes:` | `description` block (not separately indexed) |
-| `Methods:` | `description` block (not separately indexed) |
+| `Raises:` | `raises` dict (exception name → description) |
+| `Attributes:` | `attributes` dict, plus `attribute_types` for entries that declare a type |
+| `Methods:` | `methods` string, kept verbatim (the generator never writes this section itself, but keeps an author's) |
 
 The **validator** additionally recognises these as valid headers (they do not trigger the "non-standard header" warning):
 
@@ -174,7 +175,7 @@ The parser (`DocstringParser._parse_numpy`) is triggered by the dash-underlined 
 |-------|-------------|-------------|
 | Parameters | `name : type` (or `name1, name2 : type` for a shared type), with the description on following indented lines | `params` dict, `param_types` dict |
 | Returns | A bare `type` or `name : type` header line, with the description on following indented lines | `returns` string, as `"<header line>: <description>"` |
-| Raises | Anything under a `Raises` header | Folded into `description` (there's no dedicated `raises` field, so this avoids silently dropping the text) |
+| Raises | An exception name at column 0, with its description on following indented lines | `raises` dict |
 
 A trailing `, optional` on a parameter's type (NumPy's convention for a parameter with a default) is stripped before storing.
 
