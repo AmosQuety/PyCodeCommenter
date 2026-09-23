@@ -56,13 +56,15 @@ try:
     )
     from .function_doc import (
         ArgEntry,
+        AttributeEntry,
+        ClassDoc,
         DocPart,
         FunctionDoc,
         Origin,
         RaisesEntry,
         ReturnsEntry,
-        render_function_doc,
     )
+    from .doc_styles import render_class, render_function
 except (ImportError, ValueError):
     from inference import (
         infer_description,
@@ -89,13 +91,15 @@ except (ImportError, ValueError):
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
     from function_doc import (
         ArgEntry,
+        AttributeEntry,
+        ClassDoc,
         DocPart,
         FunctionDoc,
         Origin,
         RaisesEntry,
         ReturnsEntry,
-        render_function_doc,
     )
+    from doc_styles import render_class, render_function
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -457,8 +461,10 @@ class PyCodeCommenter:
         try:
             existing_doc, prefix = self._docstring_source(func_node)
             parsed_info = DocstringParser(existing_doc).get_info()
-            return prefix + render_function_doc(
-                self._build_function_doc(func_node, parsed_info)
+            # An existing docstring keeps its style; a new one is Google.
+            return prefix + render_function(
+                self._build_function_doc(func_node, parsed_info),
+                parsed_info["style"],
             )
         except Exception as e:
             logger.error(
@@ -757,31 +763,20 @@ class PyCodeCommenter:
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
 
-            summary = parsed_info.get("summary") or f"{class_node.name} class."
             # See the matching comment in _generate_function_docstring: a
             # parsed description wins outright, otherwise the slot stays
-            # empty rather than duplicating the (possibly name-derived)
-            # summary with a placeholder that adds no information.
-            description = parsed_info.get("description") or ""
-
-            docstring = f'"""{summary}\n\n'
-            if description:
-                docstring += f"{description}\n\n"
-
-            attribute_lines = self._build_attribute_lines(class_node, parsed_info)
-            if attribute_lines:
-                docstring += "Attributes:\n" + "".join(attribute_lines)
-
-            # Methods: is never generated: it isn't a standard Google-style
-            # section, each public method carries its own docstring, and
-            # nothing the AST knows fits in one line per method without
-            # guessing. An author's own Methods: entries are kept.
-            methods = self._carried_forward_methods(parsed_info.get("methods", ""))
-            if methods:
-                docstring += "\nMethods:\n" + methods + "\n"
-
-            docstring += '"""'
-            return prefix + docstring
+            # empty rather than holding a placeholder.
+            doc = ClassDoc(
+                summary=parsed_info.get("summary") or f"{class_node.name} class.",
+                description=parsed_info.get("description") or None,
+                attributes=self._attribute_entries(class_node, parsed_info),
+                # Methods: is never generated: it isn't a standard section,
+                # each public method has its own docstring, and nothing the
+                # AST knows fits in one line per method without guessing.
+                # An author's own Methods: entries are kept.
+                methods=self._carried_forward_methods(parsed_info.get("methods", "")),
+            )
+            return prefix + render_class(doc, parsed_info["style"])
         except Exception as e:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
             if existing_doc is not None:
@@ -791,10 +786,10 @@ class PyCodeCommenter:
                 return f'{prefix}"""{existing_doc}"""'
             return '"""Error generating docstring."""'
 
-    def _build_attribute_lines(
+    def _attribute_entries(
         self, class_node: ast.ClassDef, parsed_info: Dict[str, Any]
     ) -> list:
-        """Builds the Attributes: entries, never discarding an author's.
+        """Builds the class's attribute entries, never discarding an author's.
 
         Detected attributes use the author's existing description when there
         is one, otherwise the same name/type inference Args: uses. Attributes
@@ -806,11 +801,11 @@ class PyCodeCommenter:
             parsed_info (Dict[str, Any]): The existing docstring, parsed.
 
         Returns:
-            list: One formatted, newline-terminated line per attribute.
+            list: ``AttributeEntry`` items, detected attributes first.
         """
         documented = dict(parsed_info.get("attributes", {}))
         documented_types = parsed_info.get("attribute_types", {})
-        lines = []
+        entries = []
         for attr, attr_type in self._get_class_attributes(class_node).items():
             if attr_type == "any":
                 attr_type = documented_types.get(attr, attr_type)
@@ -825,14 +820,13 @@ class PyCodeCommenter:
                 )
             )
             display_type = "Any" if attr_type == "any" else attr_type
-            lines.append(f"    {attr} ({display_type}): {desc}\n")
-        for attr, desc in documented.items():
-            if not _is_carried_forward(desc):
-                continue
-            attr_type = documented_types.get(attr)
-            type_part = f" ({attr_type})" if attr_type else ""
-            lines.append(f"    {attr}{type_part}: {desc}\n")
-        return lines
+            entries.append(AttributeEntry(attr, display_type, desc))
+        entries.extend(
+            AttributeEntry(attr, documented_types.get(attr), desc)
+            for attr, desc in documented.items()
+            if _is_carried_forward(desc)
+        )
+        return entries
 
     @staticmethod
     def _carried_forward_methods(section_body: str) -> str:

@@ -302,7 +302,7 @@ Not unless you ask it to. By default it is fully deterministic: it uses Python's
 No. Existing summaries and parameter, return, exception and attribute descriptions are preserved and merged. Only missing sections are filled in automatically.
 
 **What docstring styles does PyCodeCommenter support?**
-PyCodeCommenter generates Google-style docstrings. It can parse Google-style, Sphinx-style (`:param:`, `:type:`, `:returns:`, `:raises:`), and NumPy-style (`Parameters`/`Returns`/`Raises` with dash-underlined headers) as input.
+New docstrings are Google style. Existing NumPy-style (dash-underlined `Parameters`/`Returns`/`Raises`) and Sphinx-style (`:param:`, `:type:`, `:returns:`, `:raises:`) docstrings keep their style: gaps are filled in the same convention, and nothing is converted.
 
 **Can I use PyCodeCommenter in CI/CD?**
 Yes. The `validate` subcommand exits with code `1` when any ERROR-level issue is found, making it suitable for blocking CI builds. The `--output-format json` flag enables integration with any downstream tooling.

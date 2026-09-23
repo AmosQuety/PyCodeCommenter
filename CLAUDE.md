@@ -113,6 +113,11 @@ re-exports the public API):
     `**kwargs`, plus scope-bounded AST walkers (`walk_own_scope` etc.) so a
     `return`/`yield`/`raise` in a nested `def` isn't attributed to the
     outer function. Use it rather than reading `func_node.args.args`.
+  - `function_doc.py` / `doc_styles.py` — a docstring as tagged parts
+    (`FunctionDoc`, `ClassDoc`, each part carrying its `Origin`: author,
+    fact, weak, guess, ai), and rendering them. New docstrings are Google
+    style; an existing NumPy/Sphinx docstring (the parser's `style`) is
+    re-rendered in its own style, never converted.
   - `comment_docs.py` — finds the `#` comment block directly above an
     undocumented function/class and turns it into docstring text (author
     text; the comment is never removed). Skips notes, tool directives,

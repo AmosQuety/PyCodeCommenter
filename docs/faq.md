@@ -120,13 +120,13 @@ PyCodeCommenter detects drift via six validation checks:
 
 ## Does it support NumPy or Sphinx style?
 
-**Both, as input, since v2.3.0. Output is always Google style.**
+**Yes.** New docstrings are Google style. A docstring that's already NumPy or Sphinx style keeps its style: gaps are filled in the same convention, and nothing is converted (since v2.6.0; earlier versions converted them to Google style).
 
 | Style | Input (parsing) | Output (generation) |
 |---|---|---|
-| Google | Full | Full — the only output format |
-| Sphinx | Full — extracts summary, `:param`, `:type`, `:return:` (`:raises:` and other directives are ignored) | Not generated |
-| NumPy | Full — dash-underlined `Parameters`/`Returns`/`Raises` sections | Not generated |
+| Google | Full | Every new docstring |
+| Sphinx | Full — `:param:`, `:type:`, `:returns:`, `:rtype:`, `:yields:`, `:raises:`, `:ivar:`, `:vartype:` | Existing Sphinx docstrings stay Sphinx |
+| NumPy | Full — dash-underlined `Parameters`/`Attributes`/`Returns`/`Yields`/`Raises` sections | Existing NumPy docstrings stay NumPy |
 
 See [Docstring Styles](docstring-styles.md) for exactly what each parser extracts.
 
