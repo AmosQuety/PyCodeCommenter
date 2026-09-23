@@ -46,7 +46,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
 
     Attributes:
         backend_url (str): The backend's base URL (no trailing slash),
-            e.g. ``https://pycodecommenter-ai-backend.onrender.com``.
+            e.g. ``https://pycodecommenter-backend.onrender.com``.
         timeout_s (float): Per-request timeout, in seconds. Defaults high
             (90s) specifically because Render's free tier sleeps an
             inactive service and pays a real cold-start cost -- tens of
