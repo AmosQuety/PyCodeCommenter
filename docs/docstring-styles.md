@@ -1,6 +1,6 @@
 # Docstring Styles Guide
 
-PyCodeCommenter generates **Google-style** docstrings and can **parse** Google-style, Sphinx-style, and NumPy-style docstrings when they already exist. This page explains what that means in practice.
+PyCodeCommenter writes new docstrings in **Google style**. A docstring that already exists in **NumPy** or **Sphinx** style keeps that style: missing parameters, return values and exceptions are filled in using the same convention, and nothing is converted (since v2.6.0). This page explains what that means in practice.
 
 ---
 
@@ -8,11 +8,13 @@ PyCodeCommenter generates **Google-style** docstrings and can **parse** Google-s
 
 | Style | Generation | Parsing (input) | Notes |
 |-------|-----------|-----------------|-------|
-| Google | Yes — always | Yes — full | The only output format |
-| Sphinx (`:param:`, `:return:`, `:raises:`) | No | Yes — full, including `:type name: TYPE` | Other Sphinx directives are silently ignored |
-| NumPy (dash-underlined `Parameters`/`Returns`/`Raises`) | No | Yes — full (since v2.3.0) | `Raises` entries are parsed into their own `raises` field |
+| Google | Yes — every new docstring | Yes — full | The default |
+| Sphinx (`:param:`, `:type:`, `:returns:`, `:rtype:`, `:yields:`, `:raises:`, `:ivar:`, `:vartype:`) | Yes — for docstrings already in Sphinx style | Yes — full | Other Sphinx directives are silently ignored |
+| NumPy (dash-underlined `Parameters`/`Attributes`/`Returns`/`Yields`/`Raises`) | Yes — for docstrings already in NumPy style | Yes — full | A defaulted parameter's type gets NumPy's `, optional` |
 
-> The README mentions `style: google`, `style: numpy`, and `style: sphinx` as config values, but the `style` key is **not yet wired into the runtime**. Regardless of any config value, the tool always generates Google-style docstrings; the auto-detect logic below governs *parsing* existing docstrings for the merge step, not generation.
+> The style of an existing docstring is detected automatically; there is nothing to configure. The README's `style:` config key is **not wired into the runtime**, so it can't make *new* docstrings NumPy or Sphinx style yet.
+>
+> In NumPy and Sphinx style, a function with no parameters or no return value gets no section for it: neither convention has an equivalent of Google's `Args: None.` / `Returns: None.`.
 
 ---
 
@@ -138,7 +140,7 @@ Multi-line parameter descriptions (continuation lines not starting with `:`) are
 
 ### Partial support note
 
-Sphinx style is supported for **input only**. After `generate --inplace`, the output will be Google style. If you want to preserve Sphinx style in your output, do not use `--inplace` — use `--dry-run` to review first.
+An existing Sphinx-style docstring stays Sphinx style after `generate`: a new parameter gets `:param name:` and `:type name:` lines, the return value `:returns:`/`:rtype:` (`:yields:`/`:ytype:` for a generator), and exceptions `:raises Name:`; class attributes use `:ivar:`/`:vartype:`.
 
 ---
 
@@ -181,7 +183,7 @@ A trailing `, optional` on a parameter's type (NumPy's convention for a paramete
 
 ### Partial support note
 
-NumPy style is supported for **input only**, same as Sphinx. After `generate --inplace`, the output is always Google style.
+An existing NumPy-style docstring stays NumPy style after `generate`: gaps are filled with `Parameters`, `Returns`/`Yields`, `Raises` and (for classes) `Attributes` sections in NumPy's dash-underlined form.
 
 ---
 

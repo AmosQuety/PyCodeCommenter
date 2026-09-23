@@ -321,7 +321,10 @@ def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
     # auto-generated Args/Returns entry duplicating the original.
     assert patched.count("Directory to start the search from.") == 1
     assert patched.count("Parsed configuration dictionary.") == 1
-    assert "start_path (Optional[str]): Directory to start the search from." in patched
+    # The NumPy style is kept (not converted to Google style).
+    assert "    start_path : Optional[str], optional\n" in patched
+    assert "Args:" not in patched
+    assert commenter.from_string(patched).get_patched_code() == patched
 
 
 def test_numpy_raises_section_not_corrupted_on_regeneration(commenter):
@@ -365,20 +368,22 @@ def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
     patched = commenter.get_patched_code()
     ast.parse(patched)
 
-    # Exactly one Raises: section, in valid Google style, naming the
-    # exception exactly once within the docstring -- not the malformed
-    # leftover NumPy block (which would show up as a bare "Raises" header
-    # with no colon). A second "ConfigError" is expected and correct: the
-    # actual `raise ConfigError(...)` statement in the real code, below the
+    # Exactly one Raises section, still in the author's NumPy style, naming
+    # the exception exactly once within the docstring -- no leftover block
+    # and no second, Google-style copy. A second "ConfigError" is expected
+    # and correct: the `raise ConfigError(...)` statement below the
     # docstring.
-    assert patched.count("Raises:") == 1
-    assert "\nRaises\n" not in patched
+    assert patched.count("Raises\n    ------") == 1
+    assert "Raises:" not in patched
     docstring_only = patched.split('"""', 2)[1]
     assert docstring_only.count("ConfigError") == 1
-    raises_section = patched.split("Raises:", 1)[1].split('"""', 1)[0]
-    assert "ConfigError:" in raises_section
-    # Raises: must come after Args:/Returns:, matching Google-style order.
-    assert patched.index("Args:") < patched.index("Returns:") < patched.index("Raises:")
+    assert "If a config file is discovered but parsing fails." in docstring_only
+    # Sections keep NumPy's order: Parameters, Returns, Raises.
+    assert (
+        patched.index("Parameters\n")
+        < patched.index("Returns\n")
+        < patched.index("Raises\n")
+    )
 
 
 def test_dunder_init_parameter_description_not_garbled(commenter):

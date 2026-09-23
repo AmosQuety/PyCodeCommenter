@@ -11,7 +11,7 @@ Classes:
 
 import re
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,8 @@ class DocstringParser:
     # Google style (`Args:` on one line) nor Sphinx style (`:param:`) can
     # produce it - so it's checked first in parse().
     _NUMPY_HEADER_RE = re.compile(
-        r"(?m)^[ \t]*(Parameters|Returns|Raises)[ \t]*\r?\n[ \t]*-{3,}[ \t]*\r?\n?"
+        r"(?m)^[ \t]*(Parameters|Returns|Yields|Raises|Attributes)[ \t]*\r?\n"
+        r"[ \t]*-{3,}[ \t]*\r?\n?"
     )
     _NUMPY_DECL_RE = re.compile(r"^(\S.*?)\s*:\s*(.*)$")
     _TRAILING_OPTIONAL_RE = re.compile(r",?\s*optional\s*$", re.IGNORECASE)
@@ -41,7 +42,9 @@ class DocstringParser:
     _GOOGLE_HEADER_RE = re.compile(
         r"^\s*(Args|Returns|Yields|Raises|Attributes|Methods):\s*$"
     )
-    _SPHINX_FIELD_RE = re.compile(r"^\s*:(param\b|type\b|returns?\b)")
+    _SPHINX_FIELD_RE = re.compile(
+        r"^\s*:(param|type|returns?|rtype|raises?|yields?|ivar|vartype)\b"
+    )
 
     # One "name (type): description" entry in a Google-style Raises: or
     # Attributes: section. The name may be dotted (`errors.ConfigError`).
@@ -49,6 +52,10 @@ class DocstringParser:
 
     def __init__(self, docstring: Optional[str] = None):
         self.raw_docstring = docstring or ""
+        # "google", "numpy" or "sphinx": the style an existing docstring is
+        # written in, so regeneration can keep it. A docstring with no
+        # sections (or none at all) counts as Google, the default.
+        self.style = "google"
         self.summary = ""
         self.description = ""
         self.params = {}  # type: Dict[str, str]
@@ -101,8 +108,12 @@ class DocstringParser:
         # first since they're the most specific signature and can't be
         # produced by Google or Sphinx style.
         if self._NUMPY_HEADER_RE.search(remaining_content):
+            self.style = "numpy"
             self._parse_numpy(remaining_content)
-        elif ":param" in remaining_content or ":return" in remaining_content:
+        elif any(
+            self._SPHINX_FIELD_RE.match(ln) for ln in remaining_content.splitlines()
+        ):
+            self.style = "sphinx"
             self._parse_sphinx(remaining_content)
         else:
             self._parse_google(remaining_content)
@@ -137,8 +148,21 @@ class DocstringParser:
                 current_param = None
                 continue
 
-            if line.startswith(":return"):
-                match = re.match(r":returns?:\s*(.*)", line)
+            if line.startswith(":ivar") or line.startswith(":vartype"):
+                match = re.match(r":(ivar|vartype)\s+(\w+):\s*(.*)", line)
+                if match:
+                    target = (
+                        self.attributes
+                        if match.group(1) == "ivar"
+                        else (self.attribute_types)
+                    )
+                    target[match.group(2)] = match.group(3).strip()
+                current_param = None
+                continue
+
+            if line.startswith(":return") or line.startswith(":yield"):
+                # Like Google style, Yields shares the returns slot.
+                match = re.match(r":(?:returns?|yields?):\s*(.*)", line)
                 if match:
                     self.returns = match.group(1).strip()
                 current_param = None
@@ -252,8 +276,10 @@ class DocstringParser:
             body = parts[i + 1] if i + 1 < len(parts) else ""
 
             if header == "Parameters":
-                self._parse_numpy_params(body)
-            elif header == "Returns":
+                self.params, self.param_types = self._parse_numpy_entries(body)
+            elif header == "Attributes":
+                self.attributes, self.attribute_types = self._parse_numpy_entries(body)
+            elif header in ("Returns", "Yields"):
                 self._parse_numpy_returns(body)
             elif header == "Raises":
                 # Parsed into `raises`, never folded into `description`:
@@ -261,18 +287,24 @@ class DocstringParser:
                 # Args: alongside the generated Google-style Raises: section.
                 self._parse_numpy_raises(body)
 
-    def _parse_numpy_params(self, body: str) -> None:
-        """Helper to parse a NumPy-style Parameters section.
+    def _parse_numpy_entries(self, body: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Parses a NumPy-style Parameters or Attributes section.
 
         Declaration lines (e.g. "name : type" or "name1, name2 : type",
-        NumPy's shared-type convention for multiple parameters) sit at
-        column 0; indented lines are the continuation of the current
-        name(s)' description.
+        NumPy's shared-type convention for several names) sit at column 0;
+        indented lines continue the current name(s)' description. A
+        trailing ", optional" on the type is dropped.
 
         Args:
-            body (str): The body of the Parameters section.
+            body (str): The section body, below its underline.
+
+        Returns:
+            Tuple[Dict[str, str], Dict[str, str]]: Descriptions by name, and
+                the types of the entries that declared one.
         """
-        current_names = []
+        descriptions: Dict[str, str] = {}
+        types: Dict[str, str] = {}
+        current_names: List[str] = []
         for line in body.splitlines():
             if not line.strip():
                 continue
@@ -285,13 +317,14 @@ class DocstringParser:
                 current_names = [n.strip() for n in names_part.split(",") if n.strip()]
                 type_part = self._TRAILING_OPTIONAL_RE.sub("", type_part).strip()
                 for name in current_names:
-                    self.params[name] = ""
+                    descriptions[name] = ""
                     if type_part:
-                        self.param_types[name] = type_part
+                        types[name] = type_part
             elif current_names:
                 piece = line.strip()
                 for name in current_names:
-                    self.params[name] = (self.params[name] + " " + piece).strip()
+                    descriptions[name] = (descriptions[name] + " " + piece).strip()
+        return descriptions, types
 
     def _parse_numpy_raises(self, body: str) -> None:
         """Helper to parse a NumPy-style Raises section: an exception name
@@ -337,4 +370,5 @@ class DocstringParser:
             "attributes": self.attributes,
             "attribute_types": self.attribute_types,
             "methods": self.methods,
+            "style": self.style,
         }

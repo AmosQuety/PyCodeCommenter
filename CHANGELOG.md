@@ -10,6 +10,16 @@ Follow-up work from a dogfooding audit run against the tool's own codebase
 finding in that audit is now closed; see `Future Work/Audit Remediation
 Log.md` for the full history.
 
+### Changed
+- **NumPy- and Sphinx-style docstrings keep their style.** Regenerating
+  used to convert them to Google style. Now gaps are filled in the
+  docstring's own convention -- NumPy's dash-underlined `Parameters`/
+  `Returns`/`Yields`/`Raises`/`Attributes` sections, or Sphinx's
+  `:param:`/`:type:`/`:returns:`/`:rtype:`/`:raises:`/`:ivar:` fields --
+  and new docstrings are still Google style. The parser now also reads
+  NumPy `Yields`/`Attributes` and Sphinx `:yields:`/`:ivar:`/`:vartype:`,
+  which were previously dropped.
+
 ### Added
 - **A `#` comment block above an undocumented function or class becomes
   its docstring**: the first sentence as the summary, the rest as the
