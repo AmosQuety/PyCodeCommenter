@@ -12,6 +12,7 @@ Classes:
 """
 
 import ast
+import inspect
 import re
 import tokenize
 import io
@@ -92,6 +93,17 @@ except (ImportError, ValueError):
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# One whole string literal: optional prefix, matching quotes, and a body
+# that doesn't itself contain the closing quotes (which would mean implicit
+# concatenation of several literals).
+_STRING_QUOTES = ('"""', "'''", '"', "'")
+_DOCSTRING_LITERAL_RE = re.compile(
+    r"^(?P<prefix>[rRuU]{0,2})(?P<quote>"
+    + "|".join(re.escape(quote) for quote in _STRING_QUOTES)
+    + r")(?P<body>(?:(?!(?P=quote)).)*?)(?P=quote)$",
+    re.DOTALL,
+)
 
 
 def _is_carried_forward(text: Optional[str]) -> bool:
@@ -371,16 +383,49 @@ class PyCodeCommenter:
             logger.error(f"Error generating module docstring: {e}")
             return '"""Error generating docstring."""'
 
+    def _existing_docstring(self, node: ast.AST) -> "tuple[Optional[str], str]":
+        """A node's docstring as written in the source, and its prefix.
+
+        ``ast.get_docstring`` returns the string's *value*, with escape
+        sequences already interpreted (``\\n`` becomes a real line break).
+        Writing that value back into a new literal silently changed the
+        docstring on every run. Reading the literal's source text instead
+        keeps escapes as written; the prefix (``"r"`` for a raw string, else
+        ``""``) must be kept too, or a raw string's backslashes would start
+        meaning escapes.
+
+        Args:
+            node (ast.AST): A function, class, or module node.
+
+        Returns:
+            tuple[Optional[str], str]: The cleaned docstring text (``None``
+                if there is none) and the prefix to write it back with.
+                Anything unusual -- implicit string concatenation, a
+                triple quote inside a single-quoted literal -- falls back
+                to ``ast.get_docstring``'s value with no prefix.
+        """
+        value = ast.get_docstring(node)
+        if value is None:
+            return None, ""
+        literal = ast.get_source_segment(self.code, node.body[0].value)
+        match = _DOCSTRING_LITERAL_RE.match(literal or "")
+        if match is None or '"""' in match.group("body"):
+            return value, ""
+        prefix = "r" if "r" in match.group("prefix").lower() else ""
+        return inspect.cleandoc(match.group("body")), prefix
+
     def _generate_function_docstring(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> str:
         """Generates a Google-style docstring for a function node, merging
         existing info."""
-        existing_doc = None
+        existing_doc, prefix = None, ""
         try:
-            existing_doc = ast.get_docstring(func_node)
+            existing_doc, prefix = self._existing_docstring(func_node)
             parsed_info = DocstringParser(existing_doc).get_info()
-            return render_function_doc(self._build_function_doc(func_node, parsed_info))
+            return prefix + render_function_doc(
+                self._build_function_doc(func_node, parsed_info)
+            )
         except Exception as e:
             logger.error(
                 f"Error generating function docstring for {func_node.name}: {e}"
@@ -393,7 +438,7 @@ class PyCodeCommenter:
                 # discipline already used for a libcst parse failure
                 # elsewhere in this file) is always safer than replacing
                 # real content with a placeholder.
-                return f'"""{existing_doc}"""'
+                return f'{prefix}"""{existing_doc}"""'
             return '"""Error generating docstring."""'
 
     def _build_function_doc(
@@ -463,13 +508,18 @@ class PyCodeCommenter:
             # "Initialize the class." is a fixed literal rather than derived
             # from humanize_identifier("__init__") == "init", which reads
             # worse than the boilerplate it would replace.
-            return DocPart("Initialize the class.", Origin.FACT)
-        if parsed_info.get("summary"):
-            return DocPart(parsed_info["summary"], Origin.AUTHOR)
-        # Derived from the function's name alone: true, but says little.
-        return DocPart(
-            humanize_identifier(func_node.name).capitalize() + ".", Origin.WEAK
-        )
+            generated = DocPart("Initialize the class.", Origin.FACT)
+        else:
+            # Derived from the function's name alone: true, but says little.
+            generated = DocPart(
+                humanize_identifier(func_node.name).capitalize() + ".", Origin.WEAK
+            )
+        parsed = parsed_info.get("summary")
+        # A summary identical to the generated one is this tool's own output
+        # from an earlier run, not the author's words.
+        if parsed and parsed != generated.text:
+            return DocPart(parsed, Origin.AUTHOR)
+        return generated
 
     @staticmethod
     def _description_part(
@@ -531,33 +581,73 @@ class PyCodeCommenter:
         inferred_type: str,
         sibling_params: list,
     ) -> DocPart:
-        parsed_desc = parsed_info.get("params", {}).get(param.display_name)
-        if parsed_desc:
-            # A previous generation pass may have appended the
-            # " (default: ...)" suffix onto this description; re-parsing and
-            # re-appending would compound it on every run, so strip it
-            # first (see _strip_own_default_annotation).
-            return DocPart(
-                self._strip_own_default_annotation(parsed_desc), Origin.AUTHOR
-            )
+        # The rendered line always ends with " (default: ...)", so the
+        # description itself never restates the default.
+        desc = self._get_parameter_description(
+            func_name=func_node.name,
+            param_name=param.name,
+            inferred_type=inferred_type,
+            sibling_params=sibling_params,
+        )
+        generated = DocPart(
+            desc,
+            (
+                Origin.GUESS
+                if desc == GUESS_MARKER
+                else Origin.FACT if has_name_signal(param.name) else Origin.WEAK
+            ),
+        )
 
+        parsed_desc = parsed_info.get("params", {}).get(param.display_name)
+        if not parsed_desc:
+            return generated
+        # A previous generation pass appended the " (default: ...)" suffix;
+        # strip it so re-rendering doesn't compound it (see
+        # _strip_own_default_annotation).
+        parsed_desc = self._strip_own_default_annotation(parsed_desc)
+        if self._is_own_output(parsed_desc, param, inferred_type, func_node):
+            return generated
+        return DocPart(parsed_desc, Origin.AUTHOR)
+
+    def _is_own_output(
+        self,
+        text: str,
+        param: Any,
+        inferred_type: str,
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+    ) -> bool:
+        """Whether a parsed parameter description is this tool's own output
+        from an earlier run -- its guess marker, or the inferred text (in the
+        current form, or the pre-2.6 form that also restated the default)
+        -- rather than words an author wrote.
+
+        Args:
+            text (str): The parsed description, default suffix removed.
+            param (Any): The parameter.
+            inferred_type (str): Its type, as used for inference.
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+
+        Returns:
+            bool: ``True`` if the text should be regenerated, not kept.
+        """
+        if GUESS_MARKER in text:
+            return True
         default_str = (
             self._get_default_value(param.default)
             if param.default is not None
             else None
         )
-        desc = self._get_parameter_description(
-            func_name=func_node.name,
-            param_name=param.name,
-            inferred_type=inferred_type,
-            default_value=default_str,
-            sibling_params=sibling_params,
-        )
-        if desc == GUESS_MARKER:
-            return DocPart(desc, Origin.GUESS)
-        return DocPart(
-            desc, Origin.FACT if has_name_signal(param.name) else Origin.WEAK
-        )
+        own_forms = {
+            self._get_parameter_description(
+                func_name=func_node.name,
+                param_name=param.name,
+                inferred_type=inferred_type,
+                default_value=default,
+            )
+            for default in (None, default_str)
+        }
+        return text in own_forms or text.rstrip(".") + "." in own_forms
 
     def _returns_entry(
         self,
@@ -571,6 +661,9 @@ class PyCodeCommenter:
         label = "Yields" if is_generator else "Returns"
 
         existing_desc = parsed_info.get("returns")
+        if existing_desc and GUESS_MARKER in existing_desc:
+            # The guess marker from an earlier run, not author text.
+            existing_desc = None
         if existing_desc == "None.":
             # This tool's own literal for "no return value to describe",
             # not author text -- treated as absent so regeneration stays
@@ -624,9 +717,9 @@ class PyCodeCommenter:
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
         """Generates a Google-style docstring for a class node, merging
         existing info."""
-        existing_doc = None
+        existing_doc, prefix = None, ""
         try:
-            existing_doc = ast.get_docstring(class_node)
+            existing_doc, prefix = self._existing_docstring(class_node)
             parser = DocstringParser(existing_doc)
             parsed_info = parser.get_info()
 
@@ -654,14 +747,14 @@ class PyCodeCommenter:
                 docstring += "\nMethods:\n" + methods + "\n"
 
             docstring += '"""'
-            return docstring
+            return prefix + docstring
         except Exception as e:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
             if existing_doc is not None:
                 # See the matching comment in _generate_function_docstring:
                 # never let an unexpected failure silently discard a real,
                 # existing docstring in favor of a placeholder.
-                return f'"""{existing_doc}"""'
+                return f'{prefix}"""{existing_doc}"""'
             return '"""Error generating docstring."""'
 
     def _build_attribute_lines(

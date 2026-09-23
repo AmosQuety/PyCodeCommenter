@@ -84,6 +84,25 @@ Log.md` for the full history.
   section is kept; entries left over from earlier runs are removed.
 
 ### Fixed
+- **Escape sequences in existing docstrings were rewritten, and could
+  break the file.** Existing docstrings were read as their *value*, so a
+  written `\n` came back as a real line break on every run -- and escaped
+  quotes (`\"\"\"`) came back as a real `"""`, ending the docstring early
+  and producing a file that no longer parses. Docstrings are now read from
+  their source text, escapes kept as written, and a raw string keeps its
+  `r` prefix.
+- **An author's `__init__` summary was replaced** with "Initialize the
+  class."; that text is now only used for an `__init__` with no docstring.
+- **Text from an earlier run was treated as author text**, so its TODO
+  markers and type-only filler (`float value.`) could never be improved --
+  including by `--ai-draft` on a file generated before it existed. The
+  generator now recognises its own earlier output and regenerates it.
+- **Defaults were stated twice** (`Default is 3. (default: 3)`); the
+  `(default: ...)` suffix is now the only mention.
+- **`raise NotImplementedError` (no parentheses) got no `Raises:` entry.**
+  A bare raise of a built-in exception, or of a name following the
+  exception-class convention (`ConfigError`), is now documented; `raise
+  err` (an instance) still isn't guessed.
 - **Regeneration overwrote author-written `Raises:`, `Attributes:` and
   `Methods:` text.** An author's exception and attribute descriptions
   were replaced with guess markers (or inferred filler) on every run, and
