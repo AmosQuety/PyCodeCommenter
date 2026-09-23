@@ -32,9 +32,9 @@ Python 3.9 or later is required. After install, the `pycodecommenter` command is
 
 ## Does PyCodeCommenter use AI or LLMs?
 
-**No.** PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse source files and infer docstring structure from parameter names, type annotations, and function bodies. Given the same input, it always produces the same output.
+**Not unless you ask it to.** By default PyCodeCommenter is fully deterministic. It uses Python's built-in `ast` module to parse source files and infer docstring structure from parameter names, type annotations, and function bodies. Given the same input, it always produces the same output, with no API calls or network requests.
 
-There are no API calls, no network requests, no rate limits, and no AI model dependency.
+With `generate --ai-draft`, an AI model drafts only the parts the code can't state (a function's purpose, what an untyped argument means). Your own text and facts read off the code are never replaced, every drafted line is labelled `(AI-drafted, unreviewed)`, and you're asked for consent before any code is sent. Drafts come from PyCodeCommenter's free hosted service (daily limit) or from your own Gemini, OpenAI, Anthropic, DeepSeek or OpenAI-compatible key via `--ai-provider`; each provider has a default model, and `--ai-model` lets you choose any other. See the [CLI reference](cli-reference.md#pycodecommenter-generate).
 
 ---
 

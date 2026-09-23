@@ -11,6 +11,33 @@ finding in that audit is now closed; see `Future Work/Audit Remediation
 Log.md` for the full history.
 
 ### Added
+- **`--ai-draft` fills every gap, not just the description.** A
+  name-derived summary, parameters with a TODO or type-only description,
+  an undescribed return value, and exceptions without a readable condition
+  are drafted in one request per function, using the hosted service's new
+  `/v2` endpoint. Author text and facts read off the code are never
+  replaced. Every drafted line carries the `(AI-drafted, unreviewed)`
+  marker and passes a safety check before it's written (no triple quotes,
+  backslashes, placeholder or marker text). Drafts are kept on later runs,
+  so regenerating costs no further requests.
+- **Bring your own key**: `--ai-provider gemini|openai|anthropic|deepseek|
+  openai-compatible` calls that provider directly with your key (read from
+  `GEMINI_API_KEY`, `OPENAI_API_KEY`, ... or asked for, hidden), through
+  its official SDK installed as an optional extra
+  (`pip install "pycodecommenter[gemini]"`, `[openai]`, `[anthropic]`, or
+  `[ai]` for all; Python 3.10+). Each provider has a default model
+  (Anthropic: `claude-opus-5`; Gemini: `gemini-2.5-flash`), printed at the
+  start of every run; `--ai-model` chooses any other, and
+  `--ai-base-url` points `openai-compatible` at Mistral, Groq, Ollama, etc.
+- **Daily limit, then your own key**: the hosted service now allows 25
+  drafts per caller per day. The CLI reports how many are left; when they
+  run out mid-run, an interactive run asks whether to continue with your
+  own key from that same function, and a CI run stops cleanly and says
+  how to continue.
+- **Consent per destination**: agreeing to send code to the hosted service
+  no longer covers a provider you call directly, or vice versa.
+  `--yes-send-code-to-ai` replaces `--yes-send-code-to-hosted-ai`, which
+  still works as an alias.
 - **`generate --output-dir PATH`** (§6): writes a fully-documented copy of
   a directory target's tree to `PATH`, mirroring each file's relative
   path, leaving the originals untouched — closing the exact gap that made

@@ -165,27 +165,50 @@ imports.
 Entirely inert unless the caller opts in; the deterministic path above is
 the tool's default behavior.
 
-- **`description_provider.py`** — the pluggable `DescriptionProvider`
-  interface plus the `FunctionContext`/`ParameterFact` value objects
-  (AST-extracted facts handed to a provider). The default
-  `NullDescriptionProvider` always declines. A provider is only consulted
-  when a caller passes `PyCodeCommenter(description_provider=...)`.
+- **`function_doc.py`** — a function docstring as parts (`FunctionDoc`),
+  each tagged with its `Origin` (author, fact, weak, guess, ai), plus the
+  one renderer. `commenter._build_function_doc` builds it; AI drafting and
+  any reporting work on the parts, never on rendered text.
+- **`description_provider.py`** — the provider interface. `draft_docstring
+  (context, known, slots)` drafts the requested `DraftSlots` and returns a
+  `DocstringDraft`; its default falls back to the older
+  `draft_function_description` (description paragraph only), so providers
+  written against that keep working. `DraftingStopped` ends drafting for
+  the run (limit spent, key rejected); any other error skips one function.
+  `SwitchOnStop` wraps a provider and asks once for a replacement when it
+  stops (the "continue with your own key" prompt).
+- **`ai_drafting.py`** — which parts are gaps (`slots_for`: only `GUESS`/
+  `WEAK` parts), the settled text sent as context (`known_text`), applying
+  a draft (`apply_draft`), and the client-side safety gate every drafted
+  value passes (`clean_slot_text`: no triple quotes, backslashes, `TODO`,
+  or marker text). Also the prompt/JSON schema/reply parser for direct
+  providers — the hosted backend keeps its own copy of the prompt, so keep
+  the two in step.
 - **`remote_provider.py`** — `RemoteDescriptionProvider`, a stdlib-only
-  (`urllib`) HTTP client for the separate `pycodecommenter-ai-backend`
-  service (default `DEFAULT_BACKEND_URL`, overridable via the
-  `PYCODECOMMENTER_AI_BACKEND_URL` env var). It holds no Gemini/model
-  knowledge or API keys — that all lives in the backend repo. It fails
-  closed: any error, timeout, 429, or malformed response yields `None`,
-  never a raised exception.
-- **`consent.py`** — one-time, versioned consent stored per user at
-  `~/.pycodecommenter/consent.json`. Bump `CONSENT_NOTICE_VERSION` if what
-  is sent to or done by the backend materially changes, so users are
-  re-prompted.
-- CLI: `generate --ai-draft` opts in; `--accept-ai-drafts` is additionally
-  required with `--inplace`; `--yes-send-code-to-hosted-ai` skips the
-  interactive consent prompt (CI use). Every AI-drafted description carries
-  an `(AI-drafted, unreviewed)` marker, which the validator reports under
-  its own `ai_draft` category — never counted as properly documented.
+  (`urllib`) client for the separate `pycodecommenter-ai-backend` service's
+  `/v2/draft-docstring` (falls back to `/v1` on a 404). Records the
+  caller's daily allowance from response headers, waits out a per-minute
+  rate limit once, and raises `DraftingStopped` when the allowance or
+  shared cap is spent.
+- **`direct_providers.py`** — bring-your-own-key providers (Gemini,
+  OpenAI, Anthropic, DeepSeek, any OpenAI-compatible API) using each
+  vendor's official SDK, installed via optional extras (`[gemini]`,
+  `[openai]`, `[anthropic]`, `[ai]`; Python 3.10+). `PROVIDERS` holds each
+  one's key variable and default model. SDKs are imported only when chosen;
+  tests inject fake clients, so the suite needs no SDK or network.
+- **`ai_setup.py`** — CLI-side setup: provider choice, key from the
+  provider's env var or a hidden prompt (never a project file), consent,
+  the "AI drafting: <provider>, model <m>" line, and the end-of-run report.
+- **`consent.py`** — one-time, versioned consent per destination (`hosted`
+  or a provider name) at `~/.pycodecommenter/consent.json`. Bump
+  `CONSENT_NOTICE_VERSION` / `DIRECT_CONSENT_NOTICE_VERSION` if what is
+  sent, or what the destination does with it, materially changes.
+- CLI: `generate --ai-draft` opts in; `--ai-provider`/`--ai-model`/
+  `--ai-base-url` choose where; `--accept-ai-drafts` is additionally
+  required with `--inplace`; `--yes-send-code-to-ai` (alias
+  `--yes-send-code-to-hosted-ai`) skips the consent prompt for CI. Every
+  drafted line carries an `(AI-drafted, unreviewed)` marker, which the
+  validator reports under its own `ai_draft` category.
 
 ### Test layout
 
@@ -198,7 +221,10 @@ roughly one file per concern: `test_basic_validation.py`,
 `test_docstring_parser.py`, `test_cli.py` (CLI subcommands, including the
 AI-draft flags), `test_consent.py`, and `test_remote_provider.py` (HTTP
 client, with the network mocked — no test hits the real backend),
-`test_merge_preservation.py` (regeneration never discards author-written
+`test_ai_drafting.py` (what is asked for, what is written, the safety
+gate, failure handling), `test_direct_providers.py` (bring-your-own-key
+providers against fake SDK clients, the limit-reached hand-off, consent
+per destination), `test_merge_preservation.py` (regeneration never discards author-written
 Raises/Attributes/Methods text), and `test_fact_extraction.py` (raise
 conditions, bool/str return inference, plus end-to-end fixtures with exact
 TODO counts — update those counts deliberately, never to make a test
