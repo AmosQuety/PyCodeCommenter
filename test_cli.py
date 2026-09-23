@@ -295,7 +295,7 @@ def fake_ai_backend(monkeypatch, isolated_consent_home):
 
     def fake_urlopen(request, timeout):
         captured["calls"] += 1
-        return _FakeAIResponse({"description": "A fake AI-drafted description."})
+        return _FakeAIResponse({"description": "A fake drafted description."})
 
     monkeypatch.setattr(
         "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
@@ -335,7 +335,7 @@ def test_ai_draft_with_dry_run_needs_no_extra_flag(
         ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
     assert exit_code == 1  # dry-run's own "changes detected" exit code
-    assert "A fake AI-drafted description." in out
+    assert "A fake drafted description." in out
 
 
 def test_ai_draft_with_inplace_and_accept_flag_writes_marked_text(
@@ -354,7 +354,7 @@ def test_ai_draft_with_inplace_and_accept_flag_writes_marked_text(
     )
     assert exit_code == 0
     patched = (project / "a.py").read_text()
-    assert "A fake AI-drafted description." in patched
+    assert "A fake drafted description." in patched
     assert "(AI-drafted, unreviewed)" in patched
 
 
@@ -404,7 +404,7 @@ def test_ai_draft_backend_url_is_overridable_via_env_var(
 
     run_cli(["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys)
 
-    assert captured_url["url"] == "https://staging.example.test/v1/draft-description"
+    assert captured_url["url"] == "https://staging.example.test/v2/draft-docstring"
 
 
 def test_ai_draft_shared_across_directory_run(
