@@ -22,9 +22,9 @@ path is entirely inert unless a caller explicitly opts in.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import List, Optional
+from abc import ABC
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -68,24 +68,83 @@ class FunctionContext:
     source: str
 
 
-class DescriptionProvider(ABC):
-    """A source of free-text function descriptions.
+@dataclass(frozen=True)
+class DraftSlots:
+    """The parts of one docstring a provider is asked to draft: only parts
+    that would otherwise be a TODO marker or say nothing beyond the type."""
 
-    The deterministic default and the remote AI-backed implementation share
-    this one interface and one call site (``commenter.py``'s
-    ``_draft_description_via_provider``) -- so an AI provider is a drop-in,
-    not a fork of the generation path.
+    summary: bool = False
+    description: bool = False
+    params: Tuple[str, ...] = ()
+    returns: bool = False
+    raises: Tuple[str, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not (
+            self.summary
+            or self.description
+            or self.params
+            or self.returns
+            or self.raises
+        )
+
+
+@dataclass(frozen=True)
+class KnownText:
+    """Docstring text already settled for the function (the author's words
+    or facts read off the code), given to the provider for consistency --
+    never for it to rewrite."""
+
+    params: Dict[str, str] = field(default_factory=dict)
+    returns: Optional[str] = None
+    raises: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DocstringDraft:
+    """A provider's answer. Any part may be missing; unrequested parts are
+    ignored, and every value is checked again before it's written."""
+
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    params: Dict[str, str] = field(default_factory=dict)
+    returns: Optional[str] = None
+    raises: Dict[str, str] = field(default_factory=dict)
+
+
+class DraftingStopped(Exception):
+    """The provider can't draft anything more in this run -- for example the
+    daily allowance is spent. Unlike an ordinary failure (which only skips
+    one function), this ends drafting for the rest of the run.
+
+    Attributes:
+        reason (str): A machine-readable reason, e.g.
+            ``"user_daily_limit_reached"``.
+        message (str): A human-readable explanation to show the user.
     """
 
-    @abstractmethod
-    def draft_function_description(self, context: FunctionContext) -> Optional[str]:
-        """Return a drafted description, or ``None`` to decline.
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
 
-        The call site treats ``None`` and a raised exception identically:
-        both fail closed to today's behavior (an empty description slot).
-        Implementations should never retry into a fabricated answer on
-        error, timeout, or a low-confidence result -- declining is always
-        the correct response to uncertainty here.
+
+class DescriptionProvider(ABC):
+    """A source of drafted docstring text.
+
+    The generator calls :meth:`draft_docstring` once per function that has
+    gaps. Implementations override that, or -- for providers written before
+    it existed -- only :meth:`draft_function_description`, which the
+    default :meth:`draft_docstring` uses for the description paragraph.
+
+    Every method fails closed: returning nothing (or raising) leaves the
+    gaps as they are. Never retry into a fabricated answer on error,
+    timeout, or a low-confidence result -- declining is always the correct
+    response to uncertainty here.
+    """
+
+    def draft_function_description(self, context: FunctionContext) -> Optional[str]:
+        """Return a drafted description paragraph, or ``None`` to decline.
 
         Args:
             context (FunctionContext): The function's AST-derived facts.
@@ -93,7 +152,27 @@ class DescriptionProvider(ABC):
         Returns:
             Optional[str]: A drafted description, or ``None``.
         """
-        raise NotImplementedError
+        return None
+
+    def draft_docstring(
+        self, context: FunctionContext, known: KnownText, slots: DraftSlots
+    ) -> DocstringDraft:
+        """Drafts the requested parts of one function's docstring.
+
+        Args:
+            context (FunctionContext): The function's AST-derived facts.
+            known (KnownText): Text already settled, for consistency.
+            slots (DraftSlots): The parts to draft.
+
+        Returns:
+            DocstringDraft: Whatever could be drafted; may be empty.
+
+        Raises:
+            DraftingStopped: Drafting can't continue for the rest of the run.
+        """
+        if not slots.description:
+            return DocstringDraft()
+        return DocstringDraft(description=self.draft_function_description(context))
 
 
 class NullDescriptionProvider(DescriptionProvider):
@@ -111,6 +190,10 @@ class NullDescriptionProvider(DescriptionProvider):
 __all__ = [
     "ParameterFact",
     "FunctionContext",
+    "DraftSlots",
+    "KnownText",
+    "DocstringDraft",
+    "DraftingStopped",
     "DescriptionProvider",
     "NullDescriptionProvider",
 ]

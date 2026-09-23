@@ -27,7 +27,6 @@ try:
         has_name_signal,
         humanize_identifier,
         GUESS_MARKER,
-        AI_DRAFT_MARKER,
     )
     from .type_analyzer import TypeAnalyzer
     from .docstring_parser import DocstringParser
@@ -39,9 +38,11 @@ try:
     )
     from .description_provider import (
         DescriptionProvider,
+        DraftingStopped,
         FunctionContext,
         ParameterFact,
     )
+    from .ai_drafting import apply_draft, known_text, slots_for
     from .code_facts import (
         describe_bool_return,
         describe_raise_condition,
@@ -62,7 +63,6 @@ except (ImportError, ValueError):
         has_name_signal,
         humanize_identifier,
         GUESS_MARKER,
-        AI_DRAFT_MARKER,
     )
     from type_analyzer import TypeAnalyzer
     from docstring_parser import DocstringParser
@@ -72,7 +72,13 @@ except (ImportError, ValueError):
         walk_own_scope,
         walk_skipping_nested_classes,
     )
-    from description_provider import DescriptionProvider, FunctionContext, ParameterFact
+    from description_provider import (
+        DescriptionProvider,
+        DraftingStopped,
+        FunctionContext,
+        ParameterFact,
+    )
+    from ai_drafting import apply_draft, known_text, slots_for
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
     from function_doc import (
         ArgEntry,
@@ -143,6 +149,10 @@ class PyCodeCommenter:
         self.type_analyzer = TypeAnalyzer()
         self.file_path = None
         self._description_provider = description_provider
+        # Set once a provider says it can't draft any more this run (for
+        # example, the daily allowance is spent); later functions keep
+        # their gaps and the CLI reports why.
+        self.drafting_stopped: Optional[DraftingStopped] = None
         self._include_module_docstrings = include_module_docstrings
         self._newline = "\n"
 
@@ -403,13 +413,46 @@ class PyCodeCommenter:
             FunctionDoc: The parts, ready to render.
         """
         summary = self._summary_part(func_node, parsed_info)
-        return FunctionDoc(
+        doc = FunctionDoc(
             summary=summary,
-            description=self._description_part(func_node, parsed_info, summary),
+            description=self._description_part(parsed_info, summary),
             args=self._arg_entries(func_node, parsed_info),
             returns=self._returns_entry(func_node, parsed_info),
             raises=self._raises_entries(func_node, parsed_info.get("raises", {})),
         )
+        self._fill_gaps_with_provider(func_node, doc)
+        return doc
+
+    def _fill_gaps_with_provider(
+        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef], doc: FunctionDoc
+    ) -> None:
+        """Asks the opt-in description provider to draft the docstring's
+        gaps, failing closed: any error leaves the gaps as they are.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            doc (FunctionDoc): The docstring parts, updated in place.
+        """
+        if self._description_provider is None or self.drafting_stopped is not None:
+            return
+        slots = slots_for(doc)
+        if slots.is_empty():
+            return
+        try:
+            draft = self._description_provider.draft_docstring(
+                self._build_function_context(func_node), known_text(doc), slots
+            )
+        except DraftingStopped as e:
+            self.drafting_stopped = e
+            return
+        except Exception as e:
+            logger.warning(
+                f"Description provider failed for {func_node.name}, "
+                f"leaving its gaps as they are: {e}"
+            )
+            return
+        apply_draft(doc, draft, slots)
 
     def _summary_part(
         self,
@@ -428,28 +471,19 @@ class PyCodeCommenter:
             humanize_identifier(func_node.name).capitalize() + ".", Origin.WEAK
         )
 
+    @staticmethod
     def _description_part(
-        self,
-        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        parsed_info: Dict[str, Any],
-        summary: DocPart,
+        parsed_info: Dict[str, Any], summary: DocPart
     ) -> Optional[DocPart]:
-        # A parsed description is the author's real words and wins
-        # outright. Otherwise an opt-in description provider gets a chance
-        # (failing closed to "" -- see _draft_description_via_provider).
-        # With neither, the slot stays empty rather than holding a
-        # placeholder: a "nothing to add" paragraph under a summary is
-        # noise, not honesty.
-        if parsed_info.get("description"):
-            part = DocPart(parsed_info["description"], Origin.AUTHOR)
-        else:
-            drafted = self._draft_description_via_provider(func_node)
-            part = DocPart(drafted, Origin.AI) if drafted else None
-        if part is None:
+        # A parsed description is the author's real words. Without one the
+        # slot stays empty rather than holding a placeholder: a "nothing
+        # to add" paragraph under a summary is noise, not honesty.
+        description = parsed_info.get("description")
+        if not description:
             return None
-        if part.text.lower().rstrip(".") == summary.text.lower().rstrip("."):
+        if description.lower().rstrip(".") == summary.text.lower().rstrip("."):
             return None
-        return part
+        return DocPart(description, Origin.AUTHOR)
 
     def _arg_entries(
         self,
@@ -1090,42 +1124,6 @@ class PyCodeCommenter:
             raised_exceptions=self._get_raised_exceptions(func_node),
             source=source,
         )
-
-    def _draft_description_via_provider(
-        self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
-    ) -> str:
-        """Asks the configured description provider for a description,
-        failing closed to "" (today's behavior) on any decline or error.
-
-        No exception from a provider ever propagates out of this method,
-        and no partial/malformed draft is ever used -- an error, a ``None``
-        return, an empty string, or a raised exception are all treated
-        identically: fall back to leaving the description slot empty, the
-        same as if no provider were configured at all.
-
-        Args:
-            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
-                function node.
-
-        Returns:
-            str: The drafted description with :data:`AI_DRAFT_MARKER`
-                appended, or ``""`` if no provider is configured, the
-                provider declined, or the provider raised.
-        """
-        if self._description_provider is None:
-            return ""
-        try:
-            context = self._build_function_context(func_node)
-            draft = self._description_provider.draft_function_description(context)
-        except Exception as e:
-            logger.warning(
-                f"Description provider failed for {func_node.name}, "
-                f"falling back to no description: {e}"
-            )
-            return ""
-        if not draft:
-            return ""
-        return f"{draft.strip()} {AI_DRAFT_MARKER}"
 
     def _get_local_types(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
