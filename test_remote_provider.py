@@ -1,7 +1,7 @@
 """Tests for RemoteDescriptionProvider -- the HTTP client that talks to the
 hosted AI-drafting backend. No real network calls: the urllib layer is
-monkeypatched, matching the discipline test_gemini_provider.py (the direct-
-Gemini provider's own tests) already used.
+monkeypatched, the same discipline the Gemini client's own tests follow in
+the separate pycodecommenter-ai-backend repo.
 """
 
 import json
