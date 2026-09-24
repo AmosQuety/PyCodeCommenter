@@ -1,6 +1,6 @@
 # PyCodeCommenter — Principal Engineer & DX Analysis
 
-> Reviewed by: Antigravity (Principal SE / DX Expert)  
+> Reviewed by: Antigravity (Principal SE / DX Expert)
 > Codebase version: v2.2.0 · Files reviewed: all source, all docs, all tests
 
 ---
@@ -170,7 +170,7 @@ validator = DocstringValidator(code_string=self.code, file_path=self.file_path)
 # Path A — via commenter
 report = PyCodeCommenter().from_file("f.py").validate()
 
-# Path B — via validator directly  
+# Path B — via validator directly
 report = DocstringValidator(file_path="f.py").validate_all()
 ```
 
