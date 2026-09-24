@@ -36,6 +36,13 @@ venv.bak/
 .coverage
 htmlcov/
 
+build/
+__pycache__/
+.claude/
+.pytest_cache/
+.venv/
+
+
 # Local/Temp Files for PyCodeCommenter
 env_info.txt
 out.txt
