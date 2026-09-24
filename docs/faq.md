@@ -16,7 +16,7 @@ Answers to common questions about PyCodeCommenter, based directly on what the so
 
 **PyCodeCommenter** is an open-source Python tool that automatically generates Google-style docstrings, validates existing docstrings against real function signatures, and measures documentation coverage across Python projects.
 
-It works entirely on your local machine — no AI, no API calls, no rate limits. Install with `pip install pycodecommenter`.
+By default it works entirely on your local machine — no AI, no API calls. AI drafting is optional (`--ai-draft`) and every drafted line is labelled. Install with `pip install pycodecommenter`.
 
 ---
 

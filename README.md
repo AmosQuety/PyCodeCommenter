@@ -7,9 +7,88 @@
 [![Docs Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AmosQuety/PyCodeCommenter/main/coverage_badge.json)](https://github.com/AmosQuety/PyCodeCommenter)
 [![GitHub Stars](https://img.shields.io/github/stars/AmosQuety/PyCodeCommenter?style=social)](https://github.com/AmosQuety/PyCodeCommenter)
 
-**PyCodeCommenter** is an open-source Python docstring generator and documentation validator. It automatically generates Google-style docstrings from Python AST, validates existing docstrings against real function signatures, measures documentation coverage, and integrates with CI/CD pipelines — all with zero network calls and zero AI dependency.
+**PyCodeCommenter** writes and checks Python docstrings. It reads your code to fill in everything the code itself can prove — parameter names, types, defaults, when an exception is raised, what a boolean function tests — keeps anything you already wrote, and clearly marks what only a person can say. If you opt in, an AI model drafts those parts too, each line labelled for review. It also validates existing docstrings against the code and measures documentation coverage.
 
 > **Install:** `pip install pycodecommenter` · **Python 3.10+** · **MIT License**
+
+---
+
+## See It Work
+
+Given this file (no docstrings, one comment):
+
+```python
+# Calculate what the customer owes after VAT and any discount.
+def total_due(invoice_id: str, discount: float = 0.0) -> float:
+    invoice = INVOICES.get(invoice_id)
+    if invoice is None:
+        raise KeyError(invoice_id)
+    return invoice.amount * 1.18 - discount
+
+
+def is_overdue(invoice, today) -> bool:
+    return today > invoice.due_date
+```
+
+`pycodecommenter generate billing.py` writes (real output):
+
+```python
+# Calculate what the customer owes after VAT and any discount.
+def total_due(invoice_id: str, discount: float = 0.0) -> float:
+    """Calculate what the customer owes after VAT and any discount.
+
+    Args:
+        invoice_id (str): Unique identifier for the invoice.
+        discount (float): float value. (default: 0.0)
+
+    Returns:
+        float: TODO(pycodecommenter): describe
+
+    Raises:
+        KeyError: If `invoice is None`.
+    """
+    ...
+
+
+def is_overdue(invoice, today) -> bool:
+    """Is overdue.
+
+    Args:
+        invoice (Any): TODO(pycodecommenter): describe.
+        today (Any): TODO(pycodecommenter): describe.
+
+    Returns:
+        bool: True if `today > invoice.due_date`, otherwise False.
+    """
+    ...
+```
+
+The summary comes from your comment, which stays where it is. The raise condition and the boolean check are read straight from the code. Nothing is guessed: what the code can't say is marked `TODO`. Every run ends with a summary:
+
+```text
+Summary: 2 docstrings written.
+  3 details taken straight from the code
+  1 docstring taken from the comment above it (comment left in place)
+  3 gaps left as "TODO(pycodecommenter)" for you to fill
+Next: fill the gaps with `pycodecommenter review`, or add --ai-draft to have them drafted; then run `pycodecommenter validate`.
+```
+
+Add `--ai-draft` and the gaps are drafted, each line labelled (real output):
+
+```python
+def is_overdue(invoice, today) -> bool:
+    """Determine if an invoice is overdue. (AI-drafted, unreviewed)
+
+    Args:
+        invoice (Any): This is the invoice to check. (AI-drafted, unreviewed)
+        today (Any): This is today's date. (AI-drafted, unreviewed)
+
+    Returns:
+        bool: True if `today > invoice.due_date`, otherwise False.
+    """
+```
+
+Then `pycodecommenter review billing.py` goes through each drafted line: accept it, edit it, or skip it.
 
 ---
 
@@ -17,12 +96,14 @@
 
 | Task | Command |
 |---|---|
-| Generate missing docstrings | `pycodecommenter generate myfile.py --inplace` |
-| Validate docstrings vs code | `pycodecommenter validate myfile.py` |
+| Write missing docstrings (preview first) | `pycodecommenter generate app.py --dry-run` |
+| Have AI draft what the code can't state | `pycodecommenter generate app.py --ai-draft --dry-run` |
+| Accept, edit or fill drafts and gaps | `pycodecommenter review app.py` |
+| Validate docstrings against the code | `pycodecommenter validate app.py` |
 | Measure documentation coverage | `pycodecommenter coverage ./src` |
-| JSON output for downstream tools | `pycodecommenter validate myfile.py --output-format json` |
+| JSON output for other tools | `pycodecommenter validate app.py --output-format json` |
 
-**PyCodeCommenter** solves *documentation drift* — the common Python project problem where code changes but docstrings don't. It catches undocumented parameters, missing `Returns:` sections, orphaned docstring entries, and mismatched type hints before they reach production.
+It also catches *documentation drift* — code that changed while its docstring didn't: undocumented parameters, missing `Returns:` sections, entries for parameters that no longer exist, and mismatched types.
 
 ---
 
@@ -31,16 +112,18 @@
 ```bash
 pip install pycodecommenter
 
-# Preview what will be added (safe, no writes)
-pycodecommenter generate main.py --dry-run
+# Preview what will be written (changes nothing)
+pycodecommenter generate app.py --dry-run
 
-# Apply docstrings in place
-pycodecommenter generate main.py --inplace
+# Write it
+pycodecommenter generate app.py --inplace
 
-# Validate accuracy
-pycodecommenter validate main.py
+# Optional: have AI draft the gaps, then go through the drafts
+pycodecommenter generate app.py --ai-draft --dry-run
+pycodecommenter review app.py
 
-# Check project coverage
+# Keep docstrings accurate, e.g. in CI
+pycodecommenter validate app.py
 pycodecommenter coverage ./src
 ```
 
@@ -51,18 +134,16 @@ pycodecommenter coverage ./src
 ### The Problem
 
 - Code changes quickly; docstrings lag behind and become stale.
-- No easy way to validate existing docstrings against real signatures.
-- AI tools generate inconsistent or hallucinated documentation.
-- Most Python projects have no coverage metric for documentation quality.
+- Few tools check existing docstrings against the real signatures.
+- Tools that write docstrings for you tend to state guesses as if they were facts.
+- Most projects have no measure of how well they're documented.
 
 ### The Solution
 
-PyCodeCommenter uses **deterministic, AST-based analysis** — not AI — to:
-
-- Generate structurally correct Google-style docstrings from your code's own AST. The Args/Returns/Attributes *skeleton* (names, types, defaults) is always accurate, since it's extracted, not guessed — but prose PyCodeCommenter can't extract from the code itself (what a parameter or function actually *means*) is left as a marked placeholder, `TODO(pycodecommenter): describe`, for a human to fill in, not presented as finished documentation.
-- Validate parameter names, type hints, exception documentation, and return values.
-- Measure and enforce documentation coverage across an entire project.
-- Export structured JSON reports for integration with any downstream tooling.
+- **Facts first.** Names, types, defaults, raise conditions and boolean checks are read from the code, so they're always right.
+- **Your words are never overwritten.** Existing summaries, descriptions and entries are kept, a `#` comment above an undocumented function becomes its docstring, and NumPy- or Sphinx-style docstrings keep their style.
+- **Gaps are marked, not guessed.** What the code can't state is left as `TODO(pycodecommenter): describe` — or, with `--ai-draft`, drafted by an AI model and labelled `(AI-drafted, unreviewed)` until you review it.
+- **Validation and coverage** catch drift and measure progress, with JSON output for CI.
 
 ### Related Tools
 
@@ -187,20 +268,22 @@ commenter = PyCodeCommenter().from_string(code)
 print(commenter.get_patched_code())
 ```
 
-**Output:**
+**Output (real):**
 ```python
 def calculate_discount(price: float, rate: float = 0.1) -> float:
     """Calculate discount.
 
     Args:
-        price (float): Price of the product.
-        rate (float): Discount rate to apply. (default: 0.1)
+        price (float): float value.
+        rate (float): float value. (default: 0.1)
 
     Returns:
-        float: Discounted price after applying the rate.
+        float: TODO(pycodecommenter): describe
     """
     return price * (1 - rate)
 ```
+
+The types and default are facts from the signature; "float value." says no more than the type, and the return value is marked for a person to describe. With `--ai-draft` (CLI) or `PyCodeCommenter(description_provider=...)` (API), those parts are drafted instead and labelled `(AI-drafted, unreviewed)`.
 
 ### Review what was drafted
 
@@ -362,7 +445,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 - **OS**: Linux, macOS, Windows
 - **Python**: 3.10, 3.11, 3.12, 3.13
 - **Environments**: local, CI/CD (GitHub Actions, GitLab CI, Jenkins), pre-commit hooks
-- **Dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching) — no AI/LLM dependency
+- **Dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching); AI provider SDKs only as optional extras (`[gemini]`, `[openai]`, `[anthropic]`)
 
 ---
 

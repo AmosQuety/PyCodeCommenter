@@ -11,6 +11,12 @@ finding in that audit is now closed; see `Future Work/Audit Remediation
 Log.md` for the full history.
 
 ### Changed
+- **README and docs show real output.** The README opens with a real
+  before/after (with and without `--ai-draft`) and the new commands. Two
+  examples in the README and docs showed output the tool doesn't produce
+  (invented parameter descriptions; an old TODO description paragraph);
+  they now show the tool's actual output. Statements that the tool never
+  uses AI now say "by default" and explain the opt-in.
 - **NumPy- and Sphinx-style docstrings keep their style.** Regenerating
   used to convert them to Google style. Now gaps are filled in the
   docstring's own convention -- NumPy's dash-underlined `Parameters`/

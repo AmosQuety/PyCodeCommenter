@@ -64,8 +64,6 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
 def calculate_discount(price: float, rate: float = 0.1) -> float:
     """Calculate discount.
 
-    TODO(pycodecommenter): describe
-
     Args:
         price (float): float value.
         rate (float): float value. (default: 0.1)
@@ -76,14 +74,16 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
     return price * (1 - rate)
 ```
 
+The run ends with a summary of what was written and what's left, and suggests a next step.
+
 > [!NOTE]
-> PyCodeCommenter is deterministic. It does not use AI or LLMs. The Args/Returns skeleton (names, types, defaults) is always accurate, since it's extracted, not guessed. The `TODO(pycodecommenter): describe` markers above are exactly that — a to-do list, not finished documentation — and `pycodecommenter validate` will flag any left unresolved (see [Recipes](recipes.md)).
+> By default PyCodeCommenter is deterministic and makes no network calls. The Args/Returns skeleton (names, types, defaults) is always accurate, since it's extracted, not guessed. The `TODO(pycodecommenter): describe` markers above are a to-do list, not finished documentation — fill them in with `pycodecommenter review`, or add `--ai-draft` to have an AI model draft them (every drafted line is labelled `(AI-drafted, unreviewed)`). `pycodecommenter validate` flags anything left unresolved (see [Recipes](recipes.md)).
 
 ---
 
 ## 4. Common Options
 
-PyCodeCommenter includes three primary subcommands.
+PyCodeCommenter includes four subcommands: `generate`, `review`, `validate` and `coverage`.
 
 ### Generate Documentation
 Generate or update docstrings for a Python file.
