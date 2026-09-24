@@ -1,21 +1,21 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "v2.5.0"
+version = "2.6.0"
 
-description = "Automatically generate, validate, and measure Google-style Python docstrings. Deterministic AST-based docstring generator and validator with CI/CD integration, coverage reporting, and JSON output."
+description = "Write, validate and measure Python docstrings from your code's AST: deterministic by default, with optional, labelled AI drafting."
 readme = "README.md"
 authors = [
-    {name = "Nabasa Amos(Amos Quety)", email = "amosnabasa4@gmail.com"}
+    {name = "Nabasa Amos", email = "amosnabasa4@gmail.com"}
 ]
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -29,7 +29,6 @@ classifiers = [
     "Topic :: Utilities",
     "Environment :: Console",
     "Operating System :: OS Independent",
-    "Typing :: Typed",
 ]
 keywords = [
     "docstring",
@@ -75,7 +74,8 @@ ai = ["google-genai>=2.25", "openai>=3.19", "anthropic>=1.8"]
 Homepage = "https://github.com/AmosQuety/PyCodeCommenter"
 Documentation = "https://amosquety.github.io/PyCodeCommenter/"
 Repository = "https://github.com/AmosQuety/PyCodeCommenter"
-"Bug Tracker" = "https://github.com/AmosQuety/PyCodeCommenter/issues"
+Issues = "https://github.com/AmosQuety/PyCodeCommenter/issues"
+Changelog = "https://github.com/AmosQuety/PyCodeCommenter/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["PyCodeCommenter"]

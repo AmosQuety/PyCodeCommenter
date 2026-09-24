@@ -1,10 +1,12 @@
 # PyCodeCommenter
 
-> PyCodeCommenter is an open-source Python command-line tool and library for automatically generating Google-style docstrings, validating existing docstrings against real function signatures, and measuring documentation coverage. It is deterministic, AST-based, and requires no AI, no API calls, and no network access.
+> PyCodeCommenter is an open-source Python command-line tool and library that writes, validates and measures Python docstrings. It reads code with the standard-library `ast` module, states what the code proves, keeps text the author wrote, and marks what only a person can say. It is deterministic and makes no network calls by default; optional AI drafting (`--ai-draft`) fills the remaining gaps and labels every drafted line `(AI-drafted, unreviewed)`.
 
 ## What it does
 
-- **Generate** — Reads a Python source file, parses the AST, and inserts or updates Google-style docstrings for every undocumented function and class. Existing hand-written content is preserved and merged.
+- **Generate** — Reads a Python source file, parses the AST, and writes or updates docstrings: parameters, types, defaults, raise conditions and boolean return checks come from the code; existing text is kept; a `#` comment above an undocumented function becomes its docstring; NumPy/Sphinx docstrings keep their style; anything else is a `TODO(pycodecommenter): describe` marker.
+- **AI drafting (optional)** — `--ai-draft` drafts the TODO gaps via a free hosted service or your own Gemini, OpenAI, Anthropic, DeepSeek or OpenAI-compatible key (`--ai-provider`, `--ai-model`). Consent is asked before any code is sent.
+- **Review** — `pycodecommenter review` steps through AI-drafted lines, TODO gaps and repeated comments to accept, edit, fill or remove them.
 - **Validate** — Checks every documented function against six categories: signature matching, type consistency, exception documentation, return documentation, format compliance, and content quality.
 - **Coverage** — Calculates and reports the percentage of functions and classes that have a docstring, per file and across a whole project directory.
 - **JSON output** — Both `validate` and `coverage` accept `--output-format json` for machine-readable, structured output.
@@ -24,7 +26,7 @@ PyCodeCommenter was created and is maintained by **Nabasa Amos (Amos Quety)**, a
 pip install pycodecommenter
 ```
 
-Requires Python 3.8 or later. Licensed under the MIT License.
+Requires Python 3.10 or later. Licensed under the MIT License. AI provider SDKs are optional extras: `pip install "pycodecommenter[ai]"`.
 
 ## Quick usage
 
@@ -32,6 +34,9 @@ Requires Python 3.8 or later. Licensed under the MIT License.
 # Generate docstrings (preview first, then apply)
 pycodecommenter generate myfile.py --dry-run
 pycodecommenter generate myfile.py --inplace
+
+# Go through AI drafts and gaps
+pycodecommenter review myfile.py
 
 # Validate docstrings
 pycodecommenter validate myfile.py
@@ -47,11 +52,11 @@ pycodecommenter coverage ./src --output-format json
 - **Package name on PyPI**: `pycodecommenter`
 - **Import name**: `PyCodeCommenter`
 - **Main class**: `PyCodeCommenter` (docstring generation), `DocstringValidator` (validation), `CoverageAnalyzer` (coverage)
-- **Default docstring style**: Google
+- **Docstring style**: Google for new docstrings; existing NumPy/Sphinx docstrings keep theirs
 - **Parsed input styles**: Google, Sphinx, NumPy (all full)
 - **Runtime dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching)
-- **No AI / LLM calls** — fully deterministic
-- **Version**: v2.3.0
+- **AI / LLM calls**: none by default (deterministic); optional with `--ai-draft`
+- **Version**: 2.6.0
 - **License**: MIT
 - **Repository**: https://github.com/AmosQuety/PyCodeCommenter
 
