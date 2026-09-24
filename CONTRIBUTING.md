@@ -2,7 +2,7 @@
 
 Thanks for considering a contribution. Bug reports, ideas, documentation
 fixes and code are all welcome. Everyone taking part is expected to follow
-the [Code of Conduct](CODE_OF_CONDUCT.md).
+the [Code of Conduct](https://github.com/AmosQuety/PyCodeCommenter/blob/main/CODE_OF_CONDUCT.md).
 
 ## Reporting bugs
 
@@ -74,7 +74,7 @@ python scripts/compare_generation.py /tmp/before . path/to/some/python/files
   way: see `docs/dev-notes/docstring-prose-quality.md` for why.
 
 Maintainers: the current state of work and the decisions behind it are in
-[`docs/dev-notes/`](docs/dev-notes/README.md).
+[`docs/dev-notes/`](https://github.com/AmosQuety/PyCodeCommenter/blob/main/docs/dev-notes/README.md).
 
 ## Questions
 
