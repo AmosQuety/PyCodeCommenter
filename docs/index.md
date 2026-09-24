@@ -3,7 +3,7 @@ title: PyCodeCommenter — Python Docstring Generator & Validator
 description: >
   PyCodeCommenter automatically generates Google-style Python docstrings,
   validates them against real function signatures, and measures documentation
-  coverage. Deterministic, AST-based, no AI. Works in CI/CD pipelines.
+  coverage. Deterministic and AST-based by default, with optional, labelled AI drafting. Works in CI/CD pipelines.
 keywords: python docstring generator, docstring validator, documentation coverage, google style docstrings, python documentation tool, AST parser, CI/CD documentation
 ---
 
@@ -40,10 +40,10 @@ keywords: python docstring generator, docstring validator, documentation coverag
 
 **PyCodeCommenter** is an open-source Python tool that:
 
-1. **Generates** Google-style docstrings from your code's AST — no AI, no guesswork.
-2. **Validates** existing docstrings against real function signatures across six check categories.
-3. **Measures** documentation coverage per file and across entire projects.
-4. **Exports** structured JSON for integration with any downstream tooling.
+1. **Writes** docstrings from what your code proves — names, types, defaults, raise conditions, boolean checks — keeping anything you already wrote (including a `#` comment above the function) and marking what only a person can say.
+2. **Drafts the rest with AI, if you opt in** (`--ai-draft`), labelling every drafted line `(AI-drafted, unreviewed)` — then `pycodecommenter review` lets you accept, edit or skip each one.
+3. **Validates** existing docstrings against real function signatures across six check categories.
+4. **Measures** documentation coverage per file and across entire projects, with JSON output for CI.
 
 Install with: `pip install pycodecommenter` · Requires Python 3.10+
 
@@ -57,22 +57,22 @@ def process_data(items, strict=False):
     return items  # 'strict' isn't documented anywhere
 ```
 
-**After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to instantly sync the skeleton — names, types, and defaults, always accurate because they're extracted, not guessed. What the tool can't extract (what `process_data` actually *means*) is left as an explicit `TODO(pycodecommenter): describe` marker for you to fill in, not a guessed sentence.
+**After PyCodeCommenter:** Run `$ pycodecommenter generate <path/to/your_file.py>` to sync the skeleton — names, types and defaults, always accurate because they're extracted, not guessed. What the tool can't extract (what `process_data` actually *means*) is left as an explicit `TODO(pycodecommenter): describe` marker, not a guessed sentence (real output):
 ```python
 def process_data(items, strict=False):
     """Process data.
 
-    TODO(pycodecommenter): describe
-
     Args:
         items (Any): TODO(pycodecommenter): describe.
-        strict (Any): Default is false. (default: False)
+        strict (Any): TODO(pycodecommenter): describe. (default: False)
 
     Returns:
         Any: TODO(pycodecommenter): describe
     """
     return items
 ```
+
+Add `--ai-draft` to have those gaps drafted (each line labelled `(AI-drafted, unreviewed)`), then `pycodecommenter review` to accept, edit or skip each drafted line.
 
 ---
 
@@ -157,9 +157,9 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
 | PyPI package | `pycodecommenter` |
 | Import name | `PyCodeCommenter` |
 | Python support | 3.10, 3.11, 3.12, 3.13 |
-| Output docstring style | Google |
+| Output docstring style | Google for new docstrings; existing NumPy/Sphinx docstrings keep their style |
 | Input parsing | Google (full), Sphinx (full), NumPy (full) |
-| AI / LLM dependency | None — fully deterministic |
+| AI / LLM dependency | None by default (deterministic); optional `--ai-draft` via a free hosted service or your own Gemini/OpenAI/Anthropic/DeepSeek key |
 | Runtime dependencies | `ruamel.yaml` (config), `libcst` (patching) |
 | License | MIT |
 | Version | v2.5.0 |
@@ -180,7 +180,7 @@ pycodecommenter validate <path/to/your_file.py> --output-format json
   "@type": "SoftwareApplication",
   "name": "PyCodeCommenter",
   "alternateName": "pycodecommenter",
-  "description": "Open-source Python tool for automatically generating Google-style docstrings, validating docstrings against real function signatures, and measuring documentation coverage. Deterministic, AST-based, no AI required.",
+  "description": "Open-source Python tool for automatically generating Google-style docstrings, validating docstrings against real function signatures, and measuring documentation coverage. Deterministic and AST-based by default; AI drafting is optional and labelled.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "url": "https://amosquety.github.io/PyCodeCommenter/",
