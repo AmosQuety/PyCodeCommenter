@@ -5,6 +5,14 @@ the separate pycodecommenter-ai-backend repo.
 """
 
 import json
+import io
+from email.message import Message
+
+from PyCodeCommenter.description_provider import (
+    DraftingStopped,
+    DraftSlots,
+    KnownText,
+)
 import urllib.error
 
 import pytest
@@ -166,15 +174,6 @@ def test_backend_url_trailing_slash_is_normalized(monkeypatch):
 # ---------------------------------------------------------------------------
 # /v2: structured drafting, the daily allowance, and limits
 # ---------------------------------------------------------------------------
-
-import io  # noqa: E402
-from email.message import Message  # noqa: E402
-
-from PyCodeCommenter.description_provider import (  # noqa: E402
-    DraftingStopped,
-    DraftSlots,
-    KnownText,
-)
 
 SLOTS = DraftSlots(summary=True, params=("price",), returns=True)
 KNOWN = KnownText(params={"rate": "Discount rate."})

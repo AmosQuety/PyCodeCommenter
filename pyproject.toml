@@ -83,7 +83,10 @@ packages = ["PyCodeCommenter"]
 pycodecommenter = "PyCodeCommenter.cli:main"
 
 [tool.pytest.ini_options]
-addopts = "--doctest-modules PyCodeCommenter"
+# Tests live in tests/; the package's docstring examples run as doctests.
+testpaths = ["tests", "PyCodeCommenter"]
+addopts = "--doctest-modules"
+pythonpath = ["."]
 
 [tool.black]
 # Explicit, so formatting doesn't depend on which Python runs Black.

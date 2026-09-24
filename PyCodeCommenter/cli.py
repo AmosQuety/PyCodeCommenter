@@ -80,10 +80,13 @@ def _collect_py_files(directory, exclude_patterns=None):
     exclude_patterns.
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
+    root = Path(directory)
+    # Only the path *inside* the target directory is matched: a project that
+    # lives under, say, ~/work/build/ must still be processed.
     return [
         str(py_file)
-        for py_file in sorted(Path(directory).rglob("*.py"))
-        if not _path_is_excluded(py_file, patterns)
+        for py_file in sorted(root.rglob("*.py"))
+        if not _path_is_excluded(py_file.relative_to(root), patterns)
     ]
 
 
