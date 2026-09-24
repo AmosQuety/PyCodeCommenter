@@ -15,10 +15,10 @@ a file that no longer parsed.
 Usage:
     # Export the old version somewhere (it needs no install):
     git archive <old-commit> | tar -x -C /tmp/old
-    python scratch/compare_generation.py /tmp/old . path/to/corpus/
+    python scripts/compare_generation.py /tmp/old . path/to/corpus/
 
 The corpus is any directory of .py files -- this package's own modules,
-scratch/docstring_generation_fixture.py, and a few real projects make a
+tests/fixtures/docstring_generation_fixture.py, and a few real projects make a
 good one. Nothing is sent anywhere: AI drafting is not used.
 """
 

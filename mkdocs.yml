@@ -37,6 +37,10 @@ theme:
   logo: assets/favicon.svg
   favicon: assets/favicon.svg
 
+# Maintainer notes live in the repo, not on the site.
+exclude_docs: |
+  dev-notes/
+
 nav:
   - Home: index.md
   - Getting Started: getting-started.md

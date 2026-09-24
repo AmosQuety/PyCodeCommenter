@@ -21,7 +21,7 @@ directory `PyCodeCommenter/`, one level deep (not nested further). All
 commands below assume you're in this top-level directory unless noted.
 
 For the current state of work in progress, decisions already made, and
-where to begin, read `Future Work/v2.6.0 — Work Log and Handoff.md` first.
+where to begin, read `docs/dev-notes/v2.6.0-handoff.md` first.
 
 ## Commands
 
@@ -32,35 +32,25 @@ pip install -e ".[dev]"
 
 The local dev environment is the repo's `.venv/` — there is no bare `python`
 on PATH, so either activate it (`source .venv/bin/activate`) or invoke
-`.venv/bin/python -m pytest .` etc. directly.
+`.venv/bin/python -m pytest` etc. directly.
 
-Run the full test suite:
+Run the full test suite (tests in `tests/` plus the package's doctests):
 ```bash
-pytest .
+pytest
 ```
-(The explicit `.` matters: `pyproject.toml`'s `[tool.pytest.ini_options]`
-scopes `--doctest-modules` to the `PyCodeCommenter` package via a positional
-path in `addopts`, and pytest treats any positional path — from `addopts` or
-the command line — as the sole collection root when no other path is given.
-A bare `pytest` therefore silently collects only that package's 2 doctest
-items and skips all the `test_*.py` files at the repo root; `pytest .` adds
-the repo root back as a second collection root, which is why CI invokes
-`pytest .` too.)
 
 Run a single test file / test:
 ```bash
-pytest test_validation.py
-pytest test_validation.py::test_name -v
+pytest tests/test_validation.py
+pytest tests/test_validation.py::test_name -v
 ```
 
-There is no separate pytest config file (no `pytest.ini`/`setup.cfg`/
-`tox.ini`) and `conftest.py` is empty, but `pyproject.toml` does carry a
-`[tool.pytest.ini_options]` section (the `addopts` behind the `pytest .`
-note above) — that's the only pytest configuration in the repo.
-`.github/workflows/tests.yml` runs the suite (`pytest .`, matrix over Python
-3.10–3.13) on every push and pull request against `main`, alongside the
-pre-existing `docs.yml` (MkDocs) and `publish.yml` (PyPI trusted publishing
-on release) — so CI, not just a local run, is a test signal now.
+pytest is configured in `pyproject.toml` (`[tool.pytest.ini_options]`:
+`testpaths`, `--doctest-modules`, `pythonpath`); `tests/conftest.py` keeps
+`tests/fixtures/` out of collection. `.github/workflows/tests.yml` runs the
+suite on Python 3.10–3.13 on every push and pull request against `main`,
+alongside `docs.yml` (MkDocs) and `publish.yml` (PyPI trusted publishing on
+release).
 
 Formatting / linting (per CONTRIBUTING.md, use before submitting changes):
 ```bash
@@ -95,10 +85,6 @@ re-exports the public API):
   source with `get_patched_code()`. It merges rather than overwrites: existing
   summary/param/return text is preserved, only missing sections are filled
   in. Docstring generation composes several helper modules:
-  - `templates.py` — verb→template description map. Currently unused by the
-    generator (which uses `humanize_identifier` instead); retained as the
-    pattern the `v3.0.0` multi-style output work is planned to extend, per
-    `Future Work/v3.0.0...txt`.
   - `inference.py` — infers human-readable parameter descriptions from name,
     type hint, and default value.
   - `type_analyzer.py` — `TypeAnalyzer`, infers types from annotations and
@@ -231,24 +217,23 @@ the tool's default behavior.
 
 ### Test layout
 
-Tests live flat at the repo root (not in a `tests/` directory) and map
-roughly one file per concern: `test_basic_validation.py`,
-`test_validation.py` (largest, the six-check validator matrix),
-`test_type_analyzer.py`, `test_coverage.py`, `test_edge_cases.py`,
-`test_modern.py` (PEP 604/585 and `async def` support),
-`test_backwards_compatibility.py`, `test_integration.py`,
-`test_docstring_parser.py`, `test_cli.py` (CLI subcommands, including the
-AI-draft flags), `test_consent.py`, and `test_remote_provider.py` (HTTP
-client, with the network mocked — no test hits the real backend),
-`test_ai_drafting.py` (what is asked for, what is written, the safety
-gate, failure handling), `test_direct_providers.py` (bring-your-own-key
-providers against fake SDK clients, the limit-reached hand-off, consent
-per destination), `test_merge_preservation.py` (regeneration never discards author-written
-Raises/Attributes/Methods text), and `test_fact_extraction.py` (raise
-conditions, bool/str return inference, plus end-to-end fixtures with exact
-TODO counts — update those counts deliberately, never to make a test
-pass). `scratch/` holds
-ad hoc/exploratory test scripts not part of the maintained suite.
+Tests live in `tests/`, roughly one file per concern: the validator
+(`test_validation.py`, `test_basic_validation.py`), the generator
+(`test_edge_cases.py`, `test_fact_extraction.py`, `test_merge_preservation.py`,
+`test_regeneration_fixes.py`, `test_comment_docs.py`,
+`test_docstring_styles.py`), parsing and types (`test_docstring_parser.py`,
+`test_type_analyzer.py`, `test_modern.py`), AI drafting
+(`test_ai_drafting.py`, `test_remote_provider.py`, `test_direct_providers.py`,
+`test_consent.py`), the CLI and commands (`test_cli.py`, `test_review.py`,
+`test_run_report.py`), coverage, and integration. No test touches the
+network or needs an AI SDK: providers get fake clients. End-to-end fixtures
+in `test_fact_extraction.py` assert exact TODO counts -- update those
+deliberately, never just to make a test pass.
+
+`tests/fixtures/` holds sample source files used as generator input (not
+collected as tests). `scripts/compare_generation.py` compares two versions
+of the generator over a corpus; run it before and after any generator
+change (see `docs/dev-notes/v2.6.0-handoff.md`).
 
 ### Versioning
 
