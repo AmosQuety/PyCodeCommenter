@@ -193,9 +193,11 @@ class CoverageAnalyzer:
         patterns = list(DEFAULT_COVERAGE_EXCLUDES) + list(exclude_patterns or [])
         project = ProjectCoverage()
 
-        for py_file in Path(directory).rglob("*.py"):
-            # Skip excluded paths
-            if _path_is_excluded(py_file, patterns):
+        root = Path(directory)
+        for py_file in root.rglob("*.py"):
+            # Only the path *inside* the analysed directory is matched: a
+            # project that lives under, say, ~/work/build/ must still count.
+            if _path_is_excluded(py_file.relative_to(root), patterns):
                 continue
 
             try:

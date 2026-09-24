@@ -1,13 +1,9 @@
-import os
-import sys
 import logging
 import pytest
 
-# Ensure repository root is on sys.path for package imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from PyCodeCommenter.commenter import PyCodeCommenter  # noqa: E402
-from PyCodeCommenter.coverage import CoverageAnalyzer  # noqa: E402
+from PyCodeCommenter.commenter import PyCodeCommenter
+from PyCodeCommenter.coverage import CoverageAnalyzer
 
 logging.disable(logging.CRITICAL)
 

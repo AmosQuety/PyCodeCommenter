@@ -1,16 +1,9 @@
 import ast
-import os
-import sys
 import pytest
 import logging
 
-# Add parent directory to path to allow importing from PyCodeCommenter
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-try:
-    from PyCodeCommenter import PyCodeCommenter
-except ImportError:
-    from commenter import PyCodeCommenter
+from PyCodeCommenter import PyCodeCommenter
 
 logging.disable(logging.CRITICAL)
 

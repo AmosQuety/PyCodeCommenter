@@ -1,16 +1,7 @@
 """Unit tests for DocstringParser (Phase 6: type preservation and
 NumPy-style parsing)."""
 
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-try:
-    from PyCodeCommenter.docstring_parser import DocstringParser
-except ImportError:
-    from docstring_parser import DocstringParser
-
+from PyCodeCommenter.docstring_parser import DocstringParser
 
 # --- 6a: type capture -------------------------------------------------
 

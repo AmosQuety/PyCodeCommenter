@@ -12,6 +12,14 @@ suite is ever run under `pytest --cov`).
 
 import sys
 import json
+import io as _io
+import urllib.error as _urllib_error
+from email.message import Message as _Message
+
+from PyCodeCommenter.description_provider import (
+    DescriptionProvider,
+    DocstringDraft,
+)
 
 import pytest
 
@@ -423,15 +431,6 @@ def test_ai_draft_shared_across_directory_run(
 # Choosing a provider, own keys, and the limit-reached hand-off
 # ---------------------------------------------------------------------------
 
-import io as _io  # noqa: E402
-import urllib.error as _urllib_error  # noqa: E402
-from email.message import Message as _Message  # noqa: E402
-
-from PyCodeCommenter.description_provider import (  # noqa: E402
-    DescriptionProvider,
-    DocstringDraft,
-)
-
 
 class _OwnKeyProvider(DescriptionProvider):
     """Stands in for a direct provider built from the user's own key."""
@@ -564,3 +563,20 @@ def test_hosted_limit_interactively_continues_with_own_key_in_the_same_run(
     assert "Continue with your own API key?" in err
     assert "Drafted with my own key." in out
     assert "AI drafting stopped" not in err
+
+
+def test_generate_finds_files_under_a_parent_folder_named_like_an_exclusion(
+    tmp_path, monkeypatch, capsys
+):
+    """Exclusions apply inside the target directory only; a project under
+    e.g. ~/work/build/ must still be processed."""
+    project_dir = tmp_path / "build" / "myproject"
+    project_dir.mkdir(parents=True)
+    (project_dir / "m.py").write_text("def f(x):\n    return x\n")
+
+    exit_code, out, _ = run_cli(
+        ["generate", str(project_dir), "--dry-run"], monkeypatch, capsys
+    )
+
+    assert "No Python files found" not in out
+    assert "def f(x):" in out
