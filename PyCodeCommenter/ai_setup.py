@@ -34,6 +34,13 @@ class AISetupError(Exception):
     to fix it."""
 
 
+def status(*args, **kwargs) -> None:
+    """Prints a status message or prompt to stderr. Stdout may be carrying
+    the patched code (``generate`` with no output flag), and a prompt there
+    would be invisible once redirected, leaving the run waiting silently."""
+    print(*args, file=sys.stderr, **kwargs)
+
+
 def is_interactive() -> bool:
     """Whether a person is at the terminal to answer questions."""
     return sys.stdin.isatty()
@@ -67,7 +74,7 @@ def build_ai_provider(
     """
     if provider_name == HOSTED:
         _require_consent(HOSTED, assume_consent)
-        print(
+        status(
             "AI drafting: PyCodeCommenter's hosted service (free, with a daily "
             "limit). To use your own key instead, pass --ai-provider "
             f"{{{','.join(PROVIDERS)}}}."
@@ -107,7 +114,7 @@ def direct_provider(
         provider = make_provider(provider_name, api_key, model=model, base_url=base_url)
     except (ValueError, ProviderUnavailable) as e:
         raise AISetupError(str(e)) from e
-    print(
+    status(
         f"AI drafting: {spec.label}, model {provider.model} "
         "(choose another with --ai-model)."
     )
@@ -125,7 +132,7 @@ def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
         Optional[DescriptionProvider]: The replacement, or ``None`` to stop
             drafting (the remaining gaps stay as TODO markers).
     """
-    print(f"\n{stopped.message}")
+    status(f"\n{stopped.message}")
     choice = _ask(
         "Continue with your own API key? Provider " f"[{'/'.join(PROVIDERS)}/skip]: "
     ).lower()
@@ -140,7 +147,7 @@ def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
     try:
         return direct_provider(choice, model, base_url)
     except AISetupError as e:
-        print(f"Can't continue with {PROVIDERS[choice].label}: {e}")
+        status(f"Can't continue with {PROVIDERS[choice].label}: {e}")
         return None
 
 
@@ -154,10 +161,10 @@ def report_ai_outcome(provider: SwitchOnStop) -> None:
     stopped = provider.stopped
     active = provider.active
     if stopped is not None:
-        print(f"\nAI drafting stopped: {stopped.message}")
-        print("Functions after that point keep their TODO markers.")
+        status(f"\nAI drafting stopped: {stopped.message}")
+        status("Functions after that point keep their TODO markers.")
         if isinstance(active, RemoteDescriptionProvider):
-            print(
+            status(
                 "To keep going now, use your own key: --ai-provider gemini "
                 "(reads GEMINI_API_KEY), or openai / anthropic / deepseek."
             )
@@ -166,7 +173,7 @@ def report_ai_outcome(provider: SwitchOnStop) -> None:
         isinstance(active, RemoteDescriptionProvider)
         and active.drafts_remaining is not None
     ):
-        print(
+        status(
             f"\nHosted AI drafts left today: {active.drafts_remaining} of "
             f"{active.drafts_limit}."
         )
@@ -195,7 +202,7 @@ def _api_key_for(provider_name: str) -> str:
 
 
 def _ask(question: str) -> str:
-    print(question, end="")
+    status(question, end="")
     return input().strip()
 
 

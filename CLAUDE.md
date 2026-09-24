@@ -118,6 +118,8 @@ re-exports the public API):
     fact, weak, guess, ai), and rendering them. New docstrings are Google
     style; an existing NumPy/Sphinx docstring (the parser's `style`) is
     re-rendered in its own style, never converted.
+  - `run_report.py` — `GenerationReport`, the counts behind the summary
+    `generate` prints (to stderr: stdout carries only generated code).
   - `comment_docs.py` — finds the `#` comment block directly above an
     undocumented function/class and turns it into docstring text (author
     text; the comment is never removed). Skips notes, tool directives,

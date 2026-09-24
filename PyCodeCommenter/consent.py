@@ -20,6 +20,7 @@ again rather than silently carrying old consent forward onto new terms.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 HOSTED = "hosted"
@@ -140,7 +141,8 @@ def ensure_consent(assume_yes: bool, destination: str = HOSTED) -> bool:
         record_consent(destination)
         return True
 
-    print(notice_for(destination), end="")
+    # stderr: stdout may be carrying generated code (see ai_setup.status).
+    print(notice_for(destination), end="", file=sys.stderr)
     answer = input().strip().lower()
     if answer == "y":
         record_consent(destination)

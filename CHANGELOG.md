@@ -21,6 +21,11 @@ Log.md` for the full history.
   which were previously dropped.
 
 ### Added
+- **`generate` ends with a summary** of what it did: docstrings written,
+  updated (author text kept) or already complete; details taken from the
+  code; AI-drafted lines; docstrings taken from comments; and gaps left --
+  followed by a suggested next step. Totals cover the whole run for a
+  directory. Printed to stderr, so it never mixes with code on stdout.
 - **A `#` comment block above an undocumented function or class becomes
   its docstring**: the first sentence as the summary, the rest as the
   description. It counts as the author's own text, so AI drafting never
@@ -101,6 +106,10 @@ Log.md` for the full history.
   section is kept; entries left over from earlier runs are removed.
 
 ### Fixed
+- **Consent prompts could be invisible, leaving `generate` waiting.**
+  With the patched code going to stdout (`generate app.py > out.py`), the
+  consent question went into `out.py` too. Prompts and status messages now
+  go to stderr; stdout carries only generated code.
 - **Escape sequences in existing docstrings were rewritten, and could
   break the file.** Existing docstrings were read as their *value*, so a
   written `\n` came back as a real line break on every run -- and escaped

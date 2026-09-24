@@ -65,6 +65,7 @@ try:
         ReturnsEntry,
     )
     from .doc_styles import render_class, render_function
+    from .run_report import GenerationReport
 except (ImportError, ValueError):
     from inference import (
         infer_description,
@@ -100,6 +101,7 @@ except (ImportError, ValueError):
         ReturnsEntry,
     )
     from doc_styles import render_class, render_function
+    from run_report import GenerationReport
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -178,6 +180,8 @@ class PyCodeCommenter:
         # Definitions whose docstring came from the comment block above
         # them (the comment is left in place), for the run report.
         self.comment_docstrings: list = []
+        # What the latest generation run did, for the end-of-run summary.
+        self.report = GenerationReport()
         self._include_module_docstrings = include_module_docstrings
         self._newline = "\n"
 
@@ -265,6 +269,7 @@ class PyCodeCommenter:
             return []
 
         self.comments = []
+        self._start_run()
 
         # Module level docstring
         module_doc = ast.get_docstring(self.parsed_code)
@@ -273,11 +278,28 @@ class PyCodeCommenter:
 
         visitor = DocstringVisitor(self)
         visitor.visit(self.parsed_code)
+        self.report.from_comments = len(self.comment_docstrings)
 
         for node, doc in visitor.results:
             self.comments.append(doc)
 
         return self.comments
+
+    def _start_run(self) -> None:
+        """Resets per-run state, so calling a generation method twice
+        doesn't count anything twice."""
+        self.comment_docstrings = []
+        self.report = GenerationReport(files=1)
+
+    def _outcome(self, node: ast.AST, rendered: str, prefix: str) -> str:
+        """Whether a docstring is ``"new"``, ``"updated"`` or ``"unchanged"``
+        compared with the one in the source (a docstring taken from a
+        comment counts as new: the definition had none)."""
+        original, _ = self._existing_docstring(node)
+        if original is None:
+            return "new"
+        body = rendered[len(prefix) + 3 : -3]
+        return "unchanged" if inspect.cleandoc(body) == original else "updated"
 
     def get_patched_code(self) -> str:
         """Returns the code with generated docstrings inserted or updated.
@@ -293,8 +315,10 @@ class PyCodeCommenter:
         if not self.code or not self.parsed_code:
             return self.code
 
+        self._start_run()
         visitor = DocstringVisitor(self)
         visitor.visit(self.parsed_code)
+        self.report.from_comments = len(self.comment_docstrings)
 
         if not visitor.results and visitor.module_docstring is None:
             return self.code
@@ -461,11 +485,11 @@ class PyCodeCommenter:
         try:
             existing_doc, prefix = self._docstring_source(func_node)
             parsed_info = DocstringParser(existing_doc).get_info()
+            doc = self._build_function_doc(func_node, parsed_info)
             # An existing docstring keeps its style; a new one is Google.
-            return prefix + render_function(
-                self._build_function_doc(func_node, parsed_info),
-                parsed_info["style"],
-            )
+            rendered = prefix + render_function(doc, parsed_info["style"])
+            self.report.record_function(doc, self._outcome(func_node, rendered, prefix))
+            return rendered
         except Exception as e:
             logger.error(
                 f"Error generating function docstring for {func_node.name}: {e}"
@@ -776,7 +800,9 @@ class PyCodeCommenter:
                 # An author's own Methods: entries are kept.
                 methods=self._carried_forward_methods(parsed_info.get("methods", "")),
             )
-            return prefix + render_class(doc, parsed_info["style"])
+            rendered = prefix + render_class(doc, parsed_info["style"])
+            self.report.record_class(doc, self._outcome(class_node, rendered, prefix))
+            return rendered
         except Exception as e:
             logger.error(f"Error generating class docstring for {class_node.name}: {e}")
             if existing_doc is not None:

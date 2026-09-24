@@ -488,7 +488,7 @@ def test_own_key_provider_announces_its_model_and_how_to_change_it(
         lambda name, key, model=None, base_url=None: _OwnKeyProvider(),
     )
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         [
             "generate",
             "a.py",
@@ -503,7 +503,7 @@ def test_own_key_provider_announces_its_model_and_how_to_change_it(
     )
 
     assert (
-        "AI drafting: Gemini, model test-model (choose another with --ai-model)" in out
+        "AI drafting: Gemini, model test-model (choose another with --ai-model)" in err
     )
     assert "Drafted with my own key." in out
 
@@ -511,7 +511,7 @@ def test_own_key_provider_announces_its_model_and_how_to_change_it(
 def test_help_documents_default_models_and_that_they_can_be_changed(
     monkeypatch, capsys
 ):
-    exit_code, out, _ = run_cli(["generate", "--help"], monkeypatch, capsys)
+    exit_code, out, err = run_cli(["generate", "--help"], monkeypatch, capsys)
     text = " ".join(out.split())  # argparse wraps lines
 
     assert "anthropic=claude-opus-5" in text
@@ -529,12 +529,12 @@ def test_hosted_limit_in_ci_reports_how_to_continue_with_own_key(
         "PyCodeCommenter.remote_provider.urllib.request.urlopen", _limit_reached
     )
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
 
-    assert "AI drafting stopped: Free drafts used up." in out
-    assert "--ai-provider gemini" in out
+    assert "AI drafting stopped: Free drafts used up." in err
+    assert "--ai-provider gemini" in err
     assert "TODO(pycodecommenter)" in out  # gaps stay marked, nothing guessed
 
 
@@ -556,11 +556,11 @@ def test_hosted_limit_interactively_continues_with_own_key_in_the_same_run(
         lambda name, key, model=None, base_url=None: _OwnKeyProvider(),
     )
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
 
-    assert "Free drafts used up." in out
-    assert "Continue with your own API key?" in out
+    assert "Free drafts used up." in err
+    assert "Continue with your own API key?" in err
     assert "Drafted with my own key." in out
-    assert "AI drafting stopped" not in out
+    assert "AI drafting stopped" not in err
