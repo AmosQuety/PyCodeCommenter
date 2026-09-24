@@ -7,8 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 Follow-up work from a dogfooding audit run against the tool's own codebase
 (`Another_Test_PyCodeCommenter/Feedback/AUDIT_REPORT.md`) — every numbered
-finding in that audit is now closed; see `Future Work/Audit Remediation
-Log.md` for the full history.
+finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.md` for the full history.
 
 ### Changed
 - **README and docs show real output.** The README opens with a real
@@ -438,7 +437,7 @@ Log.md` for the full history.
 
 ## [2.3.0] - 2026-08-22
 
-Follow-up work from an internal engineering audit (`Future Work/Vulnerabilties.md`),
+Follow-up work from an internal engineering audit (`docs/dev-notes/vulnerabilities.md`),
 plus a documentation-fidelity pass (Phase 6) found during pre-release review.
 
 ### Breaking Changes
