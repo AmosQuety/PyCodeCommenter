@@ -71,6 +71,19 @@ pycodecommenter generate <file-or-directory> [options]
 
 > **Note:** An `--exclude` pattern matches a path component (directory or file name) exactly; a dot-prefixed pattern (e.g. `.egg-info`) also matches a component it's a suffix of (covers the `<name>.egg-info` convention). This is exact-component matching, not a substring check against the whole path — `rebuild_index.py` is not skipped just because it contains `build`, and `environment_config.py` is not skipped just because it contains `env`. (The `coverage` command's `-e`/`--exclude`, documented below, adds one more rule on top of these two — see its note.)
 
+### End-of-run summary
+
+Every `generate` run ends with a summary on **stderr** (stdout carries only generated code, so `generate app.py > out.py` stays clean):
+
+```
+Summary: 4 docstrings would be written.
+  3 details taken straight from the code
+  5 gaps left as "TODO(pycodecommenter)" for you to fill
+Next: fill in the gaps, or add --ai-draft to have them drafted; then run `pycodecommenter validate`.
+```
+
+It counts docstrings written, updated (your text kept) or already complete; details taken straight from the code; lines drafted by AI; docstrings taken from the comment above a definition; and gaps left. For a directory, the numbers cover the whole run. AI status messages and consent prompts also go to stderr.
+
 ### Output modes (mutually used in order)
 
 1. If `--dry-run` is given, always print a diff (per file, for a directory target) and exit. No other flag matters.

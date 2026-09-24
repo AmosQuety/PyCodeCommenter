@@ -19,7 +19,9 @@ from .ai_setup import (
     AISetupError,
     build_ai_provider,
     report_ai_outcome,
+    status,
 )
+from .run_report import GenerationReport
 from .direct_providers import PROVIDERS
 from .remote_provider import DEFAULT_BACKEND_URL
 
@@ -84,13 +86,15 @@ def _collect_py_files(directory, exclude_patterns=None):
     ]
 
 
-def _generate(args, description_provider):
+def _generate(args, description_provider, run_report):
     """Runs the generate command for a file or directory target.
 
     Args:
         args (argparse.Namespace): The parsed command-line arguments.
         description_provider (Optional[DescriptionProvider]): The AI
             provider for --ai-draft, or ``None``.
+        run_report (GenerationReport): Accumulates each file's counts for
+            the end-of-run summary.
     """
     if os.path.isdir(args.file):
         if args.output:
@@ -122,6 +126,7 @@ def _generate(args, description_provider):
                 continue
 
             patched_code = commenter.get_patched_code()
+            run_report.merge(commenter.report)
 
             if args.output_dir:
                 # Mirror this file's relative path under --output-dir,
@@ -205,6 +210,7 @@ def _generate(args, description_provider):
         sys.exit(1)
 
     patched_code = commenter.get_patched_code()
+    run_report.merge(commenter.report)
 
     if args.backup and not args.inplace:
         print("Warning: --backup has no effect without --inplace")
@@ -470,11 +476,18 @@ def main():
                 print(f"Error: {e}")
                 sys.exit(1)
 
+        run_report = GenerationReport()
         try:
-            _generate(args, description_provider)
+            _generate(args, description_provider, run_report)
         finally:
             # Runs however _generate exits (it calls sys.exit on several
-            # paths), so the user always learns how AI drafting went.
+            # paths), so the user always learns what the run did.
+            if run_report.files:
+                status("")
+                for line in run_report.summary_lines(
+                    preview=args.dry_run, ai_used=args.ai_draft
+                ):
+                    status(line)
             if description_provider is not None:
                 report_ai_outcome(description_provider)
 

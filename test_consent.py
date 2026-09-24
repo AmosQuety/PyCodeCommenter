@@ -83,7 +83,7 @@ def test_ensure_consent_interactive_yes_records_consent(monkeypatch, capsys):
 
     assert result is True
     assert consent.has_given_consent() is True
-    assert "hosted service" in capsys.readouterr().out
+    assert "hosted service" in capsys.readouterr().err  # prompts go to stderr
 
 
 def test_ensure_consent_interactive_no_does_not_record_consent(monkeypatch):
