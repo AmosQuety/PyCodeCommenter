@@ -5,7 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-Follow-up work from a dogfooding audit run against the tool's own codebase
+## [2.6.0] - 2026-09-24
+
+The tool now states everything the code proves, keeps everything the author
+wrote, and makes what's left easy to finish: optional AI drafting of the gaps
+(hosted, or with your own key), a `review` command, and a summary at the end
+of every run. Requires Python 3.10+.
+
+Also includes follow-up work from a dogfooding audit run against the tool's own codebase
 (`Another_Test_PyCodeCommenter/Feedback/AUDIT_REPORT.md`) — every numbered
 finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.md` for the full history.
 
