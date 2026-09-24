@@ -28,15 +28,23 @@ The main class for loading Python code, generating docstrings, and patching the 
 ### Constructor
 
 ```python
-PyCodeCommenter()
+PyCodeCommenter(description_provider=None, include_module_docstrings=False)
 ```
 
-No parameters. After construction, call `from_string()` or `from_file()` to load code.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `description_provider` | `DescriptionProvider` or `None` | `None` | Opt-in AI drafting of the parts the code can't state (see [AI drafting providers](#ai-drafting-providers)). `None` keeps generation fully deterministic, with no network calls |
+| `include_module_docstrings` | `bool` | `False` | Also write a module docstring for a file that has none |
+
+After construction, call `from_string()` or `from_file()` to load code.
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `code` | `str` | The raw source code (set by `from_string` / `from_file`) |
 | `parsed_code` | `ast.Module` or `None` | The parsed AST; `None` if parsing failed |
+| `report` | `GenerationReport` | Counts from the latest run: `new`, `updated`, `unchanged` docstrings, `facts`, `ai_lines`, `todos`, `from_comments`; `summary_lines()` gives the CLI's summary text |
+| `comment_docstrings` | `list` | Definitions whose docstring came from the `#` comment above them (the comment is left in place) |
+| `drafting_stopped` | `DraftingStopped` or `None` | Set if the description provider stopped drafting partway (for example, its daily allowance ran out) |
 | `comments` | `list` | Populated by `generate_docstrings()` |
 | `tokenized_comments` | `list` | Raw comment tokens extracted during load |
 | `type_analyzer` | `TypeAnalyzer` | Instance used internally for type inference |
@@ -594,7 +602,7 @@ Translate an annotation AST node (supports PEP 604 `|` and PEP 585 generics) int
 
 ## DocstringParser
 
-Parses existing Google-style or Sphinx-style docstrings into structured components. Used internally during the merge step of `get_patched_code()`.
+Parses existing Google-, Sphinx- or NumPy-style docstrings into structured components and records which style they use. Used internally during the merge step of `get_patched_code()`, so that author text is kept and the style is preserved.
 
 ### Constructor
 
@@ -610,10 +618,16 @@ DocstringParser(docstring=None)
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `summary` | `str` | First line of the docstring |
-| `description` | `str` | Body text before the first section header |
-| `params` | `Dict[str, str]` | Mapping of parameter name to its description |
-| `returns` | `str` | Content of the `Returns:` section |
+| `summary` | `str` | The first paragraph of the docstring |
+| `description` | `str` | Body text before the first section |
+| `params` | `Dict[str, str]` | Parameter name → description |
+| `param_types` | `Dict[str, str]` | Parameter name → type, where the docstring declares one |
+| `returns` | `str` | The returns (or yields) text |
+| `raises` | `Dict[str, str]` | Exception name → when it's raised |
+| `attributes` | `Dict[str, str]` | Class attribute name → description |
+| `attribute_types` | `Dict[str, str]` | Class attribute name → type, where declared |
+| `methods` | `str` | An author's Google-style `Methods:` section, verbatim |
+| `style` | `str` | `"google"`, `"numpy"` or `"sphinx"` |
 
 ### Methods
 
@@ -628,7 +642,13 @@ Return all parsed components as a dictionary.
     "summary": "...",
     "description": "...",
     "params": {"name": "description", ...},
-    "returns": "..."
+    "param_types": {"name": "type", ...},
+    "returns": "...",
+    "raises": {"ValueError": "...", ...},
+    "attributes": {"name": "description", ...},
+    "attribute_types": {"name": "type", ...},
+    "methods": "...",
+    "style": "google",
 }
 ```
 
@@ -652,6 +672,64 @@ print(info["summary"])      # "Process the data."
 print(info["params"])       # {"data": "The data to process."}
 print(info["returns"])      # "str: The processed result."
 ```
+
+---
+
+## AI drafting providers
+
+Generation is deterministic unless you pass a `description_provider`. A provider is asked to draft only the parts the code can't state — the name-derived summary, a missing description, parameters with a `TODO` or type-only description, an undescribed return value, and exceptions without a readable condition. It is never asked to replace author text or facts read from the code. Every drafted line is written with the marker `(AI-drafted, unreviewed)`, and each value is checked before it's written (no triple quotes, backslashes, placeholder or marker text).
+
+### Built-in providers
+
+```python
+from PyCodeCommenter import PyCodeCommenter
+from PyCodeCommenter.remote_provider import RemoteDescriptionProvider, DEFAULT_BACKEND_URL
+from PyCodeCommenter.direct_providers import make_provider
+
+# PyCodeCommenter's hosted service: no key, daily limit per user.
+hosted = RemoteDescriptionProvider(backend_url=DEFAULT_BACKEND_URL)
+
+# Your own key: "gemini", "openai", "anthropic", "deepseek" or "openai-compatible".
+# Needs the matching extra, e.g. pip install "pycodecommenter[anthropic]".
+own_key = make_provider("anthropic", api_key="...", model="claude-opus-5")
+
+patched = PyCodeCommenter(description_provider=own_key).from_file("app.py").get_patched_code()
+```
+
+The CLI's `--ai-draft` also asks for consent before sending code anywhere; when you use a provider from the API, that decision is yours.
+
+### Writing your own provider
+
+Subclass `DescriptionProvider` (in `PyCodeCommenter.description_provider`) and implement `draft_docstring`:
+
+```python
+from PyCodeCommenter.description_provider import (
+    DescriptionProvider,
+    DocstringDraft,
+)
+
+
+class MyProvider(DescriptionProvider):
+    def draft_docstring(self, context, known, slots):
+        # context: FunctionContext — name, parameters, return_type,
+        #          is_generator, raised_exceptions, source (comments included)
+        # known:   KnownText — text already settled, to stay consistent with
+        # slots:   DraftSlots — what to draft: summary, description,
+        #          params (names), returns, raises (names)
+        return DocstringDraft(
+            summary="Compute the total." if slots.summary else None,
+            params={name: "..." for name in slots.params},
+        )
+```
+
+| Class | Purpose |
+|-------|---------|
+| `DraftSlots` | The parts requested: `summary`, `description` (bools), `params`, `raises` (tuples of names), `returns` (bool) |
+| `KnownText` | Settled `params`, `returns` and `raises` text, for consistency |
+| `DocstringDraft` | Your answer; leave anything you can't draft as `None` or out of the dicts. Unrequested parts are ignored |
+| `DraftingStopped(reason, message)` | Raise it to stop drafting for the rest of the run (for example, a rejected key or spent quota). Any other exception skips just that function |
+
+Providers written before `draft_docstring` existed, which implement only `draft_function_description(context)`, still work: they fill the description paragraph.
 
 ---
 

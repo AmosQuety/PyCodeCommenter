@@ -62,6 +62,11 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
+  # Lets docs pages include repository files (CHANGELOG.md, CONTRIBUTING.md)
+  # instead of keeping hand-made copies that drift out of date.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
