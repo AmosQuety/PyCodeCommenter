@@ -118,6 +118,10 @@ re-exports the public API):
     fact, weak, guess, ai), and rendering them. New docstrings are Google
     style; an existing NumPy/Sphinx docstring (the parser's `style`) is
     re-rendered in its own style, never converted.
+  - `review.py` / `review_cli.py` — the `review` subcommand: find AI
+    lines, TODO gaps and repeated comments; apply accept/edit/fill/remove
+    decisions; `verify_review` blocks saving unless only docstrings and
+    comments changed.
   - `run_report.py` — `GenerationReport`, the counts behind the summary
     `generate` prints (to stderr: stdout carries only generated code).
   - `comment_docs.py` — finds the `#` comment block directly above an
@@ -160,7 +164,8 @@ re-exports the public API):
   exists but fails to parse.
 
 - **`cli.py`** — argparse-based CLI (`pycodecommenter` entry point, see
-  `[project.scripts]` in `pyproject.toml`) with three subcommands: `generate`
+  `[project.scripts]` in `pyproject.toml`) with four subcommands: `review`
+  (see below), `generate`
   (supports `--inplace`, `-o/--output`, `--output-dir`, `--dry-run`,
   `--backup`, `--exclude`, `--include-module-docstrings`, and the AI flags
   below), `validate`, and `coverage` (both supporting `--output-format

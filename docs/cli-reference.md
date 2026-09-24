@@ -127,6 +127,52 @@ pycodecommenter generate src/ --inplace --backup --exclude migrations
 
 ---
 
+## pycodecommenter review
+
+Go through what needs a person's attention after `generate`, one item at a time.
+
+### Usage
+
+```bash
+pycodecommenter review <file_or_directory> [--list] [--exclude PATTERN ...]
+```
+
+### What it asks about
+
+| Item | Choices |
+|---|---|
+| A line drafted by AI (`(AI-drafted, unreviewed)`) | **a**ccept (keeps the text, removes the label), **e**dit (type your own wording), **s**kip |
+| A gap (`TODO(pycodecommenter): describe`) | **f**ill (type the text), **s**kip |
+| A `#` comment the docstring below it now repeats | **y**es to remove it, or **n**o (the default) to keep it |
+
+**q** quits at any point; what you decided so far is saved.
+
+### Safety
+
+- Only docstring lines change, plus comment blocks you said yes to removing.
+- Before a file is saved, it's checked to still parse and to have exactly the same code (only docstrings and comments may differ). If either check fails, the file is left unchanged.
+- Typed text can't contain triple quotes or backslashes (they would break the docstring); you're asked again.
+- The file's line endings are kept.
+
+### Options / Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--list` | flag | off | Only list what needs review; change nothing. This is also what happens without a terminal (e.g. in CI) |
+| `--exclude` | list | `.pycodecommenter.yaml`'s `exclude` | Patterns to exclude (directory targets only) |
+
+### Example
+
+```text
+$ pycodecommenter review app.py --list
+app.py:2  AI-drafted  in add(): Add two numbers.
+app.py:6  gap  in add(): b (Any): TODO(pycodecommenter): describe.
+
+1 AI-drafted line, 1 gap, 0 repeated comments to review in 1 file.
+```
+
+---
+
 ## pycodecommenter validate
 
 Reads a Python source file **or directory** and checks every function and class docstring for consistency with the actual code. Given a directory, it recursively validates every `.py` file it finds (skipping the same built-in and `--exclude`d paths `generate` does).

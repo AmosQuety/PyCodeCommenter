@@ -128,13 +128,18 @@ class GenerationReport:
     def _next_step(self, ai_used: bool) -> str:
         if self.ai_lines:
             return (
-                'review the AI-drafted lines (search for "AI-drafted, '
-                'unreviewed"), then run `pycodecommenter validate`.'
+                "go through the AI-drafted lines with `pycodecommenter review` "
+                "(accept, edit or skip each), then run `pycodecommenter validate`."
             )
         if self.todos and not ai_used:
             return (
-                "fill in the gaps, or add --ai-draft to have them drafted; then "
-                "run `pycodecommenter validate`."
+                "fill the gaps with `pycodecommenter review`, or add --ai-draft "
+                "to have them drafted; then run `pycodecommenter validate`."
+            )
+        if self.from_comments:
+            return (
+                "`pycodecommenter review` offers to remove comments the new "
+                "docstrings now repeat; then run `pycodecommenter validate`."
             )
         return "run `pycodecommenter validate` to keep the docstrings accurate."
 

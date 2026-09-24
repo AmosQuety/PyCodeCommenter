@@ -22,6 +22,7 @@ from .ai_setup import (
     status,
 )
 from .run_report import GenerationReport
+from .review_cli import run_review
 from .direct_providers import PROVIDERS
 from .remote_provider import DEFAULT_BACKEND_URL
 
@@ -396,6 +397,30 @@ def main():
             "on file."
         ),
     )
+    # Review command
+    review_parser = subparsers.add_parser(
+        "review",
+        help=(
+            "Go through AI-drafted lines, TODO gaps and comments a docstring "
+            "now repeats, and accept, edit, fill or remove each one"
+        ),
+    )
+    review_parser.add_argument("file", help="Python file or directory to review")
+    review_parser.add_argument(
+        "--list",
+        action="store_true",
+        help=(
+            "Only list what needs review; change nothing. This is also what "
+            "happens without a terminal (CI)."
+        ),
+    )
+    review_parser.add_argument(
+        "--exclude",
+        nargs="*",
+        default=config_exclude,
+        help="Patterns to exclude (directory targets only)",
+    )
+
     # Validate command
     validate_parser = subparsers.add_parser(
         "validate", help="Validate docstrings for a file or directory"
@@ -490,6 +515,14 @@ def main():
                     status(line)
             if description_provider is not None:
                 report_ai_outcome(description_provider)
+
+    elif args.command == "review":
+        files = (
+            _collect_py_files(args.file, args.exclude)
+            if os.path.isdir(args.file)
+            else [args.file]
+        )
+        run_review(files, list_only=args.list)
 
     elif args.command == "validate":
         if os.path.isdir(args.file):

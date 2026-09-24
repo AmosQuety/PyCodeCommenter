@@ -21,6 +21,13 @@ Log.md` for the full history.
   which were previously dropped.
 
 ### Added
+- **`pycodecommenter review`** steps through what needs a person after
+  `generate`: each AI-drafted line (accept, edit, skip), each `TODO` gap
+  (fill, skip), and each comment a new docstring now repeats (remove only
+  on an explicit yes; the default keeps it). Only docstring lines and
+  approved comments change, and a file is saved only if it still parses
+  with exactly the same code. `--list`, or running without a terminal,
+  lists the items and changes nothing.
 - **`generate` ends with a summary** of what it did: docstrings written,
   updated (author text kept) or already complete; details taken from the
   code; AI-drafted lines; docstrings taken from comments; and gaps left --

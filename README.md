@@ -202,6 +202,14 @@ def calculate_discount(price: float, rate: float = 0.1) -> float:
     return price * (1 - rate)
 ```
 
+### Review what was drafted
+
+```bash
+pycodecommenter review app.py
+```
+
+Steps through every AI-drafted line (accept, edit or skip), every `TODO` gap (fill or skip), and every comment a new docstring now repeats (remove only if you say yes). Only docstrings and approved comments change, and a file is saved only if its code is exactly the same as before. `--list` just lists them.
+
 ### Example 2: Validate in CI/CD
 
 ```python
