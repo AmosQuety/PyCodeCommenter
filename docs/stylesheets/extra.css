@@ -12,12 +12,12 @@
   --md-default-fg-color: #E2E8F0; /* Off-white */
   --md-default-fg-color--light: #94A3B8; /* Muted text */
   --md-default-fg-color--x-light: #373C48; /* Borders */
-  
+
   /* Primary & Accent */
   --md-primary-bg-color: #1A1D24; /* Header background */
   --md-typeset-a-color: #0284C7; /* Engineering Blue */
   --md-accent-fg-color: #0284C7;
-  
+
   /* Code Blocks */
   --md-code-bg-color: #161921;
 }

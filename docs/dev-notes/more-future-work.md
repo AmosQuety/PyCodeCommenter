@@ -49,7 +49,7 @@ DEFAULT_IGNORE_PATTERNS = {
 def should_skip_path(path, exclude_patterns=None):
     """Determine if a path should be skipped based on defaults and custom patterns."""
     path_parts = Path(path).parts
-    
+
     # Check default patterns
     for pattern in DEFAULT_IGNORE_PATTERNS:
         if pattern.startswith('*.'):
@@ -57,7 +57,7 @@ def should_skip_path(path, exclude_patterns=None):
                 return True
         elif pattern in path_parts:
             return True
-    
+
     # Check custom exclude patterns from config
     if exclude_patterns:
         for pattern in exclude_patterns:
@@ -73,12 +73,12 @@ def collect_py_files(path, exclude_patterns=None):
     """Recursively collect Python files, skipping ignored directories."""
     if os.path.isfile(path):
         return [path] if path.endswith('.py') else []
-    
+
     py_files = []
     for root, dirs, files in os.walk(path):
         # Filter directories in-place to prevent walking into skipped folders
         dirs[:] = [d for d in dirs if not should_skip_path(os.path.join(root, d), exclude_patterns)]
-        
+
         for file in files:
             if file.endswith('.py'):
                 full_path = os.path.join(root, file)
@@ -91,19 +91,19 @@ def collect_py_files(path, exclude_patterns=None):
 ```python
 def process_directory(path, dry_run=False, inplace=False, exclude_patterns=None):
     py_files = collect_py_files(path, exclude_patterns)
-    
+
     if not py_files:
         print(f"❌ No Python files found in {path}")
         return
 
     print(f"📁 Found {len(py_files)} Python files in {path}\n")
-    
+
     stats = {"modified": 0, "unchanged": 0, "failed": 0, "total_added": 0}
-    
+
     for idx, file_path in enumerate(py_files, 1):
         display_path = Path(file_path).relative_to(path) if path != '.' else Path(file_path).name
         print(f"Processing {idx}/{len(py_files)}: {display_path} ... ", end='')
-        
+
         try:
             result = generate_docstring(file_path, inplace=inplace, dry_run=dry_run)
             if result.added_count > 0:
@@ -116,7 +116,7 @@ def process_directory(path, dry_run=False, inplace=False, exclude_patterns=None)
         except Exception as e:
             print(f"❌ (Error: {str(e)})")
             stats["failed"] += 1
-    
+
     # Final Report Output...
 ```
 
@@ -127,7 +127,7 @@ exclude:
   - "*/migrations/*"
   - "**/__pycache__/*"
   - "*.test.py"
-  
+
 use_gitignore: true
 
 skip_extensions:

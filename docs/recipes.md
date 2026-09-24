@@ -62,7 +62,7 @@ Run a documentation quality check on every push and pull request. Use the config
       <option value="poetry">Poetry</option>
       <option value="uv">uv</option>
     </select>
-    
+
     <label for="ci-level">Enforcement Level:</label>
     <select id="ci-level">
       <option value="block">Block PRs on Error</option>
