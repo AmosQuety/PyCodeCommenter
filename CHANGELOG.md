@@ -22,7 +22,11 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   examples in the README and docs showed output the tool doesn't produce
   (invented parameter descriptions; an old TODO description paragraph);
   they now show the tool's actual output. Statements that the tool never
-  uses AI now say "by default" and explain the opt-in.
+  uses AI now say "by default" and explain the opt-in. The AI section now
+  also says how to set an API key (bash and PowerShell; `.env` files are
+  not read), what a run costs, the hosted limit as a number, and that an
+  AI label stays until a person accepts the line in `review`; the
+  validation reference gained the `ai_draft` check.
 - **NumPy- and Sphinx-style docstrings keep their style.** Regenerating
   used to convert them to Google style. Now gaps are filled in the
   docstring's own convention -- NumPy's dash-underlined `Parameters`/
@@ -116,6 +120,23 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   string literal (`" ".join(...)`) give `str`. A function with a single
   boolean return expression gets ``True if `expr`, otherwise False.``
   instead of a guess marker.
+- **`review` can accept a whole function's AI lines at once.** For a
+  function with two or more AI-drafted lines, `review` shows its whole
+  docstring and offers `A` to accept all of that function's remaining AI
+  lines. It stops at the function boundary, and there is deliberately no
+  file-wide or global accept, so removing the label still means a person
+  read the text.
+- **Live progress while drafting.** On a terminal, `--ai-draft` shows one
+  status line per request (`[3/12] product_service.py - drafting
+  create_product (hosted)`) and says when it is waiting out a rate limit,
+  so a slow first hosted request no longer looks like a hang. Nothing is
+  written when stderr is redirected or in CI.
+- **A missing provider SDK is caught first.** The SDK is checked before
+  the consent question and the key prompt, and the error prints the exact
+  `pip install` command for the Python that is running (the tool never
+  runs pip itself). When the hosted limit hands over to your own key and
+  that provider can't be used, you are asked again until one works or you
+  type `skip`.
 
 ### Changed
 - **`Methods:` is no longer generated for classes.** It isn't a standard
@@ -125,6 +146,22 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   section is kept; entries left over from earlier runs are removed.
 
 ### Fixed
+- **Class `Attributes:` listed names that are not attributes.** An
+  `__init__` argument was documented even when `__init__` never stored it
+  (for example one only passed to `super().__init__`), and one stored under
+  another name appeared under both. An argument now counts only if
+  `__init__` assigns `self.<name>`.
+- **`(default: unknown)` for defaults the code shows.** A default such as
+  `Priority.MEDIUM` or `DATA_FILE` is now shown as written; one over 40
+  characters is left out of the line instead of guessed.
+- **`Path to the .` for a parameter named `path`.** It now reads "Path to
+  the file or directory".
+- **A bare `null.` paragraph from AI drafts.** A drafted value that is only
+  `null`, `none`, `n/a`, `nil` or `undefined` is declined, so the gap keeps
+  its TODO instead of receiving junk text.
+- **`generate <dir> --output-dir <dir>/out` processed its own earlier
+  output** on the next run (`out/out/...`). The output directory is now
+  excluded from what is collected.
 - **Consent prompts could be invisible, leaving `generate` waiting.**
   With the patched code going to stdout (`generate app.py > out.py`), the
   consent question went into `out.py` too. Prompts and status messages now
