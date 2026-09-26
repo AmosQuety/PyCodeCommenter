@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [2.6.0] - 2026-09-24
+## [2.6.0] - 2026-09-27
 
 The tool now states everything the code proves, keeps everything the author
 wrote, and makes what's left easy to finish: optional AI drafting of the gaps
