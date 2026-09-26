@@ -17,16 +17,20 @@ import logging
 import shlex
 import sys
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 try:
     from .ai_drafting import (
+        build_class_prompt,
         build_prompt,
         json_schema,
         json_schema_with_length_caps,
         parse_reply,
     )
     from .description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -36,12 +40,16 @@ try:
     )
 except (ImportError, ValueError):
     from ai_drafting import (
+        build_class_prompt,
         build_prompt,
         json_schema,
         json_schema_with_length_caps,
         parse_reply,
     )
     from description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -215,12 +223,30 @@ class DirectProvider(DescriptionProvider):
         Raises:
             DraftingStopped: The key was rejected or its quota is exhausted.
         """
-        prompt = build_prompt(context, known, slots)
+        return self._draft(build_prompt(context, known, slots), slots, context.name)
+
+    def draft_class_docstring(
+        self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
+    ) -> ClassDraft:
+        """Drafts a class's summary and attributes with one call. The
+        attributes travel as the reply's ``params``, so the function schema
+        and parser are reused.
+
+        Raises:
+            DraftingStopped: The key was rejected or its quota is exhausted.
+        """
+        as_function = DraftSlots(summary=slots.summary, params=slots.attributes)
+        draft = self._draft(
+            build_class_prompt(context, known, slots), as_function, context.name
+        )
+        return ClassDraft(summary=draft.summary, attributes=draft.params)
+
+    def _draft(self, prompt: str, slots: DraftSlots, name: str) -> DocstringDraft:
         try:
             return parse_reply(self._complete(prompt, slots))
         except Exception as e:
             self._raise_if_run_should_stop(e)
-            logger.warning(f"{self.label} request failed for {context.name}: {e}")
+            logger.warning(f"{self.label} request failed for {name}: {e}")
             return DocstringDraft()
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:

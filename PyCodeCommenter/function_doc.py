@@ -156,6 +156,7 @@ class AttributeEntry:
     name: str
     display_type: Optional[str]
     text: str
+    origin: str = Origin.AUTHOR
 
 
 @dataclass
@@ -164,6 +165,7 @@ class ClassDoc:
 
     Attributes:
         summary (str): The first line.
+        summary_origin (str): Where the summary came from (see ``Origin``).
         description (Optional[str]): Further paragraphs, if any.
         attributes (List[AttributeEntry]): Attributes, in document order.
         methods (str): An author's own Google-style ``Methods:`` section
@@ -174,6 +176,7 @@ class ClassDoc:
     description: Optional[str] = None
     attributes: List[AttributeEntry] = field(default_factory=list)
     methods: str = ""
+    summary_origin: str = Origin.AUTHOR
 
 
 def render_class_doc(doc: ClassDoc) -> str:

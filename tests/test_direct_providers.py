@@ -406,3 +406,113 @@ def test_direct_notice_names_the_provider_not_the_hosted_service(consent_home):
     assert "Anthropic" in notice
     assert "your API key" in notice
     assert "hosted service" not in notice
+
+
+# ---------------------------------------------------------------------------
+# Class docstrings
+# ---------------------------------------------------------------------------
+
+from PyCodeCommenter.ai_drafting import build_class_prompt  # noqa: E402
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    ClassContext,
+    ClassDraft,
+    ClassSlots,
+)
+
+CLASS_CONTEXT = ClassContext(
+    name="Cache",
+    bases=["Base"],
+    attributes=[ParameterFact("_items", "dict"), ParameterFact("ttl", "int")],
+    source=(
+        "class Cache(Base):\n"
+        "    def __init__(self, ttl: int):\n"
+        "        # Entries older than ttl seconds are dropped.\n"
+        "        self.ttl = ttl\n"
+        "        self._items = {}"
+    ),
+)
+CLASS_SLOTS = ClassSlots(summary=True, attributes=("_items", "ttl"))
+CLASS_REPLY = {
+    "summary": "Keep recent results for a limited time.",
+    "params": {
+        "_items": "Cached values by key.",
+        "ttl": "Seconds an entry stays valid.",
+    },
+}
+
+
+def test_class_prompt_names_the_class_its_attributes_and_the_requested_parts():
+    prompt = build_class_prompt(CLASS_CONTEXT, {"a": "Known."}, CLASS_SLOTS)
+
+    assert "class named `Cache`" in prompt
+    assert "Base" in prompt
+    assert "_items: dict" in prompt and "ttl: int" in prompt
+    assert "# Entries older than ttl seconds are dropped." in prompt
+    assert "a`: Known." in prompt or "`a`" in prompt
+    assert "attributes _items, ttl" in prompt
+    assert "JSON" in prompt
+
+
+def test_class_draft_maps_the_reply_onto_summary_and_attributes():
+    fake = FakeAnthropic(reply=CLASS_REPLY)
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft == ClassDraft(
+        summary="Keep recent results for a limited time.",
+        attributes={
+            "_items": "Cached values by key.",
+            "ttl": "Seconds an entry stays valid.",
+        },
+    )
+    [call] = fake.calls
+    schema = call["output_config"]["format"]["schema"]
+    assert set(schema["required"]) == {"summary", "params"}
+    assert set(schema["properties"]["params"]["required"]) == {"_items", "ttl"}
+
+
+def test_class_draft_of_an_unusable_reply_is_empty():
+    fake = FakeAnthropic(reply="not a json object")
+    fake.response.content[0].text = "not json"
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    assert (
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft()
+    )
+
+
+def test_class_draft_stops_the_run_when_the_key_is_rejected():
+    provider = AnthropicProvider(
+        api_key="k", client=FakeAnthropic(error=StatusError(401))
+    )
+
+    with pytest.raises(DraftingStopped):
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+
+def test_class_draft_survives_an_ordinary_failure_as_an_empty_draft():
+    provider = AnthropicProvider(
+        api_key="k", client=FakeAnthropic(error=StatusError(500))
+    )
+
+    assert (
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft()
+    )
+
+
+def test_switch_on_stop_hands_class_drafting_to_the_replacement():
+    class Stopped(DescriptionProvider):
+        def draft_class_docstring(self, context, known, slots):
+            raise DraftingStopped("limit", "Daily limit reached.")
+
+    class Replacement(DescriptionProvider):
+        def draft_class_docstring(self, context, known, slots):
+            return ClassDraft(summary="From the replacement.")
+
+    provider = SwitchOnStop(Stopped(), lambda stopped: Replacement())
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft.summary == "From the replacement."
+    assert isinstance(provider.active, Replacement)

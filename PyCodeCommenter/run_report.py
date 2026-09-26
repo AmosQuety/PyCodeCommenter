@@ -11,10 +11,8 @@ from typing import List
 
 try:
     from .function_doc import ClassDoc, FunctionDoc, Origin
-    from .inference import GUESS_MARKER
 except (ImportError, ValueError):
     from function_doc import ClassDoc, FunctionDoc, Origin
-    from inference import GUESS_MARKER
 
 # Facts too routine to be worth counting: a constructor's fixed summary, and
 # "returns nothing".
@@ -71,7 +69,10 @@ class GenerationReport:
             outcome (str): ``"new"``, ``"updated"`` or ``"unchanged"``.
         """
         self._record_outcome(outcome)
-        self.todos += sum(GUESS_MARKER in a.text for a in doc.attributes)
+        origins = [a.origin for a in doc.attributes] + [doc.summary_origin]
+        self.todos += sum(origin == Origin.GUESS for origin in origins)
+        if outcome != "unchanged":
+            self.ai_lines += sum(origin == Origin.AI for origin in origins)
 
     def merge(self, other: "GenerationReport") -> None:
         """Adds another report's counts to this one."""

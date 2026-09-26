@@ -38,12 +38,21 @@ try:
         walk_skipping_nested_classes,
     )
     from .description_provider import (
+        ClassContext,
         DescriptionProvider,
         DraftingStopped,
         FunctionContext,
         ParameterFact,
     )
-    from .ai_drafting import apply_draft, known_text, slots_for
+    from .ai_drafting import (
+        apply_class_draft,
+        apply_draft,
+        class_known_text,
+        class_slots_for,
+        known_text,
+        slots_for,
+    )
+    from .class_outline import outline_source
     from .comment_docs import (
         CommentDocstring,
         comment_block_text,
@@ -82,12 +91,21 @@ except (ImportError, ValueError):
         walk_skipping_nested_classes,
     )
     from description_provider import (
+        ClassContext,
         DescriptionProvider,
         DraftingStopped,
         FunctionContext,
         ParameterFact,
     )
-    from ai_drafting import apply_draft, known_text, slots_for
+    from ai_drafting import (
+        apply_class_draft,
+        apply_draft,
+        class_known_text,
+        class_slots_for,
+        known_text,
+        slots_for,
+    )
+    from class_outline import outline_source
     from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
     from function_doc import (
@@ -154,6 +172,11 @@ def _is_carried_forward(text: Optional[str]) -> bool:
     tool, not by an author, so it is regenerated rather than preserved.
     """
     return bool(text) and GUESS_MARKER not in text
+
+
+def _is_same_sentence(text: str, other: str) -> bool:
+    """Whether two descriptions match apart from a final period."""
+    return text == other or text.rstrip(".") + "." == other
 
 
 # Matches the tool's own " (default: ...)" suffix (see the Args: loop's
@@ -603,6 +626,67 @@ class PyCodeCommenter:
                 self._progress.clear()
         apply_draft(doc, draft, slots)
 
+    def _fill_class_gaps_with_provider(
+        self, class_node: ast.ClassDef, doc: ClassDoc
+    ) -> None:
+        """Asks the opt-in description provider to draft a class's gaps (its
+        summary and undescribed attributes), failing closed like
+        :meth:`_fill_gaps_with_provider`.
+
+        Args:
+            class_node (ast.ClassDef): The class node.
+            doc (ClassDoc): The docstring parts, updated in place.
+        """
+        if self._description_provider is None or self.drafting_stopped is not None:
+            return
+        slots = class_slots_for(doc)
+        if slots.is_empty():
+            return
+        if self._progress is not None:
+            self._progress.drafting(f"class {class_node.name}")
+        try:
+            draft = self._description_provider.draft_class_docstring(
+                self._build_class_context(class_node, doc), class_known_text(doc), slots
+            )
+        except DraftingStopped as e:
+            self.drafting_stopped = e
+            return
+        except Exception as e:
+            logger.warning(
+                f"Description provider failed for class {class_node.name}, "
+                f"leaving its gaps as they are: {e}"
+            )
+            return
+        finally:
+            if self._progress is not None:
+                self._progress.clear()
+        apply_class_draft(doc, draft, slots)
+
+    def _build_class_context(
+        self, class_node: ast.ClassDef, doc: ClassDoc
+    ) -> ClassContext:
+        """Gathers a class's AST-derived facts for a description provider.
+
+        Args:
+            class_node (ast.ClassDef): The class node.
+            doc (ClassDoc): The docstring parts, for the attributes listed.
+
+        Returns:
+            ClassContext: The gathered facts.
+        """
+        return ClassContext(
+            name=class_node.name,
+            bases=[ast.unparse(base) for base in class_node.bases],
+            attributes=[
+                ParameterFact(
+                    name=a.name,
+                    type_hint=(a.display_type or "any").replace("Any", "any"),
+                )
+                for a in doc.attributes
+            ],
+            source=outline_source(class_node, self.code),
+        )
+
     def _summary_part(
         self,
         func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
@@ -830,8 +914,16 @@ class PyCodeCommenter:
             # See the matching comment in _generate_function_docstring: a
             # parsed description wins outright, otherwise the slot stays
             # empty rather than holding a placeholder.
+            generated_summary = f"{class_node.name} class."
+            parsed_summary = parsed_info.get("summary")
+            # A summary equal to the generated one is this tool's own output
+            # from an earlier run, not the author's words.
+            authored_summary = bool(parsed_summary) and (
+                parsed_summary != generated_summary
+            )
             doc = ClassDoc(
-                summary=parsed_info.get("summary") or f"{class_node.name} class.",
+                summary=parsed_summary or generated_summary,
+                summary_origin=Origin.AUTHOR if authored_summary else Origin.WEAK,
                 description=parsed_info.get("description") or None,
                 attributes=self._attribute_entries(class_node, parsed_info),
                 # Methods: is never generated: it isn't a standard section,
@@ -840,6 +932,7 @@ class PyCodeCommenter:
                 # An author's own Methods: entries are kept.
                 methods=self._carried_forward_methods(parsed_info.get("methods", "")),
             )
+            self._fill_class_gaps_with_provider(class_node, doc)
             rendered = prefix + render_class(doc, parsed_info["style"])
             self.report.record_class(doc, self._outcome(class_node, rendered, prefix))
             return rendered
@@ -875,20 +968,30 @@ class PyCodeCommenter:
         for attr, attr_type in self._get_class_attributes(class_node).items():
             if attr_type == "any":
                 attr_type = documented_types.get(attr, attr_type)
-            author_desc = documented.pop(attr, None)
-            desc = (
-                author_desc
-                if _is_carried_forward(author_desc)
-                else self._get_parameter_description(
-                    func_name=class_node.name,
-                    param_name=attr,
-                    inferred_type=attr_type,
-                )
+            generated = self._get_parameter_description(
+                func_name=class_node.name,
+                param_name=attr,
+                inferred_type=attr_type,
             )
+            author_desc = documented.pop(attr, None)
             display_type = "Any" if attr_type == "any" else attr_type
-            entries.append(AttributeEntry(attr, display_type, desc))
+            if _is_carried_forward(author_desc) and not _is_same_sentence(
+                author_desc, generated
+            ):
+                entries.append(
+                    AttributeEntry(attr, display_type, author_desc, Origin.AUTHOR)
+                )
+                continue
+            # No author text, or this tool's own output from an earlier run
+            # (regenerated, so an AI draft can improve on it).
+            origin = (
+                Origin.GUESS
+                if generated == GUESS_MARKER
+                else Origin.FACT if has_name_signal(attr) else Origin.WEAK
+            )
+            entries.append(AttributeEntry(attr, display_type, generated, origin))
         entries.extend(
-            AttributeEntry(attr, documented_types.get(attr), desc)
+            AttributeEntry(attr, documented_types.get(attr), desc, Origin.AUTHOR)
             for attr, desc in documented.items()
             if _is_carried_forward(desc)
         )
@@ -992,9 +1095,11 @@ class PyCodeCommenter:
                 # A parameter is an attribute only if __init__ stores it as
                 # self.<name>; one merely passed on (e.g. to super()) is not.
                 stored = _names_assigned_to_self(item)
+                param_types = {}
                 for param in exclude_self_cls(get_all_parameters(item)):
+                    param_types[param.name] = self._infer_param_type(param)
                     if param.name in stored:
-                        attributes[param.name] = self._infer_param_type(param)
+                        attributes[param.name] = param_types[param.name]
                 # walk_skipping_nested_classes (not ast.walk) so a
                 # self.x = ... assignment inside a class nested within
                 # __init__ isn't misattributed to *this* class -- it
@@ -1011,7 +1116,10 @@ class PyCodeCommenter:
                     ):
                         attr_name = node.targets[0].attr
                         if attr_name not in attributes:
-                            attributes[attr_name] = self._infer_expr_type(node.value)
+                            # A stored parameter keeps the parameter's type.
+                            attributes[attr_name] = self._infer_expr_type(
+                                node.value, param_types
+                            )
 
         for item in class_node.body:
             if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):

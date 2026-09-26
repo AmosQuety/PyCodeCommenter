@@ -14,21 +14,32 @@ import re
 from typing import Any, Dict, Optional
 
 try:
+    from .inference import AI_DRAFT_MARKER
+except (ImportError, ValueError):
+    from inference import AI_DRAFT_MARKER
+
+try:
     from .description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DocstringDraft,
         DraftSlots,
         FunctionContext,
         KnownText,
     )
-    from .function_doc import DocPart, FunctionDoc, Origin
+    from .function_doc import ClassDoc, DocPart, FunctionDoc, Origin
 except (ImportError, ValueError):
     from description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DocstringDraft,
         DraftSlots,
         FunctionContext,
         KnownText,
     )
-    from function_doc import DocPart, FunctionDoc, Origin
+    from function_doc import ClassDoc, DocPart, FunctionDoc, Origin
 
 MAX_SLOT_CHARS = 300
 MAX_SUMMARY_CHARS = 80
@@ -178,6 +189,69 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
     return text if len(text) <= max_chars else None
 
 
+def class_slots_for(doc: ClassDoc) -> ClassSlots:
+    """The gaps in a class docstring: a summary that is only "<Name> class."
+    and every attribute whose text is a TODO or says nothing beyond its type.
+
+    Args:
+        doc (ClassDoc): The class's docstring parts.
+
+    Returns:
+        ClassSlots: The parts worth drafting; empty if there are none.
+    """
+    return ClassSlots(
+        summary=doc.summary_origin in _REPLACEABLE,
+        attributes=tuple(a.name for a in doc.attributes if a.origin in _REPLACEABLE),
+    )
+
+
+def class_known_text(doc: ClassDoc) -> Dict[str, str]:
+    """The settled attribute text a provider should stay consistent with.
+
+    Args:
+        doc (ClassDoc): The class's docstring parts.
+
+    Returns:
+        Dict[str, str]: Author text and facts, by attribute name.
+    """
+    settled = (Origin.AUTHOR, Origin.FACT)
+    return {a.name: a.text for a in doc.attributes if a.origin in settled}
+
+
+def apply_class_draft(doc: ClassDoc, draft: ClassDraft, slots: ClassSlots) -> int:
+    """Writes a provider's answer into the requested gaps, labelling each.
+    Unrequested parts, unknown names and values that fail
+    :func:`clean_slot_text` are ignored, leaving that gap as it was.
+
+    Args:
+        doc (ClassDoc): The docstring parts, updated in place.
+        draft (ClassDraft): The provider's answer.
+        slots (ClassSlots): What was requested.
+
+    Returns:
+        int: How many parts were filled.
+    """
+    filled = 0
+    if slots.summary:
+        summary = clean_slot_text(draft.summary, MAX_SUMMARY_CHARS)
+        if summary:
+            doc.summary = f"{summary} {AI_DRAFT_MARKER}"
+            doc.summary_origin = Origin.AI
+            filled += 1
+    drafted = draft.attributes if isinstance(draft.attributes, dict) else {}
+    for attribute in doc.attributes:
+        text = (
+            clean_slot_text(drafted.get(attribute.name))
+            if attribute.name in slots.attributes
+            else None
+        )
+        if text:
+            attribute.text = f"{text} {AI_DRAFT_MARKER}"
+            attribute.origin = Origin.AI
+            filled += 1
+    return filled
+
+
 # ---------------------------------------------------------------------------
 # Prompt, schema and reply parsing for providers called directly with the
 # user's own key. The hosted backend keeps its own copy of the prompt (it
@@ -230,6 +304,61 @@ def build_prompt(context: FunctionContext, known: KnownText, slots: DraftSlots) 
             context.source,
         ]
     )
+
+
+def build_class_prompt(
+    context: ClassContext, known: Dict[str, str], slots: ClassSlots
+) -> str:
+    """Builds the drafting prompt for one class. The reply uses the same
+    JSON shape as a function's (``summary`` and ``params``), with each
+    attribute under ``params``, so one schema and parser serve both.
+
+    Args:
+        context (ClassContext): The class's facts and source outline.
+        known (Dict[str, str]): Attribute text already settled.
+        slots (ClassSlots): The parts to draft.
+
+    Returns:
+        str: The prompt text.
+    """
+    attributes = (
+        ", ".join(f"{a.name}: {a.type_hint}" for a in context.attributes) or "none"
+    )
+    bases = ", ".join(context.bases) or "none"
+    requested = [name for name in ("summary",) if getattr(slots, name)]
+    if slots.attributes:
+        requested.append("attributes " + ", ".join(slots.attributes))
+    return "\n".join(
+        [
+            "You are documenting a Python class for its Google-style docstring.",
+            "Fill in only the requested parts, grounded strictly in the code shown",
+            "(its comments included). Reply with a JSON object only.",
+            "Rules:",
+            "- One plain sentence per part; name code with `backticks`,"
+            " no other markdown.",
+            "- Say what something means or is for, not its type"
+            " (the type is already shown).",
+            "- Use null for any part the code does not make clear. Never guess.",
+            f"- summary: what the class represents or does, under "
+            f"{MAX_SUMMARY_CHARS} characters.",
+            '- Put each attribute\'s description under the JSON key "params".',
+            "",
+            f"This is a class named `{context.name}` (bases: {bases}).",
+            f"Attributes: {attributes}.",
+            _known_attribute_lines(known),
+            f"Requested: {'; '.join(requested)}.",
+            "",
+            "Source outline:",
+            context.source,
+        ]
+    )
+
+
+def _known_attribute_lines(known: Dict[str, str]) -> str:
+    if not known:
+        return "Already documented: nothing."
+    lines = [f"- attribute `{name}`: {text}" for name, text in known.items()]
+    return "Already documented (stay consistent, don't repeat):\n" + "\n".join(lines)
 
 
 def _known_lines(known: KnownText) -> str:
