@@ -30,7 +30,7 @@ keywords: python docstring generator, docstring validator, documentation coverag
   <h2>Keep Python docstrings accurate as your code evolves.</h2>
   <p class="pcc-hero__tagline">
     Deterministic docstring generation and validation for production Python.
-    No AI guesswork — just reliable, rule-based inference that syncs your docs with your AST.
+    No AI guesswork by default — just reliable, rule-based inference that syncs your docs with your AST. AI drafting is opt-in.
   </p>
 </div>
 
