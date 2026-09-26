@@ -128,9 +128,11 @@ def test_the_cli_stops_with_the_command_and_asks_nothing(
     with pytest.raises(SystemExit) as raised:
         main()
 
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
     assert raised.value.code == 1
-    assert 'pycodecommenter[gemini]"' in out or "pycodecommenter[gemini]" in out
+    # Setup errors go to stderr, like every other AI message.
+    assert 'pycodecommenter[gemini]"' in captured.err
+    assert "pycodecommenter[gemini]" not in captured.out
 
 
 def test_an_installed_sdk_goes_on_to_consent_and_key(monkeypatch):

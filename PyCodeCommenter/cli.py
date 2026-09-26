@@ -613,7 +613,7 @@ def main():
                     progress=progress,
                 )
             except AISetupError as e:
-                print(f"Error: {e}")
+                status(f"Error: {e}")
                 sys.exit(1)
 
         run_report = GenerationReport()

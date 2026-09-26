@@ -366,12 +366,13 @@ def test_ai_draft_without_consent_prompts_and_aborts_on_decline(
 ):
     monkeypatch.setattr("builtins.input", lambda: "n")
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
 
     assert exit_code == 1
-    assert "consent" in out.lower()
+    assert "consent" in err.lower()  # setup errors go to stderr
+    assert "consent" not in out.lower()
     assert "def foo" in (project / "a.py").read_text()
 
 
@@ -499,7 +500,7 @@ def test_own_key_provider_without_a_key_in_ci_fails_with_the_variable_name(
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr("PyCodeCommenter.ai_setup.is_interactive", lambda: False)
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         [
             "generate",
             "a.py",
@@ -514,7 +515,8 @@ def test_own_key_provider_without_a_key_in_ci_fails_with_the_variable_name(
     )
 
     assert exit_code == 1
-    assert "ANTHROPIC_API_KEY" in out
+    assert "ANTHROPIC_API_KEY" in err
+    assert "ANTHROPIC_API_KEY" not in out
 
 
 def test_own_key_provider_announces_its_model_and_how_to_change_it(
