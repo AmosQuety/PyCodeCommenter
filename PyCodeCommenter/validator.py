@@ -145,6 +145,18 @@ class ValidationReport:
         else:
             self.stats.info += 1
 
+    def count_placeholders(self) -> int:
+        """How many docstrings hold placeholder text (``TODO`` and the
+        like), including this tool's own ``TODO(pycodecommenter)`` marker."""
+        return sum(
+            issue.category == "quality" and issue.message.startswith("Placeholder text")
+            for issue in self.issues
+        )
+
+    def count_ai_drafts(self) -> int:
+        """How many docstrings still hold unreviewed AI-drafted lines."""
+        return sum(issue.category == "ai_draft" for issue in self.issues)
+
     def print_summary(self):
         """Print human-readable summary to console."""
         print("\n" + "=" * 60)

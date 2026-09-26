@@ -12,7 +12,7 @@ from pathlib import Path
 from . import __version__
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
-from .coverage import CoverageAnalyzer, shields_badge_dict
+from .coverage import STRICT_NOTE, CoverageAnalyzer, shields_badge_dict
 from .config import load_config, ConfigError
 from .ai_setup import (
     AI_PROVIDER_CHOICES,
@@ -111,6 +111,31 @@ def _positive_int(text):
     if value < 1:
         raise argparse.ArgumentTypeError(f"{text!r} is not a whole number >= 1")
     return value
+
+
+def _strict_validation_failed(args, placeholders, ai_drafts):
+    """Whether --fail-on-todo / --fail-on-ai-draft make this validation
+    fail; says why on stderr, so JSON on stdout stays valid."""
+    failed = False
+    if args.fail_on_todo and placeholders:
+        print(
+            f"--fail-on-todo: {_plural(placeholders, 'docstring')} still "
+            "hold a TODO or other placeholder.",
+            file=sys.stderr,
+        )
+        failed = True
+    if args.fail_on_ai_draft and ai_drafts:
+        print(
+            f"--fail-on-ai-draft: {_plural(ai_drafts, 'docstring')} still hold "
+            "unreviewed AI-drafted lines (see `pycodecommenter review`).",
+            file=sys.stderr,
+        )
+        failed = True
+    return failed
+
+
+def _plural(number, noun):
+    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def _generate(args, description_provider, run_report, progress=None, budget=None):
@@ -497,6 +522,24 @@ def main():
         metavar="FORMAT",
         help="Output format: 'text' (default) or 'json'",
     )
+    validate_parser.add_argument(
+        "--fail-on-todo",
+        action="store_true",
+        help=(
+            "Exit with code 1 if any docstring still holds a "
+            "TODO(pycodecommenter) marker or other placeholder text. By "
+            "default these are only warnings."
+        ),
+    )
+    validate_parser.add_argument(
+        "--fail-on-ai-draft",
+        action="store_true",
+        help=(
+            "Exit with code 1 if any docstring still holds an unreviewed "
+            "AI-drafted line (see `pycodecommenter review`). By default "
+            "these are only warnings."
+        ),
+    )
 
     # Coverage command
     coverage_parser = subparsers.add_parser(
@@ -512,6 +555,16 @@ def main():
         default="text",
         metavar="FORMAT",
         help="Output format: 'text' (default) or 'json'",
+    )
+    coverage_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Count a function or class as documented only if its docstring "
+            "has no TODO(pycodecommenter) placeholder and no unreviewed "
+            "AI-drafted line. By default any non-empty docstring counts, so "
+            "a project of generated stubs reads as 100%%."
+        ),
     )
     coverage_parser.add_argument(
         "--fail-below",
@@ -600,9 +653,12 @@ def main():
 
             any_errors = False
             json_reports = []
+            placeholders = ai_drafts = 0
             for target in targets:
                 validator = DocstringValidator(file_path=target)
                 report = validator.validate_all()
+                placeholders += report.count_placeholders()
+                ai_drafts += report.count_ai_drafts()
                 if report.stats.errors > 0:
                     any_errors = True
                 if args.output_format == "json":
@@ -612,7 +668,8 @@ def main():
 
             if args.output_format == "json":
                 print(json.dumps(json_reports, indent=2))
-            if any_errors:
+            strict_failed = _strict_validation_failed(args, placeholders, ai_drafts)
+            if any_errors or strict_failed:
                 sys.exit(1)
             return
 
@@ -622,11 +679,14 @@ def main():
             print(json.dumps(report.to_dict(), indent=2))
         else:
             report.print_summary()
-        if report.stats.errors > 0:
+        strict_failed = _strict_validation_failed(
+            args, report.count_placeholders(), report.count_ai_drafts()
+        )
+        if report.stats.errors > 0 or strict_failed:
             sys.exit(1)
 
     elif args.command == "coverage":
-        analyzer = CoverageAnalyzer()
+        analyzer = CoverageAnalyzer(strict=args.strict)
         if os.path.isdir(args.path):
             result = analyzer.analyze_directory(
                 args.path, exclude_patterns=args.exclude
@@ -654,9 +714,13 @@ def main():
                     "functions": functions_ratio,
                     "classes": classes_ratio,
                 }
+                if args.strict:
+                    file_dict["strict"] = True
                 print(json.dumps(file_dict, indent=2))
             else:
                 print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
+                if args.strict:
+                    print(STRICT_NOTE)
 
         if args.badge_output:
             with open(args.badge_output, "w") as f:
