@@ -36,6 +36,9 @@ venv.bak/
 .coverage
 htmlcov/
 
+observations.txt
+test-phase-report.md
+fix-test-phase-findings-prompt.md
 build/
 __pycache__/
 .claude/

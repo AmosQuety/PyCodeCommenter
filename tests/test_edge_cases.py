@@ -891,6 +891,43 @@ def test_negative_default_value_rendered_correctly(commenter):
     assert "(default: unknown)" not in patched
 
 
+@pytest.mark.parametrize(
+    "default_source, expected",
+    [
+        ("Priority.MEDIUM", "(default: Priority.MEDIUM)"),
+        ("DATA_FILE", "(default: DATA_FILE)"),
+        ("[1, 2]", "(default: [1, 2])"),
+        ("os.path.join('a', 'b')", "(default: os.path.join('a', 'b'))"),
+    ],
+)
+def test_non_literal_default_is_shown_as_written(commenter, default_source, expected):
+    code = f"""def run(option={default_source}):
+    return option
+"""
+    patched = commenter.from_string(code).get_patched_code()
+    assert expected in patched
+    assert "(default: unknown)" not in patched
+
+
+def test_overlong_default_is_omitted_rather_than_shown(commenter):
+    long_default = "make_default_settings(" + "'x'," * 15 + ")"
+    code = f"""def run(option={long_default}):
+    return option
+"""
+    patched = commenter.from_string(code).get_patched_code()
+    assert "(default:" not in patched
+    assert "unknown" not in patched
+
+
+def test_default_shown_as_written_is_stable_on_regeneration(commenter):
+    code = """def run(priority=Priority.MEDIUM):
+    return priority
+"""
+    once = commenter.from_string(code).get_patched_code()
+    twice = PyCodeCommenter().from_string(once).get_patched_code()
+    assert once == twice
+
+
 def test_nested_class_self_attr_not_attributed_to_outer(commenter):
     """A `self.x = ...` assignment inside a class nested within __init__
     belongs to the nested class's own instance -- it must not be

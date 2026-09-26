@@ -11,10 +11,8 @@ from typing import List
 
 try:
     from .function_doc import ClassDoc, FunctionDoc, Origin
-    from .inference import GUESS_MARKER
 except (ImportError, ValueError):
     from function_doc import ClassDoc, FunctionDoc, Origin
-    from inference import GUESS_MARKER
 
 # Facts too routine to be worth counting: a constructor's fixed summary, and
 # "returns nothing".
@@ -35,6 +33,16 @@ class GenerationReport:
         ai_lines (int): Lines drafted by AI in this run.
         todos (int): Gaps left as the guess marker.
         from_comments (int): Docstrings taken from the comment above them.
+        ai_requests (int): Requests that reached a provider (answered or
+            failed), one per function or class with gaps.
+        ai_declined (int): Requested parts the AI answered with nothing.
+        ai_failed (int): Requests that failed (network or service error).
+        ai_not_tried (int): Functions and classes with gaps that were never
+            asked because drafting had stopped (for example a spent limit).
+        ai_withheld (int): Functions and classes not sent to the AI because
+            their source looks like it holds a secret.
+        dropped_entries (int): Author-written Args: entries removed because
+            their parameter is no longer in the signature.
     """
 
     files: int = 0
@@ -45,6 +53,12 @@ class GenerationReport:
     ai_lines: int = 0
     todos: int = 0
     from_comments: int = 0
+    ai_requests: int = 0
+    ai_declined: int = 0
+    ai_failed: int = 0
+    ai_not_tried: int = 0
+    ai_withheld: int = 0
+    dropped_entries: int = 0
 
     def record_function(self, doc: FunctionDoc, outcome: str) -> None:
         """Counts one function's docstring.
@@ -54,6 +68,7 @@ class GenerationReport:
             outcome (str): ``"new"``, ``"updated"`` or ``"unchanged"``.
         """
         self._record_outcome(outcome)
+        self.dropped_entries += doc.dropped
         parts = doc.parts()
         self.todos += sum(p.origin == Origin.GUESS for p in parts)
         if outcome == "unchanged":
@@ -71,7 +86,33 @@ class GenerationReport:
             outcome (str): ``"new"``, ``"updated"`` or ``"unchanged"``.
         """
         self._record_outcome(outcome)
-        self.todos += sum(GUESS_MARKER in a.text for a in doc.attributes)
+        origins = [a.origin for a in doc.attributes] + [doc.summary_origin]
+        self.todos += sum(origin == Origin.GUESS for origin in origins)
+        if outcome != "unchanged":
+            self.ai_lines += sum(origin == Origin.AI for origin in origins)
+
+    def record_draft(self, declined: int, failed: bool) -> None:
+        """Counts one AI request and how it ended.
+
+        Args:
+            declined (int): Requested parts the answer left unfilled.
+            failed (bool): The request itself failed; nothing was answered.
+        """
+        self.ai_requests += 1
+        if failed:
+            self.ai_failed += 1
+        else:
+            self.ai_declined += declined
+
+    def record_withheld(self) -> None:
+        """Counts a function or class kept out of AI drafting because its
+        source looks like it holds a secret."""
+        self.ai_withheld += 1
+
+    def record_not_tried(self) -> None:
+        """Counts a function or class whose gaps were not asked about
+        because drafting had stopped."""
+        self.ai_not_tried += 1
 
     def merge(self, other: "GenerationReport") -> None:
         """Adds another report's counts to this one."""
@@ -107,6 +148,15 @@ class GenerationReport:
                 f"  {_count(self.ai_lines, 'line')} drafted by AI, "
                 'marked "(AI-drafted, unreviewed)"'
             )
+        if self.dropped_entries:
+            plural = self.dropped_entries != 1
+            verb = "would be" if preview else ("were" if plural else "was")
+            lines.append(
+                f"  {self.dropped_entries} documented "
+                f"{'arguments' if plural else 'argument'} no longer in the "
+                f"signature {verb} removed from the docstrings"
+            )
+        lines += self._ai_problem_lines()
         if self.from_comments:
             noun = "docstring" if self.from_comments == 1 else "docstrings"
             where = (
@@ -123,6 +173,39 @@ class GenerationReport:
                 "for you to fill"
             )
         lines.append("Next: " + self._next_step(ai_used))
+        return lines
+
+    def _ai_problem_lines(self) -> List[str]:
+        """Why AI drafting left gaps, so "gaps left" is not a mystery."""
+        lines = []
+        if self.ai_declined:
+            lines.append(
+                f"  {_count(self.ai_declined, 'part')} the AI declined to write "
+                "(the code did not make them clear); they keep their earlier text"
+            )
+        if self.ai_failed:
+            noun = "request" if self.ai_failed == 1 else "requests"
+            lines.append(
+                f"  {self.ai_failed} {noun} failed (network or service error); "
+                "those gaps are unchanged"
+            )
+        if self.ai_withheld:
+            noun = (
+                "function or class" if self.ai_withheld == 1 else "functions or classes"
+            )
+            lines.append(
+                f"  {self.ai_withheld} {noun} not sent to the AI because the source "
+                "looks like it holds a secret (key, password or token)"
+            )
+        if self.ai_not_tried:
+            noun = (
+                "function or class"
+                if self.ai_not_tried == 1
+                else "functions or classes"
+            )
+            lines.append(
+                f"  {self.ai_not_tried} {noun} not tried because drafting stopped"
+            )
         return lines
 
     def _next_step(self, ai_used: bool) -> str:

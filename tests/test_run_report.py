@@ -158,3 +158,232 @@ def test_summary_follows_other_output_modes(tmp_path, monkeypatch, capsys, mode)
     captured = run_cli(["generate", str(target), *mode], monkeypatch, capsys)
 
     assert "Summary:" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Why gaps are left after AI drafting
+# ---------------------------------------------------------------------------
+
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    ClassDraft,
+    DraftingStopped,
+)
+
+THREE = """def one(a):
+    return a
+
+
+def two(b):
+    return b
+
+
+def three(c):
+    return c
+"""
+
+CLASS_ONE = """class Box:
+    def __init__(self, size):
+        self.size = size
+"""
+
+
+class Scripted(DescriptionProvider):
+    """Answers each request from a list: a draft, or an error to raise."""
+
+    def __init__(self, answers):
+        self.answers = iter(answers)
+
+    def _next(self):
+        answer = next(self.answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def draft_docstring(self, context, known, slots):
+        return self._next()
+
+    def draft_class_docstring(self, context, known, slots):
+        return self._next()
+
+
+def filled(name):
+    return DocstringDraft(
+        summary=f"Do {name}.",
+        params={"a": "The value.", "b": "The value.", "c": "The value."},
+        returns="The result.",
+    )
+
+
+def drafted_report(code, answers):
+    return report_for(code, Scripted(answers))
+
+
+def test_every_request_that_was_answered_is_counted_with_nothing_left_over():
+    report = drafted_report(THREE, [filled("one"), filled("two"), filled("three")])
+
+    assert (report.ai_requests, report.ai_failed, report.ai_not_tried) == (3, 0, 0)
+    assert report.ai_declined == 0
+
+
+def test_gaps_the_model_declined_are_counted_and_worded():
+    report = drafted_report(THREE, [DocstringDraft()] * 3)
+
+    assert report.ai_declined > 0 and report.ai_failed == 0
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "declined" in text
+
+
+def test_a_failed_request_is_not_counted_as_a_decline():
+    report = drafted_report(
+        THREE, [DocstringDraft(failed=True), filled("two"), filled("three")]
+    )
+
+    assert report.ai_failed == 1
+    assert report.ai_declined == 0
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "1 request failed" in text
+
+
+def test_a_provider_that_raises_counts_as_a_failed_request():
+    report = drafted_report(
+        THREE, [RuntimeError("boom"), filled("two"), filled("three")]
+    )
+
+    assert report.ai_failed == 1 and report.ai_requests == 3
+
+
+def test_functions_after_a_stop_are_counted_as_not_tried():
+    stop = DraftingStopped("user_daily_limit_reached", "Daily limit reached.")
+
+    report = drafted_report(THREE, [filled("one"), stop])
+
+    assert report.ai_requests == 1  # only the first got an answer
+    assert report.ai_not_tried == 2  # the one that hit the limit, and the last
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "2 functions or classes not tried" in text
+
+
+def test_class_requests_are_counted_the_same_way():
+    failed = drafted_report(CLASS_ONE, [ClassDraft(failed=True), filled("__init__")])
+    declined = drafted_report(CLASS_ONE, [ClassDraft(), filled("__init__")])
+
+    assert failed.ai_failed == 1
+    assert declined.ai_declined > 0 and declined.ai_failed == 0
+
+
+def test_no_ai_numbers_appear_without_a_provider():
+    report = report_for(THREE)
+
+    assert (
+        report.ai_requests,
+        report.ai_declined,
+        report.ai_failed,
+        report.ai_not_tried,
+    ) == (0, 0, 0, 0)
+    text = "\n".join(report.summary_lines(preview=False, ai_used=False))
+    assert "declined" not in text and "failed" not in text
+
+
+def test_a_fully_drafted_run_adds_no_problem_lines():
+    report = drafted_report(THREE, [filled("one"), filled("two"), filled("three")])
+
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "declined" not in text and "failed" not in text and "not tried" not in text
+
+
+def test_the_new_counts_add_up_across_files():
+    first = drafted_report(THREE, [DocstringDraft(failed=True)] * 3)
+    second = drafted_report(THREE, [DocstringDraft(failed=True)] * 3)
+
+    total = GenerationReport()
+    total.merge(first)
+    total.merge(second)
+
+    assert total.ai_failed == 6
+
+
+# ---------------------------------------------------------------------------
+# Documented arguments that no longer exist are reported when removed
+# ---------------------------------------------------------------------------
+
+DRIFTED = '''def combine(first, second):
+    """Combine two things.
+
+    Args:
+        first: The first thing.
+        ghost: A parameter that was removed long ago.
+        gone (int): Another removed one.
+
+    Returns:
+        Any: The result.
+    """
+    return first, second
+'''
+
+
+def test_removed_author_entries_are_counted():
+    report = report_for(DRIFTED)
+
+    assert report.dropped_entries == 2
+
+
+def test_the_summary_says_what_was_removed():
+    text = "\n".join(report_for(DRIFTED).summary_lines(preview=False, ai_used=False))
+
+    assert "2 documented arguments no longer in the signature were removed" in text
+
+
+def test_a_preview_says_would_be_removed():
+    text = "\n".join(report_for(DRIFTED).summary_lines(preview=True, ai_used=False))
+
+    assert "2 documented arguments no longer in the signature would be removed" in text
+
+
+def test_one_removed_entry_is_worded_in_the_singular():
+    code = DRIFTED.replace("        gone (int): Another removed one.\n", "")
+
+    text = "\n".join(report_for(code).summary_lines(preview=False, ai_used=False))
+
+    assert "1 documented argument no longer in the signature was removed" in text
+
+
+def test_the_tools_own_earlier_entries_are_not_reported_when_they_go():
+    code = '''def combine(first):
+    """Combine.
+
+    Args:
+        first (Any): TODO(pycodecommenter): describe
+        old (Any): TODO(pycodecommenter): describe
+
+    Returns:
+        Any: The result.
+    """
+    return first
+'''
+
+    assert report_for(code).dropped_entries == 0
+
+
+def test_a_docstring_that_matches_its_signature_reports_nothing():
+    code = (
+        DRIFTED.replace("        ghost: A parameter that was removed long ago.\n", "")
+        .replace("        gone (int): Another removed one.\n", "")
+        .replace(
+            "        first: The first thing.\n",
+            "        first: The first thing.\n        second: The second.\n",
+        )
+    )
+
+    report = report_for(code)
+    text = "\n".join(report.summary_lines(preview=False, ai_used=False))
+
+    assert report.dropped_entries == 0
+    assert "removed" not in text
+
+
+def test_removed_entries_add_up_across_files():
+    total = GenerationReport()
+    total.merge(report_for(DRIFTED))
+    total.merge(report_for(DRIFTED))
+
+    assert total.dropped_entries == 4

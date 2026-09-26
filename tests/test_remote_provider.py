@@ -180,9 +180,11 @@ KNOWN = KnownText(params={"rate": "Discount rate."})
 
 
 class _FakeV2Response(_FakeHTTPResponse):
-    def __init__(self, body: dict, remaining="24", limit="25"):
+    def __init__(self, body: dict, remaining="24", limit="25", outcome=None):
         super().__init__(body)
         self.headers = {"X-AI-Drafts-Remaining": remaining, "X-AI-Drafts-Limit": limit}
+        if outcome is not None:
+            self.headers["X-AI-Draft-Outcome"] = outcome
 
 
 def _http_error(code: int, body: dict, retry_after: str = "30"):
@@ -321,6 +323,38 @@ def test_rate_limit_wait_is_capped(monkeypatch):
     assert draft.summary is None
 
 
+def test_rate_limit_wait_is_reported_before_sleeping(monkeypatch):
+    events = []
+    provider = RemoteDescriptionProvider(
+        backend_url="https://example.test",
+        on_wait=lambda seconds: events.append(("wait", seconds)),
+    )
+    responses = iter(
+        [
+            _http_error(429, {"error": "rate_limited"}, retry_after="7"),
+            _FakeV2Response({"summary": "Apply a discount."}),
+        ]
+    )
+
+    def fake_urlopen(request, timeout):
+        result = next(responses)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.time.sleep",
+        lambda seconds: events.append(("sleep", seconds)),
+    )
+
+    provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert events == [("wait", 7), ("sleep", 7)]
+
+
 def test_older_backend_without_v2_falls_back_to_v1_description(monkeypatch):
     provider = RemoteDescriptionProvider(backend_url="https://example.test")
     urls = []
@@ -354,3 +388,223 @@ def test_network_failure_returns_an_empty_draft(monkeypatch):
     draft = provider.draft_docstring(make_context(), KNOWN, SLOTS)
 
     assert draft.summary is None and draft.params == {}
+
+
+# ---------------------------------------------------------------------------
+# Class docstrings (/v2/draft-class-docstring)
+# ---------------------------------------------------------------------------
+
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    ClassContext,
+    ClassDraft,
+    ClassSlots,
+)
+
+CLASS_CONTEXT = ClassContext(
+    name="Cache",
+    bases=["Base"],
+    attributes=[ParameterFact("_items", "dict")],
+    source="class Cache(Base):\n    def __init__(self):\n        self._items = {}",
+)
+CLASS_SLOTS = ClassSlots(summary=True, attributes=("_items",))
+
+
+def _patch_network(monkeypatch, results, urls=None, slept=None):
+    responses = iter(results)
+
+    def fake_urlopen(request, timeout):
+        if urls is not None:
+            urls.append(request.full_url)
+        result = next(responses)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.time.sleep",
+        (slept if slept is not None else []).append,
+    )
+
+
+def test_class_draft_posts_the_class_facts_and_reads_the_reply(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data)
+        return _FakeV2Response(
+            {"summary": "Keep results.", "attributes": {"_items": "Cached values."}}
+        )
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+
+    draft = provider.draft_class_docstring(
+        CLASS_CONTEXT, {"ttl": "Seconds."}, CLASS_SLOTS
+    )
+
+    assert captured["url"] == "https://example.test/v2/draft-class-docstring"
+    body = captured["body"]
+    assert body["name"] == "Cache" and body["bases"] == ["Base"]
+    assert body["attributes"] == [
+        {"name": "_items", "type_hint": "dict", "default": None}
+    ]
+    assert body["source"].startswith("class Cache(Base):")
+    assert body["known"] == {"attributes": {"ttl": "Seconds."}}
+    assert body["slots"] == {"summary": True, "attributes": ["_items"]}
+    assert draft == ClassDraft(
+        summary="Keep results.", attributes={"_items": "Cached values."}
+    )
+    assert provider.drafts_remaining == 24
+
+
+def test_a_backend_without_class_support_is_asked_only_once(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    urls = []
+    _patch_network(monkeypatch, [_http_error(404, {})], urls)
+
+    first = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+    second = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert first == ClassDraft(failed=True) and second == ClassDraft(failed=True)
+    assert urls == ["https://example.test/v2/draft-class-docstring"]
+
+
+def test_class_draft_waits_out_a_rate_limit_once_and_retries(monkeypatch):
+    waits, slept = [], []
+    provider = RemoteDescriptionProvider(
+        backend_url="https://example.test", on_wait=waits.append
+    )
+    _patch_network(
+        monkeypatch,
+        [
+            _http_error(429, {"error": "rate_limited"}, retry_after="7"),
+            _FakeV2Response({"summary": "Keep results.", "attributes": {}}),
+        ],
+        slept=slept,
+    )
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert waits == [7] and slept == [7]
+    assert draft.summary == "Keep results."
+
+
+def test_class_draft_stops_the_run_when_the_daily_allowance_is_spent(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [_http_error(429, {"error": "user_daily_limit_reached", "message": "Spent."})],
+    )
+
+    with pytest.raises(DraftingStopped):
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+    with pytest.raises(DraftingStopped):  # and it stays stopped
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+    assert provider.drafts_remaining == 0
+
+
+def test_class_draft_survives_a_network_failure_as_an_empty_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(monkeypatch, [OSError("network down")])
+
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
+    )
+
+
+def test_a_malformed_class_reply_is_an_empty_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [_FakeV2Response({"summary": 5, "attributes": ["not", "a", "map"]})],
+    )
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft == ClassDraft(summary=None, attributes={})
+
+
+# ---------------------------------------------------------------------------
+# The service marks a draft it could not produce
+# ---------------------------------------------------------------------------
+
+
+def _one_reply(monkeypatch, response):
+    _patch_network(monkeypatch, [response])
+
+
+def test_a_draft_the_service_marked_failed_is_a_failed_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(
+        monkeypatch,
+        _FakeV2Response({"summary": None, "params": {}}, outcome="failed"),
+    )
+
+    draft = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert draft.failed is True
+    assert draft.summary is None
+
+
+def test_a_class_draft_the_service_marked_failed_is_a_failed_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(
+        monkeypatch,
+        _FakeV2Response({"summary": None, "attributes": {}}, outcome="failed"),
+    )
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft.failed is True
+
+
+@pytest.mark.parametrize("outcome", ["ok", None])
+def test_ok_and_an_older_service_without_the_header_are_not_failures(
+    monkeypatch, outcome
+):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(monkeypatch, _FakeV2Response({"summary": None}, outcome=outcome))
+
+    draft = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert draft.failed is False  # nothing came back: a decline, as before
+
+
+def test_one_failed_draft_does_not_taint_the_next(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [
+            _FakeV2Response({"summary": None}, outcome="failed"),
+            _FakeV2Response({"summary": "Apply a discount."}, outcome="ok"),
+        ],
+    )
+
+    first = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+    second = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert first.failed is True
+    assert second.failed is False and second.summary == "Apply a discount."
+
+
+def test_a_failed_draft_is_counted_as_a_failure_not_a_decline_in_the_summary(
+    monkeypatch,
+):
+    from PyCodeCommenter import PyCodeCommenter
+
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [_FakeV2Response({"summary": None, "params": {}}, outcome="failed")],
+    )
+    commenter = PyCodeCommenter(description_provider=provider)
+    commenter.from_string("def one(a):\n    return a\n").get_patched_code()
+
+    assert commenter.report.ai_failed == 1
+    assert commenter.report.ai_declined == 0

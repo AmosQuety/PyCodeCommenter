@@ -6,7 +6,7 @@ keywords: python docstring validation, docstring checks, signature mismatch, mis
 
 # Validation Checks Reference
 
-The validator (`DocstringValidator`) runs six categories of checks whenever `validate_all()` is called. Each check may produce issues at one of three severity levels:
+The validator (`DocstringValidator`) runs six categories of checks whenever `validate_all()` is called, plus one that reports unreviewed AI drafts (`ai_draft`). Each check may produce issues at one of three severity levels:
 
 <p>
 <span class="pcc-badge pcc-badge--error">ERROR</span> a real problem that causes <code>pycodecommenter validate</code> to exit with code 1 &nbsp;&middot;&nbsp;
@@ -72,6 +72,7 @@ Below is a summary table followed by a detailed breakdown of every check.
 | Missing summary line | ERROR | `format` |
 | Non-standard section header | INFO | `format` |
 | Placeholder text found | WARNING | `quality` |
+| AI-drafted content not yet reviewed | WARNING | `ai_draft` |
 | Summary line too short (< 10 chars) | INFO | `quality` |
 | Duplicate parameter descriptions | WARNING | `quality` |
 | Summary and description are identical | INFO | `quality` |
@@ -465,6 +466,29 @@ def fetch(url):
 > **Note:** Anywhere `generate` couldn't extract real content from the AST, it writes `TODO(pycodecommenter): describe` instead of guessing — e.g. in the `Returns:` section by default. The validator will flag this (via the `TODO` match above) if you validate without resolving it first. This is by design: it turns an unresolved guess into a build-breaking signal instead of documentation that only looks finished. See [Recipes: Documenting an Existing Codebase Safely](recipes.md#recipe-3-documenting-an-existing-codebase-safely) for the intended workflow.
 
 **How to fix:** Replace placeholder text with actual documentation.
+
+---
+
+## AI-Drafted Content Not Yet Reviewed
+
+**Severity:** <span class="pcc-badge pcc-badge--warning">WARNING</span>
+**Category:** `ai_draft`
+
+**What it checks:** The docstring contains the `(AI-drafted, unreviewed)` label that `generate --ai-draft` puts on every line an AI model wrote. It has its own category so drafted text is never counted as verified documentation, and never confused with a `TODO` placeholder.
+
+**Example violation:**
+```python
+def add(a: int, b: int) -> int:
+    """Add two numbers.
+
+    Args:
+        a (int): The first number to add. (AI-drafted, unreviewed)
+        b (int): The second number to add. (AI-drafted, unreviewed)
+    """
+    return a + b
+```
+
+**How to fix:** Check each labelled line against the code. `pycodecommenter review <path>` lets you accept a line (which removes the label), edit it, or skip it; `review --list` shows what is waiting.
 
 ---
 

@@ -110,6 +110,51 @@ class DocstringDraft:
     params: Dict[str, str] = field(default_factory=dict)
     returns: Optional[str] = None
     raises: Dict[str, str] = field(default_factory=dict)
+    # True when the request itself failed (network or service error), as
+    # opposed to the model answering with nothing: the run summary tells the
+    # two apart.
+    failed: bool = False
+
+
+@dataclass(frozen=True)
+class ClassContext:
+    """What the AST knows about one class, for drafting its docstring.
+
+    Attributes:
+        name (str): The class name.
+        bases (List[str]): Its base classes, as written.
+        attributes (List[ParameterFact]): The attributes the docstring lists,
+            with their inferred types (``default`` is unused).
+        source (str): An outline of the class: its header, class-level
+            statements, ``__init__`` in full, and the other methods as
+            signatures only.
+    """
+
+    name: str
+    bases: List[str]
+    attributes: List[ParameterFact]
+    source: str
+
+
+@dataclass(frozen=True)
+class ClassSlots:
+    """The parts of a class docstring a provider is asked to draft."""
+
+    summary: bool = False
+    attributes: Tuple[str, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not (self.summary or self.attributes)
+
+
+@dataclass(frozen=True)
+class ClassDraft:
+    """A provider's answer for a class. Any part may be missing; every
+    value is checked again before it's written."""
+
+    summary: Optional[str] = None
+    attributes: Dict[str, str] = field(default_factory=dict)
+    failed: bool = False  # see DocstringDraft.failed
 
 
 class DraftingStopped(Exception):
@@ -174,6 +219,27 @@ class DescriptionProvider(ABC):
             return DocstringDraft()
         return DocstringDraft(description=self.draft_function_description(context))
 
+    def draft_class_docstring(
+        self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
+    ) -> ClassDraft:
+        """Drafts the requested parts of one class's docstring.
+
+        Providers written before class drafting existed inherit this, which
+        declines everything: the class keeps its TODO markers.
+
+        Args:
+            context (ClassContext): The class's AST-derived facts.
+            known (Dict[str, str]): Attribute text already settled, by name.
+            slots (ClassSlots): The parts to draft.
+
+        Returns:
+            ClassDraft: Whatever could be drafted; may be empty.
+
+        Raises:
+            DraftingStopped: Drafting can't continue for the rest of the run.
+        """
+        return ClassDraft()
+
 
 class SwitchOnStop(DescriptionProvider):
     """Wraps a provider and, the first time it stops (for example, the free
@@ -208,8 +274,18 @@ class SwitchOnStop(DescriptionProvider):
     def draft_docstring(
         self, context: FunctionContext, known: KnownText, slots: DraftSlots
     ) -> DocstringDraft:
+        return self._call("draft_docstring", context, known, slots)
+
+    def draft_class_docstring(
+        self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
+    ) -> ClassDraft:
+        return self._call("draft_class_docstring", context, known, slots)
+
+    def _call(self, method: str, *arguments):
+        """Calls ``method`` on the active provider; on a stop, hands over
+        (once) and repeats the same call on the replacement."""
         try:
-            return self._active.draft_docstring(context, known, slots)
+            return getattr(self._active, method)(*arguments)
         except DraftingStopped as stopped:
             if self._switched:
                 self.stopped = stopped
@@ -220,7 +296,7 @@ class SwitchOnStop(DescriptionProvider):
                 self.stopped = stopped
                 raise
             self._active = replacement
-            return self.draft_docstring(context, known, slots)
+            return self._call(method, *arguments)
 
 
 class NullDescriptionProvider(DescriptionProvider):
@@ -236,6 +312,9 @@ class NullDescriptionProvider(DescriptionProvider):
 
 
 __all__ = [
+    "ClassContext",
+    "ClassDraft",
+    "ClassSlots",
     "ParameterFact",
     "FunctionContext",
     "DraftSlots",

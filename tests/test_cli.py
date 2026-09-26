@@ -144,6 +144,45 @@ def test_generate_directory_output_dir_mirrors_tree_without_touching_originals(
     assert "Wrote 2/2 file(s)" in out
 
 
+def test_generate_directory_output_dir_inside_target_is_not_scanned_again(
+    project, monkeypatch, capsys
+):
+    """Re-running with --output-dir inside the target must not process the
+    previous run's output (out/out/a.py) or count its files."""
+    run_cli(["generate", ".", "--output-dir", "out"], monkeypatch, capsys)
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", "out"], monkeypatch, capsys
+    )
+    assert exit_code == 0
+    assert not (project / "out" / "out").exists()
+    assert "Wrote 2/2 file(s)" in out
+
+
+def test_generate_directory_output_dir_given_as_absolute_path_is_excluded(
+    project, monkeypatch, capsys
+):
+    absolute_out = project / "docs_out"
+    for _ in range(2):
+        run_cli(
+            ["generate", str(project), "--output-dir", str(absolute_out)],
+            monkeypatch,
+            capsys,
+        )
+    assert not (absolute_out / "docs_out").exists()
+    assert sorted(p.name for p in absolute_out.rglob("*.py")) == ["a.py", "b.py"]
+
+
+def test_generate_directory_output_dir_outside_target_changes_nothing(
+    project, tmp_path_factory, monkeypatch, capsys
+):
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", str(elsewhere)], monkeypatch, capsys
+    )
+    assert exit_code == 0
+    assert "Wrote 2/2 file(s)" in out
+
+
 def test_generate_directory_output_dir_rejects_inplace(project, monkeypatch, capsys):
     exit_code, out, _ = run_cli(
         ["generate", ".", "--output-dir", "out", "--inplace"], monkeypatch, capsys
@@ -327,12 +366,13 @@ def test_ai_draft_without_consent_prompts_and_aborts_on_decline(
 ):
     monkeypatch.setattr("builtins.input", lambda: "n")
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         ["generate", "a.py", "--ai-draft", "--dry-run"], monkeypatch, capsys
     )
 
     assert exit_code == 1
-    assert "consent" in out.lower()
+    assert "consent" in err.lower()  # setup errors go to stderr
+    assert "consent" not in out.lower()
     assert "def foo" in (project / "a.py").read_text()
 
 
@@ -460,7 +500,7 @@ def test_own_key_provider_without_a_key_in_ci_fails_with_the_variable_name(
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr("PyCodeCommenter.ai_setup.is_interactive", lambda: False)
 
-    exit_code, out, _ = run_cli(
+    exit_code, out, err = run_cli(
         [
             "generate",
             "a.py",
@@ -475,7 +515,8 @@ def test_own_key_provider_without_a_key_in_ci_fails_with_the_variable_name(
     )
 
     assert exit_code == 1
-    assert "ANTHROPIC_API_KEY" in out
+    assert "ANTHROPIC_API_KEY" in err
+    assert "ANTHROPIC_API_KEY" not in out
 
 
 def test_own_key_provider_announces_its_model_and_how_to_change_it(
@@ -512,8 +553,9 @@ def test_help_documents_default_models_and_that_they_can_be_changed(
 ):
     exit_code, out, err = run_cli(["generate", "--help"], monkeypatch, capsys)
     text = " ".join(out.split())  # argparse wraps lines
+    text = text.replace("- ", "-")  # ...and may break a model id after a hyphen
 
-    assert "anthropic=claude-opus-5" in text
+    assert "anthropic=claude-haiku-4-5-20251001" in text
     assert "you can always choose your own" in text
 
 

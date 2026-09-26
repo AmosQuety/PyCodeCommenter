@@ -241,6 +241,21 @@ def test_count_rule_ignores_substrings_inside_other_words(name):
     assert not infer_description(param_name=name).startswith("Number of")
 
 
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("path", "Path to the file or directory."),
+        ("Path", "Path to the file or directory."),
+        ("file_path", "Path to the file."),
+        ("dir_path", "Path to the dir."),
+        ("config_path", "Path to the config."),
+        ("directory", "Path to the directory."),
+    ],
+)
+def test_path_names_never_produce_an_empty_phrase(name, expected):
+    assert infer_description(param_name=name) == expected
+
+
 def test_bare_count_does_not_produce_empty_phrase():
     assert infer_description(param_name="count", type_hint="int") == "int value."
 
@@ -251,6 +266,47 @@ def test_untyped_attribute_uses_same_any_spelling_as_args():
         self.repo = repo
 """)
     assert "repo (Any):" in _section(patched, "Attributes")
+
+
+def test_init_argument_that_is_not_assigned_is_not_an_attribute():
+    patched = _generate("""class InventoryError(Exception):
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
+""")
+    attributes = _section(patched, "Attributes")
+    assert "code (Any):" in attributes
+    assert "message" not in attributes
+
+
+def test_init_argument_stored_under_another_name_documents_the_stored_name():
+    patched = _generate("""class ProductService:
+    def __init__(self, products):
+        self._products = products
+""")
+    attributes = _section(patched, "Attributes")
+    names = [line.split()[0] for line in attributes.splitlines() if line.strip()]
+    assert names == ["_products"]
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    ["self.host: str = host", "self.host, self.port = host, port"],
+)
+def test_init_argument_assigned_in_other_statement_forms_is_an_attribute(assignment):
+    patched = _generate(f"""class Config:
+    def __init__(self, host: str, port: int):
+        {assignment}
+""")
+    assert "host (str):" in _section(patched, "Attributes")
+
+
+def test_class_with_no_stored_init_arguments_gets_no_attributes_section():
+    patched = _generate("""class Wrapper(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+""")
+    assert "Attributes:" not in patched
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +406,27 @@ def test_async_function_raise_condition_and_nested_def_isolation():
     assert "RuntimeError" not in outer
     inner = patched.split("def check", 1)[1].split('"""', 2)[1]
     assert "RuntimeError: If `code >= 500`." in inner
+
+
+# ---------------------------------------------------------------------------
+# A redundant bool(...) wrapper is not repeated in the description
+# ---------------------------------------------------------------------------
+
+
+def test_bool_wrapper_is_stripped_from_the_stated_condition():
+    patched = _generate("def is_sku(sku):\n    return bool(SKU_PATTERN.match(sku))\n")
+
+    assert "True if `SKU_PATTERN.match(sku)`, otherwise False." in patched
+    assert "bool(" not in _section(patched, "Returns")
+
+
+def test_bool_of_several_arguments_or_keywords_is_left_as_written():
+    patched = _generate("def f(a):\n    return bool(a, extra=1)\n")
+
+    assert "bool(a" in patched or GUESS in patched
+
+
+def test_bool_wrapped_literal_still_keeps_the_marker():
+    patched = _generate("def f():\n    return bool(1)\n")
+
+    assert "True if `1`" not in patched

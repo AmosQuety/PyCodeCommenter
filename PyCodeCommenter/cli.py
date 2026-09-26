@@ -12,16 +12,20 @@ from pathlib import Path
 from . import __version__
 from .commenter import PyCodeCommenter
 from .validator import DocstringValidator
-from .coverage import CoverageAnalyzer, shields_badge_dict
+from .coverage import STRICT_NOTE, CoverageAnalyzer, shields_badge_dict
 from .config import load_config, ConfigError
 from .ai_setup import (
     AI_PROVIDER_CHOICES,
     AISetupError,
     build_ai_provider,
+    is_interactive,
+    preflight,
     report_ai_outcome,
     status,
 )
+from .draft_limits import DraftBudget
 from .run_report import GenerationReport
+from .progress import Progress
 from .review_cli import run_review
 from .direct_providers import PROVIDERS
 from .remote_provider import DEFAULT_BACKEND_URL
@@ -74,23 +78,67 @@ def _path_is_excluded(py_file, patterns):
     return False
 
 
-def _collect_py_files(directory, exclude_patterns=None):
+def _is_inside(path, directory):
+    """True if resolved ``path`` is ``directory`` or lies below it."""
+    return directory == path or directory in path.parents
+
+
+def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
     """Recursively collect .py files under directory, skipping any path
     matched by _path_is_excluded() against DEFAULT_DIRECTORY_EXCLUDES plus
-    exclude_patterns.
+    exclude_patterns, and anything under skip_directory (the output tree
+    of a previous run, so it isn't generated from again).
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
     root = Path(directory)
+    skipped = Path(skip_directory).resolve() if skip_directory else None
     # Only the path *inside* the target directory is matched: a project that
     # lives under, say, ~/work/build/ must still be processed.
     return [
         str(py_file)
         for py_file in sorted(root.rglob("*.py"))
         if not _path_is_excluded(py_file.relative_to(root), patterns)
+        and not (skipped and _is_inside(py_file.resolve(), skipped))
     ]
 
 
-def _generate(args, description_provider, run_report):
+def _positive_int(text):
+    """argparse type for a whole number of at least 1."""
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number >= 1")
+    return value
+
+
+def _strict_validation_failed(args, placeholders, ai_drafts):
+    """Whether --fail-on-todo / --fail-on-ai-draft make this validation
+    fail; says why on stderr, so JSON on stdout stays valid."""
+    failed = False
+    if args.fail_on_todo and placeholders:
+        print(
+            f"--fail-on-todo: {_plural(placeholders, 'docstring')} still "
+            "hold a TODO or other placeholder.",
+            file=sys.stderr,
+        )
+        failed = True
+    if args.fail_on_ai_draft and ai_drafts:
+        print(
+            f"--fail-on-ai-draft: {_plural(ai_drafts, 'docstring')} still hold "
+            "unreviewed AI-drafted lines (see `pycodecommenter review`).",
+            file=sys.stderr,
+        )
+        failed = True
+    return failed
+
+
+def _plural(number, noun):
+    return f"{number} {noun}{'' if number == 1 else 's'}"
+
+
+def _generate(args, description_provider, run_report, progress=None, budget=None):
     """Runs the generate command for a file or directory target.
 
     Args:
@@ -99,6 +147,10 @@ def _generate(args, description_provider, run_report):
             provider for --ai-draft, or ``None``.
         run_report (GenerationReport): Accumulates each file's counts for
             the end-of-run summary.
+        progress (Optional[Progress]): The live status line for AI
+            drafting, or ``None``.
+        budget (Optional[DraftBudget]): The cap on AI requests
+            (``--max-drafts``), or ``None``.
     """
     if os.path.isdir(args.file):
         if args.output:
@@ -108,7 +160,7 @@ def _generate(args, description_provider, run_report):
             print("Error: --output-dir cannot be combined with --inplace.")
             sys.exit(1)
 
-        targets = _collect_py_files(args.file, args.exclude)
+        targets = _collect_py_files(args.file, args.exclude, args.output_dir)
         if not targets:
             print(f"No Python files found in {args.file}")
             sys.exit(0)
@@ -116,13 +168,25 @@ def _generate(args, description_provider, run_report):
         if args.backup and not args.inplace:
             print("Warning: --backup has no effect without --inplace")
 
+        if description_provider is not None and not preflight(
+            targets,
+            args.max_drafts,
+            ask=is_interactive() and not args.yes_send_code_to_ai,
+            include_module_docstrings=args.include_module_docstrings,
+        ):
+            sys.exit(1)
+
         any_changed = False
         any_failed = False
         written_count = 0
-        for target in targets:
+        for position, target in enumerate(targets, start=1):
+            if progress is not None:
+                progress.start_file(Path(target).name, position, len(targets))
             commenter = PyCodeCommenter(
                 description_provider=description_provider,
                 include_module_docstrings=args.include_module_docstrings,
+                progress=progress,
+                budget=budget,
             ).from_file(target)
             if not commenter.parsed_code:
                 print(f"[FAIL] Could not parse {target}")
@@ -205,9 +269,13 @@ def _generate(args, description_provider, run_report):
         print("Error: --output-dir cannot be used with a single-file target.")
         sys.exit(1)
 
+    if progress is not None:
+        progress.start_file(Path(args.file).name)
     commenter = PyCodeCommenter(
         description_provider=description_provider,
         include_module_docstrings=args.include_module_docstrings,
+        progress=progress,
+        budget=budget,
     ).from_file(args.file)
     if not commenter.parsed_code:
         print(f"Error: Could not parse {args.file}")
@@ -332,12 +400,14 @@ def main():
         help=(
             "Opt in to AI drafting for the parts of a docstring the code "
             "can't state: summaries, and parameter, return and exception "
-            "descriptions that would otherwise be TODO markers or say "
-            "nothing beyond the type. Uses PyCodeCommenter's free hosted "
-            "service (daily limit) unless --ai-provider names your own. "
-            "Every drafted line carries a permanent '(AI-drafted, "
-            "unreviewed)' marker. Asks once for consent before sending "
-            "code anywhere (see --yes-send-code-to-ai for CI). With "
+            "descriptions, and class summaries and attributes, that would "
+            "otherwise be TODO markers or say nothing beyond the type. "
+            "Uses PyCodeCommenter's free hosted service (daily limit) "
+            "unless --ai-provider names your own. Every drafted line "
+            "carries an '(AI-drafted, unreviewed)' marker until you "
+            "accept it in `pycodecommenter review`. Asks once for consent "
+            "before sending code anywhere (see --yes-send-code-to-ai for "
+            "CI). With "
             "--inplace, also requires --accept-ai-drafts; --dry-run and "
             "--output-dir work alone, since those are already review-first."
         ),
@@ -377,6 +447,17 @@ def main():
         help=(
             "API endpoint for --ai-provider openai-compatible (e.g. a Mistral, "
             "Groq or local Ollama server)."
+        ),
+    )
+    generate_parser.add_argument(
+        "--max-drafts",
+        type=_positive_int,
+        metavar="N",
+        help=(
+            "With --ai-draft, send at most N requests in the whole run (one "
+            "per function or class with gaps); the rest keep their TODO "
+            "markers. Useful to try AI drafting on a large project, or to "
+            "stay inside the hosted service's daily limit."
         ),
     )
     generate_parser.add_argument(
@@ -443,6 +524,24 @@ def main():
         metavar="FORMAT",
         help="Output format: 'text' (default) or 'json'",
     )
+    validate_parser.add_argument(
+        "--fail-on-todo",
+        action="store_true",
+        help=(
+            "Exit with code 1 if any docstring still holds a "
+            "TODO(pycodecommenter) marker or other placeholder text. By "
+            "default these are only warnings."
+        ),
+    )
+    validate_parser.add_argument(
+        "--fail-on-ai-draft",
+        action="store_true",
+        help=(
+            "Exit with code 1 if any docstring still holds an unreviewed "
+            "AI-drafted line (see `pycodecommenter review`). By default "
+            "these are only warnings."
+        ),
+    )
 
     # Coverage command
     coverage_parser = subparsers.add_parser(
@@ -458,6 +557,16 @@ def main():
         default="text",
         metavar="FORMAT",
         help="Output format: 'text' (default) or 'json'",
+    )
+    coverage_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Count a function or class as documented only if its docstring "
+            "has no TODO(pycodecommenter) placeholder and no unreviewed "
+            "AI-drafted line. By default any non-empty docstring counts, so "
+            "a project of generated stubs reads as 100%%."
+        ),
     )
     coverage_parser.add_argument(
         "--fail-below",
@@ -480,6 +589,10 @@ def main():
 
     if args.command == "generate":
         description_provider = None
+        progress = Progress() if args.ai_draft else None
+        budget = DraftBudget(args.max_drafts) if args.max_drafts else None
+        if args.max_drafts and not args.ai_draft:
+            print("Warning: --max-drafts has no effect without --ai-draft")
         if args.ai_draft:
             if args.inplace and not args.accept_ai_drafts:
                 print(
@@ -499,14 +612,15 @@ def main():
                         "PYCODECOMMENTER_AI_BACKEND_URL", DEFAULT_BACKEND_URL
                     ),
                     assume_consent=args.yes_send_code_to_ai,
+                    progress=progress,
                 )
             except AISetupError as e:
-                print(f"Error: {e}")
+                status(f"Error: {e}")
                 sys.exit(1)
 
         run_report = GenerationReport()
         try:
-            _generate(args, description_provider, run_report)
+            _generate(args, description_provider, run_report, progress, budget)
         finally:
             # Runs however _generate exits (it calls sys.exit on several
             # paths), so the user always learns what the run did.
@@ -518,6 +632,11 @@ def main():
                     status(line)
             if description_provider is not None:
                 report_ai_outcome(description_provider)
+            if budget is not None and budget.spent:
+                status(
+                    f"\nAI drafting stopped at --max-drafts {budget.limit}. Functions "
+                    "after that point keep their TODO markers."
+                )
 
     elif args.command == "review":
         files = (
@@ -536,9 +655,12 @@ def main():
 
             any_errors = False
             json_reports = []
+            placeholders = ai_drafts = 0
             for target in targets:
                 validator = DocstringValidator(file_path=target)
                 report = validator.validate_all()
+                placeholders += report.count_placeholders()
+                ai_drafts += report.count_ai_drafts()
                 if report.stats.errors > 0:
                     any_errors = True
                 if args.output_format == "json":
@@ -548,7 +670,8 @@ def main():
 
             if args.output_format == "json":
                 print(json.dumps(json_reports, indent=2))
-            if any_errors:
+            strict_failed = _strict_validation_failed(args, placeholders, ai_drafts)
+            if any_errors or strict_failed:
                 sys.exit(1)
             return
 
@@ -558,11 +681,14 @@ def main():
             print(json.dumps(report.to_dict(), indent=2))
         else:
             report.print_summary()
-        if report.stats.errors > 0:
+        strict_failed = _strict_validation_failed(
+            args, report.count_placeholders(), report.count_ai_drafts()
+        )
+        if report.stats.errors > 0 or strict_failed:
             sys.exit(1)
 
     elif args.command == "coverage":
-        analyzer = CoverageAnalyzer()
+        analyzer = CoverageAnalyzer(strict=args.strict)
         if os.path.isdir(args.path):
             result = analyzer.analyze_directory(
                 args.path, exclude_patterns=args.exclude
@@ -590,9 +716,13 @@ def main():
                     "functions": functions_ratio,
                     "classes": classes_ratio,
                 }
+                if args.strict:
+                    file_dict["strict"] = True
                 print(json.dumps(file_dict, indent=2))
             else:
                 print(f"Coverage for {args.path}: {result.coverage_percentage:.1f}%")
+                if args.strict:
+                    print(STRICT_NOTE)
 
         if args.badge_output:
             with open(args.badge_output, "w") as f:

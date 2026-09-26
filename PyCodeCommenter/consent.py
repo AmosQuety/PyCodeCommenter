@@ -26,17 +26,31 @@ from pathlib import Path
 HOSTED = "hosted"
 
 # Bump if what's sent to the hosted backend, or what it does with it,
-# materially changes.
-CONSENT_NOTICE_VERSION = 1
+# materially changes. (2: class outlines are sent too, comments included,
+# and code that looks like it holds a secret is left out.)
+CONSENT_NOTICE_VERSION = 2
 
 # Bump if what's sent to a directly-called provider materially changes.
-DIRECT_CONSENT_NOTICE_VERSION = 1
+DIRECT_CONSENT_NOTICE_VERSION = 2
+
+# What is sent, in plain words, shared by every notice: the whole source of
+# each function that has gaps and an outline of each such class, comments
+# included, minus anything that looks like a secret.
+_WHAT_IS_SENT = (
+    "the source code of your functions and an outline of your classes, "
+    "comments included"
+)
+_SECRETS_NOTE = (
+    "Code that looks like it holds a key, password or token is left out, but "
+    "check that your comments contain no secrets."
+)
 
 NOTICE = (
-    "PyCodeCommenter is about to send this function's source code to a "
-    "hosted service (run by the PyCodeCommenter maintainer) and then to "
-    "Google's Gemini API, to draft a description. No source code is "
-    "stored beyond the time it takes to process each request.\n"
+    f"PyCodeCommenter is about to send {_WHAT_IS_SENT}, to a hosted service "
+    "(run by the PyCodeCommenter maintainer) and then to Google's Gemini API, "
+    "to draft docstrings. "
+    f"{_SECRETS_NOTE} No source code is stored beyond the time it takes to "
+    "process each request.\n"
     "Continue? [y/N] "
 )
 
@@ -58,10 +72,10 @@ def notice_for(destination: str = HOSTED) -> str:
         from direct_providers import PROVIDERS
     label = PROVIDERS[destination].label if destination in PROVIDERS else destination
     return (
-        f"PyCodeCommenter is about to send your functions' source code to "
-        f"{label}, using your API key, to draft docstrings. PyCodeCommenter's "
-        f"own service is not involved; {label}'s terms and data policy for "
-        "your account apply.\n"
+        f"PyCodeCommenter is about to send {_WHAT_IS_SENT}, to {label}, "
+        "using your API key, to draft docstrings. "
+        f"{_SECRETS_NOTE} PyCodeCommenter's own service is not involved; "
+        f"{label}'s terms and data policy for your account apply.\n"
         "Continue? [y/N] "
     )
 

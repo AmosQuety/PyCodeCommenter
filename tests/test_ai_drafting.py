@@ -229,5 +229,103 @@ def test_clean_slot_text_declines_unsafe_or_empty_values(value):
     assert clean_slot_text(value) is None
 
 
+NULL_LIKE_VALUES = [
+    "null",
+    "NULL",
+    "Null.",
+    "none",
+    "None.",
+    "n/a",
+    "N/A",
+    "nil",
+    "undefined",
+    "  null  ",
+    "null .",
+]
+
+
+@pytest.mark.parametrize("value", NULL_LIKE_VALUES)
+def test_clean_slot_text_declines_null_like_answers(value):
+    assert clean_slot_text(value) is None
+
+
+@pytest.mark.parametrize(
+    "value", ["Null pointer guard.", "Returns None when empty.", "Nil is fine here."]
+)
+def test_clean_slot_text_keeps_sentences_that_only_mention_null(value):
+    assert clean_slot_text(value) == value
+
+
+@pytest.mark.parametrize("value", NULL_LIKE_VALUES)
+def test_null_like_drafts_are_not_written_and_the_gap_stays(value):
+    draft = DocstringDraft(
+        summary=value,
+        description=value,
+        params={"discount": value, "repo": value},
+        returns=value,
+        raises={"ValueError": value},
+    )
+    patched = generate(FRESH, FakeProvider(draft))
+
+    assert MARKER not in patched
+    assert GUESS in patched
+    for line in patched.splitlines():
+        assert line.strip().rstrip(".").lower() not in {"null", "none", "n/a", "nil"}
+        assert "undefined" not in line
+
+
 def test_clean_slot_text_normalises_whitespace_and_period():
     assert clean_slot_text("  Amount\n owed ") == "Amount owed."
+
+
+# ---------------------------------------------------------------------------
+# Star parameters
+# ---------------------------------------------------------------------------
+
+STARRED = """def merge(base, *layers, strict=False, **extra):
+    return base
+"""
+
+
+def test_star_parameters_are_requested_by_their_starred_names():
+    provider = FakeProvider()
+    generate(STARRED, provider)
+
+    [(_, _, slots)] = provider.requests
+    assert "*layers" in slots.params and "**extra" in slots.params
+
+
+def test_a_reply_that_drops_the_stars_still_fills_star_parameters():
+    draft = DocstringDraft(
+        params={
+            "base": "The starting mapping.",
+            "layers": "Mappings merged over the base.",
+            "strict": "Whether unknown keys are rejected.",
+            "extra": "Further keys to add.",
+        },
+        returns="The merged mapping.",
+    )
+    patched = generate(STARRED, FakeProvider(draft))
+
+    assert f"*layers (tuple): Mappings merged over the base. {MARKER}" in patched
+    assert f"**extra (dict): Further keys to add. {MARKER}" in patched
+    assert GUESS not in patched
+
+
+def test_an_exact_starred_key_wins_over_the_unstarred_one():
+    draft = DocstringDraft(
+        params={"*layers": "Exact.", "layers": "Loose.", "base": "B.", "strict": "S."}
+    )
+    patched = generate(STARRED, FakeProvider(draft))
+
+    assert f"*layers (tuple): Exact. {MARKER}" in patched
+    assert "Loose." not in patched
+
+
+def test_an_unstarred_key_does_not_fill_a_plain_parameter_of_another_name():
+    draft = DocstringDraft(params={"layers": "Only for the star parameter."})
+    patched = generate(
+        "def f(layers_count, *layers):\n    return layers\n", FakeProvider(draft)
+    )
+
+    assert "layers_count (Any): Only for" not in patched

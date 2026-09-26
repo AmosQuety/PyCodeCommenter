@@ -136,9 +136,21 @@ class FakeAnthropic:
         return self.response
 
 
-def test_anthropic_uses_structured_output_low_effort_and_refusal_fallback():
+def test_anthropic_default_is_a_small_model_without_effort_or_fallback_options():
     fake = FakeAnthropic()
     provider = AnthropicProvider(api_key="k", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    [call] = fake.calls
+    assert call["model"] == "claude-haiku-4-5-20251001"
+    assert "effort" not in call["output_config"]
+    assert "betas" not in call and "fallbacks" not in call
+
+
+def test_anthropic_uses_structured_output_low_effort_and_refusal_fallback():
+    fake = FakeAnthropic()
+    provider = AnthropicProvider(api_key="k", model="claude-opus-5", client=fake)
 
     draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
 
@@ -264,7 +276,7 @@ def test_other_errors_skip_only_that_function():
         CONTEXT, KNOWN, SLOTS
     )
 
-    assert draft == DocstringDraft()
+    assert draft == DocstringDraft(failed=True)  # a failure, not a decline
 
 
 # ---------------------------------------------------------------------------
@@ -284,12 +296,10 @@ def test_make_provider_uses_the_default_model_unless_overridden():
     fake = FakeAnthropic()
 
     default = make_provider("anthropic", api_key="k", client=fake)
-    chosen = make_provider(
-        "anthropic", api_key="k", model="claude-haiku-4-5", client=fake
-    )
+    chosen = make_provider("anthropic", api_key="k", model="claude-opus-5", client=fake)
 
-    assert default.model == "claude-opus-5"
-    assert chosen.model == "claude-haiku-4-5"
+    assert default.model == "claude-haiku-4-5-20251001"
+    assert chosen.model == "claude-opus-5"
 
 
 def test_openai_compatible_requires_a_model_and_base_url():
@@ -396,3 +406,238 @@ def test_direct_notice_names_the_provider_not_the_hosted_service(consent_home):
     assert "Anthropic" in notice
     assert "your API key" in notice
     assert "hosted service" not in notice
+
+
+# ---------------------------------------------------------------------------
+# Class docstrings
+# ---------------------------------------------------------------------------
+
+from PyCodeCommenter.ai_drafting import build_class_prompt  # noqa: E402
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    ClassContext,
+    ClassDraft,
+    ClassSlots,
+)
+
+CLASS_CONTEXT = ClassContext(
+    name="Cache",
+    bases=["Base"],
+    attributes=[ParameterFact("_items", "dict"), ParameterFact("ttl", "int")],
+    source=(
+        "class Cache(Base):\n"
+        "    def __init__(self, ttl: int):\n"
+        "        # Entries older than ttl seconds are dropped.\n"
+        "        self.ttl = ttl\n"
+        "        self._items = {}"
+    ),
+)
+CLASS_SLOTS = ClassSlots(summary=True, attributes=("_items", "ttl"))
+CLASS_REPLY = {
+    "summary": "Keep recent results for a limited time.",
+    "params": {
+        "_items": "Cached values by key.",
+        "ttl": "Seconds an entry stays valid.",
+    },
+}
+
+
+def test_class_prompt_names_the_class_its_attributes_and_the_requested_parts():
+    prompt = build_class_prompt(CLASS_CONTEXT, {"a": "Known."}, CLASS_SLOTS)
+
+    assert "class named `Cache`" in prompt
+    assert "Base" in prompt
+    assert "_items: dict" in prompt and "ttl: int" in prompt
+    assert "# Entries older than ttl seconds are dropped." in prompt
+    assert "a`: Known." in prompt or "`a`" in prompt
+    assert "attributes _items, ttl" in prompt
+    assert "JSON" in prompt
+
+
+def test_class_draft_maps_the_reply_onto_summary_and_attributes():
+    fake = FakeAnthropic(reply=CLASS_REPLY)
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft == ClassDraft(
+        summary="Keep recent results for a limited time.",
+        attributes={
+            "_items": "Cached values by key.",
+            "ttl": "Seconds an entry stays valid.",
+        },
+    )
+    [call] = fake.calls
+    schema = call["output_config"]["format"]["schema"]
+    assert set(schema["required"]) == {"summary", "params"}
+    assert set(schema["properties"]["params"]["required"]) == {"_items", "ttl"}
+
+
+def test_class_draft_of_an_unusable_reply_is_empty():
+    fake = FakeAnthropic(reply="not a json object")
+    fake.response.content[0].text = "not json"
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
+    )
+
+
+def test_class_draft_stops_the_run_when_the_key_is_rejected():
+    provider = AnthropicProvider(
+        api_key="k", client=FakeAnthropic(error=StatusError(401))
+    )
+
+    with pytest.raises(DraftingStopped):
+        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+
+def test_class_draft_survives_an_ordinary_failure_as_an_empty_draft():
+    provider = AnthropicProvider(
+        api_key="k", client=FakeAnthropic(error=StatusError(500))
+    )
+
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
+    )
+
+
+def test_switch_on_stop_hands_class_drafting_to_the_replacement():
+    class Stopped(DescriptionProvider):
+        def draft_class_docstring(self, context, known, slots):
+            raise DraftingStopped("limit", "Daily limit reached.")
+
+    class Replacement(DescriptionProvider):
+        def draft_class_docstring(self, context, known, slots):
+            return ClassDraft(summary="From the replacement.")
+
+    provider = SwitchOnStop(Stopped(), lambda stopped: Replacement())
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft.summary == "From the replacement."
+    assert isinstance(provider.active, Replacement)
+
+
+# ---------------------------------------------------------------------------
+# A rate limit is waited out once before the run gives up
+# ---------------------------------------------------------------------------
+
+
+class RateLimited(Exception):
+    """An SDK 429, optionally carrying the response's Retry-After."""
+
+    def __init__(self, retry_after=None):
+        super().__init__("rate limited")
+        self.status_code = 429
+        headers = {} if retry_after is None else {"retry-after": str(retry_after)}
+        self.response = SimpleNamespace(headers=headers)
+
+
+class ScriptedAnthropic(FakeAnthropic):
+    """Raises each queued error in turn, then answers normally."""
+
+    def __init__(self, errors):
+        super().__init__()
+        self.errors = list(errors)
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.response
+
+
+@pytest.fixture
+def waits(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(
+        "PyCodeCommenter.direct_providers._wait",
+        lambda seconds: recorded.append(seconds),
+    )
+    return recorded
+
+
+def test_one_rate_limit_is_waited_out_and_the_request_retried(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=7)])
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [7]
+    assert len(fake.calls) == 2
+    assert draft.summary == "Shorten text to a maximum length."
+
+
+def test_a_second_rate_limit_stops_the_run_after_a_single_wait(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=3), RateLimited(retry_after=3)])
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    with pytest.raises(DraftingStopped) as stopped:
+        provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert stopped.value.reason == "rate_limited"
+    assert waits == [3]
+
+
+def test_a_missing_retry_after_uses_a_default_wait(waits):
+    provider = AnthropicProvider(api_key="k", client=ScriptedAnthropic([RateLimited()]))
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [20]
+
+
+@pytest.mark.parametrize("header, expected", [("3600", 60), ("0", 1), ("soon", 20)])
+def test_the_wait_is_kept_within_sensible_bounds(waits, header, expected):
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([RateLimited(retry_after=header)])
+    )
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [expected]
+
+
+def test_the_wait_is_reported_before_it_starts(waits):
+    seen = []
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([RateLimited(retry_after=9)])
+    )
+    provider.on_wait = seen.append
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert seen == [9]
+
+
+def test_other_errors_never_wait(waits):
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([StatusError(500)])
+    )
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == []
+
+
+def test_class_drafting_waits_out_a_rate_limit_too(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=4)])
+    fake.response.content[0].text = json.dumps(CLASS_REPLY)
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert waits == [4]
+    assert draft.summary == "Keep recent results for a limited time."
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1]", '"a string"'])
+def test_a_reply_that_is_not_a_json_object_is_a_failure(raw):
+    assert parse_reply(raw).failed is True
+
+
+@pytest.mark.parametrize(
+    "raw", ["", "   ", '{"summary": null, "params": {}}', '{"summary": 5}']
+)
+def test_no_answer_and_null_answers_are_declines_not_failures(raw):
+    assert parse_reply(raw).failed is False

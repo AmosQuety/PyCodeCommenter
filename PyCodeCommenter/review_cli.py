@@ -7,7 +7,7 @@ nothing.
 """
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Set, Tuple
 
 try:
     from . import review
@@ -54,7 +54,7 @@ def run_review(files: List[str], list_only: bool) -> None:
         return
     for path, source, items in found:
         try:
-            decisions = _ask_about(path, items)
+            decisions = _ask_about(path, source, items)
             stopped = False
         except QuitReview as quit_now:
             decisions, stopped = quit_now.args[0], True
@@ -82,26 +82,75 @@ def _list(found) -> None:
     )
 
 
-def _ask_about(path: str, items: List[ReviewItem]) -> List[Tuple[ReviewItem, tuple]]:
+def _ask_about(
+    path: str, source: str, items: List[ReviewItem]
+) -> List[Tuple[ReviewItem, tuple]]:
     """Asks about each item; raises QuitReview (carrying the decisions so
-    far) if the user quits."""
+    far) if the user quits.
+
+    For a function with several AI-drafted lines the whole docstring is
+    shown first and one answer can accept all of that function's AI lines
+    (only those: gaps and comments are still asked one by one).
+    """
     print(f"\n{path}: {_plural(len(items), 'item')} to review")
+    lines = source.replace("\r\n", "\n").split("\n")
     decisions: List[Tuple[ReviewItem, tuple]] = []
-    for item in items:
+    accepted_together: Set[int] = set()
+    shown: Set[int] = set()
+    for index, item in enumerate(items):
+        if index in accepted_together:
+            continue
+        waiting = _ai_items_waiting(items, index, accepted_together)
+        if len(waiting) > 1 and item.docstring_line not in shown:
+            shown.add(item.docstring_line)
+            _show_docstring(lines, item)
         print(f"\n{path}:{item.line} {_where(item)}")
         print(f"  {_LABELS[item.kind]}: {item.text}")
-        action = _choose(item.kind)
+        action = _choose(item.kind, len(waiting))
         if action == "quit":
             raise QuitReview(decisions)
+        if action == "accept_all":
+            decisions += [(items[j], ("accept", None)) for j in waiting]
+            accepted_together.update(waiting)
+            continue
         text = _ask_text() if action in ("edit", "fill") else None
         decisions.append((item, (action, text)))
     return decisions
 
 
-def _choose(kind: str) -> str:
+def _ai_items_waiting(items, index: int, decided: Set[int]) -> List[int]:
+    """Indexes of the undecided AI lines of ``items[index]``'s docstring,
+    from that item on. Empty unless the item is itself an AI line."""
+    item = items[index]
+    if item.kind != AI:
+        return []
+    return [
+        j
+        for j in range(index, len(items))
+        if items[j].kind == AI
+        and items[j].docstring_line == item.docstring_line
+        and j not in decided
+    ]
+
+
+def _show_docstring(lines: List[str], item: ReviewItem) -> None:
+    print(f"\nThe docstring of {item.definition or 'the module'}():")
+    for line in lines[item.docstring_line - 1 : item.docstring_end]:
+        print(f"  | {line}")
+
+
+def _choose(kind: str, waiting_in_function: int = 0) -> str:
     prompt, choices = _PROMPTS[kind]
+    if waiting_in_function > 1:
+        prompt = (
+            f"[a]ccept, [A]ccept all {waiting_in_function} AI-drafted lines "
+            "in this function, [e]dit, [s]kip, [q]uit: "
+        )
     while True:
-        answer = _ask(prompt).lower()
+        answer = _ask(prompt)
+        if answer == "A" and waiting_in_function > 1:
+            return "accept_all"
+        answer = answer.lower()
         if answer == "q":
             return "quit"
         if answer in choices:

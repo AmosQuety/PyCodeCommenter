@@ -149,12 +149,16 @@ def _infer_from_name(param_name: str) -> Optional[str]:
     'The computed result'
     >>> _infer_from_name('config_path')
     'Path to the config'
+    >>> _infer_from_name('path')
+    'Path to the file or directory'
     """
     lowered = param_name.lower()
     if lowered in {"path", "file_path", "dir_path", "directory"} or lowered.endswith(
         "_path"
     ):
-        return f"Path to the {lowered.replace('_path', '').replace('path', '').strip()}"
+        subject = lowered.replace("_path", "").replace("path", "").strip()
+        # A bare "path" leaves no subject to name.
+        return f"Path to the {subject}" if subject else "Path to the file or directory"
     if "url" in lowered:
         return "URL for the resource"
     if (

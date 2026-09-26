@@ -87,6 +87,9 @@ class FunctionDoc:
     args: List[ArgEntry] = field(default_factory=list)
     returns: Optional[ReturnsEntry] = None
     raises: List[RaisesEntry] = field(default_factory=list)
+    # Author-written Args: entries dropped because the parameter no longer
+    # exists; not rendered, only counted for the run summary.
+    dropped: int = 0
 
     def parts(self) -> List[DocPart]:
         """Every part, in document order."""
@@ -156,6 +159,7 @@ class AttributeEntry:
     name: str
     display_type: Optional[str]
     text: str
+    origin: str = Origin.AUTHOR
 
 
 @dataclass
@@ -164,6 +168,7 @@ class ClassDoc:
 
     Attributes:
         summary (str): The first line.
+        summary_origin (str): Where the summary came from (see ``Origin``).
         description (Optional[str]): Further paragraphs, if any.
         attributes (List[AttributeEntry]): Attributes, in document order.
         methods (str): An author's own Google-style ``Methods:`` section
@@ -174,6 +179,7 @@ class ClassDoc:
     description: Optional[str] = None
     attributes: List[AttributeEntry] = field(default_factory=list)
     methods: str = ""
+    summary_origin: str = Origin.AUTHOR
 
 
 def render_class_doc(doc: ClassDoc) -> str:
@@ -185,6 +191,11 @@ def render_class_doc(doc: ClassDoc) -> str:
     Returns:
         str: The docstring literal.
     """
+    if not doc.attributes and not doc.methods:
+        # Nothing after the summary/description: no trailing blank line.
+        if not doc.description:
+            return f'"""{doc.summary}"""'
+        return f'"""{doc.summary}\n\n{doc.description}\n"""'
     text = f'"""{doc.summary}\n\n'
     if doc.description:
         text += f"{doc.description}\n\n"

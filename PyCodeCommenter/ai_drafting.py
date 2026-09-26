@@ -14,21 +14,32 @@ import re
 from typing import Any, Dict, Optional
 
 try:
+    from .inference import AI_DRAFT_MARKER
+except (ImportError, ValueError):
+    from inference import AI_DRAFT_MARKER
+
+try:
     from .description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DocstringDraft,
         DraftSlots,
         FunctionContext,
         KnownText,
     )
-    from .function_doc import DocPart, FunctionDoc, Origin
+    from .function_doc import ClassDoc, DocPart, FunctionDoc, Origin
 except (ImportError, ValueError):
     from description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DocstringDraft,
         DraftSlots,
         FunctionContext,
         KnownText,
     )
-    from function_doc import DocPart, FunctionDoc, Origin
+    from function_doc import ClassDoc, DocPart, FunctionDoc, Origin
 
 MAX_SLOT_CHARS = 300
 MAX_SUMMARY_CHARS = 80
@@ -36,6 +47,10 @@ MAX_SUMMARY_CHARS = 80
 # Text that must never be written into a docstring: it would end the string
 # early, start an escape sequence, or pass a placeholder off as an answer.
 _FORBIDDEN_FRAGMENTS = ('"""', "'''", "\\", "TODO", "AI-drafted")
+
+# A reply that is only one of these means "no answer", not an answer (some
+# services send the string "null" instead of a JSON null).
+_NO_ANSWER_WORDS = frozenset({"null", "none", "n/a", "nil", "undefined"})
 
 # Parts whose text an AI draft may replace.
 _REPLACEABLE = (Origin.GUESS, Origin.WEAK)
@@ -127,6 +142,46 @@ def _fill(doc: FunctionDoc, attribute: str, text: Optional[str]) -> int:
     return 1
 
 
+def unfilled_parts(doc: FunctionDoc, slots: DraftSlots) -> int:
+    """How many requested parts an answer left unfilled. The optional
+    description is not counted: a model answering ``null`` for it is
+    normal, not a gap.
+
+    Args:
+        doc (FunctionDoc): The docstring parts, after the draft was applied.
+        slots (DraftSlots): What was requested.
+
+    Returns:
+        int: The number of requested parts still not AI-drafted.
+    """
+    left = int(slots.summary and doc.summary.origin != Origin.AI)
+    left += sum(a.part.origin != Origin.AI for a in doc.args if a.name in slots.params)
+    if slots.returns and doc.returns is not None:
+        left += int(doc.returns.part.origin != Origin.AI)
+    left += sum(
+        e.part.origin != Origin.AI for e in doc.raises if e.name in slots.raises
+    )
+    return left
+
+
+def unfilled_class_parts(doc: ClassDoc, slots: ClassSlots) -> int:
+    """:func:`unfilled_parts` for a class docstring."""
+    left = int(slots.summary and doc.summary_origin != Origin.AI)
+    left += sum(
+        a.origin != Origin.AI for a in doc.attributes if a.name in slots.attributes
+    )
+    return left
+
+
+def _answer_for(drafted: dict, name: str) -> Any:
+    """The reply's entry for ``name``. A model may drop the stars from
+    ``*args``/``**kwargs``, so an exact key wins and the unstarred name is
+    the fallback."""
+    if name in drafted:
+        return drafted[name]
+    return drafted.get(name.lstrip("*")) if name.startswith("*") else None
+
+
 def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
     """Fills Args:/Raises: entries by name, for requested names only."""
     if not isinstance(drafted, dict):
@@ -134,7 +189,7 @@ def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
     filled = 0
     for entry in entries:
         text = (
-            clean_slot_text(drafted.get(entry.name))
+            clean_slot_text(_answer_for(drafted, entry.name))
             if entry.name in requested
             else None
         )
@@ -152,7 +207,8 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
     """Normalises one drafted value, or declines it.
 
     Whitespace is collapsed to single spaces (a docstring line must stay one
-    line) and a final period is added if missing.
+    line) and a final period is added if missing. A value that is only a
+    "no answer" word (null, none, n/a, nil, undefined) is declined.
 
     Args:
         value (Any): The raw value from the provider.
@@ -166,9 +222,74 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
     text = re.sub(r"\s+", " ", value).strip()
     if not text or any(fragment in text for fragment in _FORBIDDEN_FRAGMENTS):
         return None
+    if text.rstrip(". ").lower() in _NO_ANSWER_WORDS:
+        return None
     if not text.endswith((".", "!", "?")):
         text += "."
     return text if len(text) <= max_chars else None
+
+
+def class_slots_for(doc: ClassDoc) -> ClassSlots:
+    """The gaps in a class docstring: a summary that is only "<Name> class."
+    and every attribute whose text is a TODO or says nothing beyond its type.
+
+    Args:
+        doc (ClassDoc): The class's docstring parts.
+
+    Returns:
+        ClassSlots: The parts worth drafting; empty if there are none.
+    """
+    return ClassSlots(
+        summary=doc.summary_origin in _REPLACEABLE,
+        attributes=tuple(a.name for a in doc.attributes if a.origin in _REPLACEABLE),
+    )
+
+
+def class_known_text(doc: ClassDoc) -> Dict[str, str]:
+    """The settled attribute text a provider should stay consistent with.
+
+    Args:
+        doc (ClassDoc): The class's docstring parts.
+
+    Returns:
+        Dict[str, str]: Author text and facts, by attribute name.
+    """
+    settled = (Origin.AUTHOR, Origin.FACT)
+    return {a.name: a.text for a in doc.attributes if a.origin in settled}
+
+
+def apply_class_draft(doc: ClassDoc, draft: ClassDraft, slots: ClassSlots) -> int:
+    """Writes a provider's answer into the requested gaps, labelling each.
+    Unrequested parts, unknown names and values that fail
+    :func:`clean_slot_text` are ignored, leaving that gap as it was.
+
+    Args:
+        doc (ClassDoc): The docstring parts, updated in place.
+        draft (ClassDraft): The provider's answer.
+        slots (ClassSlots): What was requested.
+
+    Returns:
+        int: How many parts were filled.
+    """
+    filled = 0
+    if slots.summary:
+        summary = clean_slot_text(draft.summary, MAX_SUMMARY_CHARS)
+        if summary:
+            doc.summary = f"{summary} {AI_DRAFT_MARKER}"
+            doc.summary_origin = Origin.AI
+            filled += 1
+    drafted = draft.attributes if isinstance(draft.attributes, dict) else {}
+    for attribute in doc.attributes:
+        text = (
+            clean_slot_text(drafted.get(attribute.name))
+            if attribute.name in slots.attributes
+            else None
+        )
+        if text:
+            attribute.text = f"{text} {AI_DRAFT_MARKER}"
+            attribute.origin = Origin.AI
+            filled += 1
+    return filled
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +344,61 @@ def build_prompt(context: FunctionContext, known: KnownText, slots: DraftSlots) 
             context.source,
         ]
     )
+
+
+def build_class_prompt(
+    context: ClassContext, known: Dict[str, str], slots: ClassSlots
+) -> str:
+    """Builds the drafting prompt for one class. The reply uses the same
+    JSON shape as a function's (``summary`` and ``params``), with each
+    attribute under ``params``, so one schema and parser serve both.
+
+    Args:
+        context (ClassContext): The class's facts and source outline.
+        known (Dict[str, str]): Attribute text already settled.
+        slots (ClassSlots): The parts to draft.
+
+    Returns:
+        str: The prompt text.
+    """
+    attributes = (
+        ", ".join(f"{a.name}: {a.type_hint}" for a in context.attributes) or "none"
+    )
+    bases = ", ".join(context.bases) or "none"
+    requested = [name for name in ("summary",) if getattr(slots, name)]
+    if slots.attributes:
+        requested.append("attributes " + ", ".join(slots.attributes))
+    return "\n".join(
+        [
+            "You are documenting a Python class for its Google-style docstring.",
+            "Fill in only the requested parts, grounded strictly in the code shown",
+            "(its comments included). Reply with a JSON object only.",
+            "Rules:",
+            "- One plain sentence per part; name code with `backticks`,"
+            " no other markdown.",
+            "- Say what something means or is for, not its type"
+            " (the type is already shown).",
+            "- Use null for any part the code does not make clear. Never guess.",
+            f"- summary: what the class represents or does, under "
+            f"{MAX_SUMMARY_CHARS} characters.",
+            '- Put each attribute\'s description under the JSON key "params".',
+            "",
+            f"This is a class named `{context.name}` (bases: {bases}).",
+            f"Attributes: {attributes}.",
+            _known_attribute_lines(known),
+            f"Requested: {'; '.join(requested)}.",
+            "",
+            "Source outline:",
+            context.source,
+        ]
+    )
+
+
+def _known_attribute_lines(known: Dict[str, str]) -> str:
+    if not known:
+        return "Already documented: nothing."
+    lines = [f"- attribute `{name}`: {text}" for name, text in known.items()]
+    return "Already documented (stay consistent, don't repeat):\n" + "\n".join(lines)
 
 
 def _known_lines(known: KnownText) -> str:
@@ -313,18 +489,22 @@ def parse_reply(raw: str) -> DocstringDraft:
 
     Returns:
         DocstringDraft: The draft; values are checked again before writing.
+            ``failed`` is set when the reply was not a JSON object; an
+            empty reply (a refusal) is a decline, not a failure.
     """
     text = (raw or "").strip()
+    if not text:
+        return DocstringDraft()  # nothing said, e.g. a refusal: a decline
     fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
     if fenced:
         text = fenced.group(1)
     try:
         payload = json.loads(text)
     except ValueError:
-        return DocstringDraft()
-    return (
-        draft_from_payload(payload) if isinstance(payload, dict) else DocstringDraft()
-    )
+        return DocstringDraft(failed=True)
+    if not isinstance(payload, dict):
+        return DocstringDraft(failed=True)  # not the JSON object asked for
+    return draft_from_payload(payload)
 
 
 def draft_from_payload(payload: Dict[str, Any]) -> DocstringDraft:

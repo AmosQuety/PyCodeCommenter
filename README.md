@@ -224,31 +224,60 @@ Some parts of a docstring can't be read off the code: what a function is *for*, 
 pycodecommenter generate app.py --ai-draft --dry-run
 ```
 
-- **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type.
-- **Every drafted line is labelled** `(AI-drafted, unreviewed)`, permanently, and `pycodecommenter validate` reports those lines until someone reviews them.
+- **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type. That covers functions (summary, arguments, return, exceptions) and classes (summary and `Attributes:`).
+- **Every drafted line is labelled** `(AI-drafted, unreviewed)`. The label stays until a person accepts the line in `pycodecommenter review` (`review --list` shows what is waiting), and `pycodecommenter validate` reports those lines until then.
 - **Review first.** `--dry-run` and `--output-dir` show the result without touching your files; writing with `--inplace` also requires `--accept-ai-drafts`.
-- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI).
+- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets.
+- **Know the cost first.** For a directory, the tool counts the requests it would make (`32 files, 121 functions and classes have gaps to draft`) and asks before sending; `--max-drafts N` caps the whole run.
 
 ### Providers and models
 
-By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
+By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
 
 | `--ai-provider` | Key read from | Install | Default model |
 |---|---|---|---|
 | `hosted` (default) | — | included | chosen by the service |
 | `gemini` | `GEMINI_API_KEY` | `pip install "pycodecommenter[gemini]"` | `gemini-2.5-flash` |
 | `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-astra` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-opus-5` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-haiku-4-5-20251001` |
 | `deepseek` | `DEEPSEEK_API_KEY` | `pip install "pycodecommenter[openai]"` | `deepseek-flash` |
 | `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | `pip install "pycodecommenter[openai]"` | none: pass `--ai-model` and `--ai-base-url` |
 
-**The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a cheaper one:
+If the provider's SDK isn't installed, PyCodeCommenter says so before it asks for consent or a key, and prints the exact command to install it into the Python you are running (it never runs pip itself). During a run, if you choose your own key after the hosted limit and that provider can't be used, you are asked again until one works or you type `skip`.
+
+**The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a more capable one:
 
 ```bash
-pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-haiku-4-5 --dry-run
+pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-opus-5 --dry-run
 ```
 
-Every run prints the provider and model it is using. If the key's environment variable isn't set, you're asked for the key (input hidden); keys are never read from or written to project files.
+Every run prints the provider and model it is using.
+
+### Why a TODO can still remain
+
+`--ai-draft` is meant to leave no `TODO(pycodecommenter)` behind, and the run summary says why any are left: the model **declined** a part (the code did not make it clear, and it would rather say nothing than guess), a request **failed**, drafting **stopped** (a spent limit, or `--max-drafts`), or the function's source looked like it holds a **secret** and was not sent. Fill what is left with `pycodecommenter review`, or run again. To check that nothing is unfinished, use `pycodecommenter coverage --strict` (counts only docstrings with no placeholder and no unreviewed AI line) and `pycodecommenter validate --fail-on-todo`.
+
+### Setting your API key
+
+Set the provider's variable in the shell before running (the names are in the table above). For the current terminal session only:
+
+```bash
+# bash / zsh
+export ANTHROPIC_API_KEY="your-key"
+```
+
+```powershell
+# PowerShell
+$env:ANTHROPIC_API_KEY = "your-key"
+```
+
+- **`.env` files are not read.** Export the variable yourself, or load the file in your own shell before running.
+- **No variable set?** In a terminal you are asked for the key with the input hidden. That key is used for this run only and is never saved; the tool never reads or writes keys in project files.
+- **Without a terminal** (CI, a redirect) there is no prompt, so the variable must be set.
+
+### What it costs
+
+Each function that still has gaps is one request to the provider, so a run over a large project makes many requests. With your own key the requests are billed by the provider. Bigger models cost more per request. The Anthropic default, `claude-haiku-4-5-20251001`, is a small model chosen because it is enough for one-sentence docstrings; a larger one such as `claude-opus-5` costs more per request and is chosen with `--ai-model`. Check your provider's price list before a large run. Try `--dry-run` on one file first.
 
 ---
 

@@ -12,18 +12,26 @@ key or exhausted quota stops drafting for the run (``DraftingStopped``);
 any other error leaves that one function's gaps as they are.
 """
 
+import importlib.util
 import logging
+import shlex
+import sys
+import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Dict, Optional
 
 try:
     from .ai_drafting import (
+        build_class_prompt,
         build_prompt,
         json_schema,
         json_schema_with_length_caps,
         parse_reply,
     )
     from .description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -33,12 +41,16 @@ try:
     )
 except (ImportError, ValueError):
     from ai_drafting import (
+        build_class_prompt,
         build_prompt,
         json_schema,
         json_schema_with_length_caps,
         parse_reply,
     )
     from description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -88,7 +100,7 @@ PROVIDERS = {
     "gemini": ProviderSpec("Gemini", "GEMINI_API_KEY", "gemini-2.5-flash", "gemini"),
     "openai": ProviderSpec("OpenAI", "OPENAI_API_KEY", "gpt-6-astra", "openai"),
     "anthropic": ProviderSpec(
-        "Anthropic", "ANTHROPIC_API_KEY", "claude-opus-5", "anthropic"
+        "Anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001", "anthropic"
     ),
     "deepseek": ProviderSpec(
         "DeepSeek",
@@ -101,6 +113,46 @@ PROVIDERS = {
         "OpenAI-compatible", "OPENAI_COMPATIBLE_API_KEY", None, "openai"
     ),
 }
+
+
+# The module each pip extra installs; its presence means the SDK is there.
+_SDK_MODULES = {
+    "gemini": "google.genai",
+    "openai": "openai",
+    "anthropic": "anthropic",
+}
+
+
+def sdk_installed(name: str) -> bool:
+    """Whether the SDK a provider needs can be imported here, checked
+    without importing it.
+
+    Args:
+        name (str): A key of :data:`PROVIDERS`.
+
+    Returns:
+        bool: ``True`` if the SDK is installed.
+    """
+    module = _SDK_MODULES[PROVIDERS[name].extra]
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        # find_spec raises when a parent package ("google") is missing.
+        return False
+
+
+def install_command(name: str) -> str:
+    """The command that installs a provider's SDK into this Python, ready
+    to copy. The tool prints it; it never runs it.
+
+    Args:
+        name (str): A key of :data:`PROVIDERS`.
+
+    Returns:
+        str: For example ``/path/to/python -m pip install "pycodecommenter[gemini]"``.
+    """
+    extra = PROVIDERS[name].extra
+    return f'{shlex.quote(sys.executable)} -m pip install "pycodecommenter[{extra}]"'
 
 
 def make_provider(
@@ -159,6 +211,9 @@ class DirectProvider(DescriptionProvider):
     extra = ""
     # The PROVIDERS entry whose default model applies when none is given.
     provider_name = ""
+    # Told the seconds about to be waited out for a rate limit, so the wait
+    # can be shown; set by whoever runs the provider (see ai_setup).
+    on_wait: Optional[Callable[[float], None]] = None
 
     def __init__(self, api_key: str, model: Optional[str] = None, client: Any = None):
         self.model = model or PROVIDERS[self.provider_name].default_model
@@ -172,13 +227,47 @@ class DirectProvider(DescriptionProvider):
         Raises:
             DraftingStopped: The key was rejected or its quota is exhausted.
         """
-        prompt = build_prompt(context, known, slots)
-        try:
-            return parse_reply(self._complete(prompt, slots))
-        except Exception as e:
-            self._raise_if_run_should_stop(e)
-            logger.warning(f"{self.label} request failed for {context.name}: {e}")
-            return DocstringDraft()
+        return self._draft(build_prompt(context, known, slots), slots, context.name)
+
+    def draft_class_docstring(
+        self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
+    ) -> ClassDraft:
+        """Drafts a class's summary and attributes with one call. The
+        attributes travel as the reply's ``params``, so the function schema
+        and parser are reused.
+
+        Raises:
+            DraftingStopped: The key was rejected or its quota is exhausted.
+        """
+        as_function = DraftSlots(summary=slots.summary, params=slots.attributes)
+        draft = self._draft(
+            build_class_prompt(context, known, slots), as_function, context.name
+        )
+        return ClassDraft(
+            summary=draft.summary, attributes=draft.params, failed=draft.failed
+        )
+
+    def _draft(self, prompt: str, slots: DraftSlots, name: str) -> DocstringDraft:
+        for attempt in range(2):
+            try:
+                return parse_reply(self._complete(prompt, slots))
+            except Exception as e:
+                if attempt == 0 and _status_of(e) == 429:
+                    self._wait_out_rate_limit(e)
+                    continue
+                self._raise_if_run_should_stop(e)
+                logger.warning(f"{self.label} request failed for {name}: {e}")
+                return DocstringDraft(failed=True)
+        return DocstringDraft(failed=True)
+
+    def _wait_out_rate_limit(self, error: Exception) -> None:
+        """Waits once for a 429 to clear before the run is given up on. A
+        per-minute limit usually clears; a spent quota fails again and
+        stops the run through :meth:`_raise_if_run_should_stop`."""
+        seconds = _retry_after_seconds(error)
+        if self.on_wait is not None:
+            self.on_wait(seconds)
+        _wait(seconds)
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
         """Makes the call and returns the reply text."""
@@ -378,6 +467,28 @@ class GeminiProvider(DirectProvider):
             },
         )
         return response.text or ""
+
+
+# How long a rate limit is waited out once: the server's Retry-After when it
+# gives one, kept within these bounds.
+_DEFAULT_RATE_LIMIT_WAIT_S = 20
+_MAX_RATE_LIMIT_WAIT_S = 60
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _retry_after_seconds(error: Exception) -> int:
+    """The Retry-After on an SDK error's response, within 1-60 seconds;
+    a default when there is none (google-genai errors carry no header)."""
+    headers = getattr(getattr(error, "response", None), "headers", None) or {}
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_RATE_LIMIT_WAIT_S
+    return max(1, min(seconds, _MAX_RATE_LIMIT_WAIT_S))
 
 
 def _status_of(error: Exception) -> Optional[int]:

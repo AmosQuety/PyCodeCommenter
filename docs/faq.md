@@ -40,16 +40,16 @@ With `generate --ai-draft`, an AI model drafts only the parts the code can't sta
 
 ## How is PyCodeCommenter different from AI docstring generators?
 
-PyCodeCommenter is **deterministic and rule-based**. AI docstring generators send your code to an external API and return generated prose; PyCodeCommenter uses only your local AST.
+By default PyCodeCommenter is **deterministic and rule-based**. AI docstring generators send your code to an external API and return generated prose; by default PyCodeCommenter uses only your local AST. The optional `--ai-draft` mode is the exception: it sends the source of functions that have gaps to the hosted service or to your own provider, and the table below describes the default mode, not `--ai-draft`.
 
 The tradeoffs:
 
-| Property | PyCodeCommenter | AI generators |
+| Property | PyCodeCommenter (by default) | AI generators |
 |---|---|---|
 | Deterministic output | ✅ Yes | ❌ No |
-| Network required | ❌ No | ✅ Yes |
-| Rate limits | ❌ No | ✅ Yes |
-| Cost | ✅ Free | Often paid |
+| Network required | ❌ No (yes with `--ai-draft`) | ✅ Yes |
+| Rate limits | ❌ No (the hosted service behind `--ai-draft` has a daily limit) | ✅ Yes |
+| Cost | ✅ Free (with `--ai-draft`: free on the hosted service, billed by your provider with your own key) | Often paid |
 | Prose quality | Functional starting point | Richer prose |
 | Signature accuracy | ✅ Always correct | Can hallucinate |
 | Validation | ✅ Built-in | Rarely included |
@@ -229,7 +229,7 @@ for py_file in Path("./src").rglob("*.py"):
 
 This is a deliberate placeholder marker, `GUESS_MARKER = "TODO(pycodecommenter): describe"`. The rule-based engine can extract the **type** of a return value or parameter from the AST — that's a fact — but it cannot infer the **meaning** of what's returned or what a parameter is for. Rather than fabricate a plausible-sounding sentence and present it as finished documentation, anything in this category (function/class descriptions, and any parameter description that doesn't match a lightweight name/type/default-based rule) is left as this marker.
 
-After running `generate --inplace`, search for `TODO(pycodecommenter): describe` and replace each instance with a real description. The validator's `check_content_quality` check will flag any left unresolved with a WARNING (`TODO` is in its placeholder list), so an incomplete pass is caught rather than silently shipped. See [Recipes: Documenting an Existing Codebase Safely](recipes.md#recipe-3-documenting-an-existing-codebase-safely) for the intended review workflow.
+With `--ai-draft` (see the [README](https://github.com/AmosQuety/PyCodeCommenter#ai-drafting-optional)) an AI model drafts these instead, for functions and for class summaries and `Attributes:`; the run summary says why any are left (the model declined, a request failed, drafting stopped, or the source looked like it holds a secret). Without it, or for what is left, after running `generate --inplace`, search for `TODO(pycodecommenter): describe` and replace each instance with a real description. The validator's `check_content_quality` check will flag any left unresolved with a WARNING (`TODO` is in its placeholder list), so an incomplete pass is caught rather than silently shipped. See [Recipes: Documenting an Existing Codebase Safely](recipes.md#recipe-3-documenting-an-existing-codebase-safely) for the intended review workflow.
 
 ---
 

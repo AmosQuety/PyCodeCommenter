@@ -23,13 +23,17 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 try:
     from .description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -40,6 +44,9 @@ try:
     from .ai_drafting import draft_from_payload
 except (ImportError, ValueError):
     from description_provider import (
+        ClassContext,
+        ClassDraft,
+        ClassSlots,
         DescriptionProvider,
         DocstringDraft,
         DraftingStopped,
@@ -75,16 +82,29 @@ class RemoteDescriptionProvider(DescriptionProvider):
     # wait than this isn't worth holding a run for.
     MAX_RATE_LIMIT_WAIT_S = 60
 
-    def __init__(self, backend_url: str, timeout_s: float = 90.0):
+    def __init__(
+        self,
+        backend_url: str,
+        timeout_s: float = 90.0,
+        on_wait: Optional[Callable[[float], None]] = None,
+    ):
         """
         Args:
             backend_url (str): The backend's base URL.
             timeout_s (float): Per-request timeout, in seconds. See the
                 class docstring for why this defaults so much higher than
                 a typical HTTP client timeout.
+            on_wait (Optional[Callable[[float], None]]): Called with the
+                number of seconds just before a rate limit is waited out,
+                so the wait can be shown instead of looking like a hang.
         """
         self.backend_url = backend_url.rstrip("/")
         self.timeout_s = timeout_s
+        self._on_wait = on_wait
+        self._class_endpoint_missing = False
+        # What the service said about the latest draft (X-AI-Draft-Outcome:
+        # "ok" or "failed"); None from an older service that doesn't say.
+        self._last_outcome: Optional[str] = None
         # The caller's daily allowance, as last reported by the backend.
         self.drafts_remaining: Optional[int] = None
         self.drafts_limit: Optional[int] = None
@@ -117,28 +137,101 @@ class RemoteDescriptionProvider(DescriptionProvider):
 
         body = dict(self._to_payload(context), known=_known_payload(known))
         body["slots"] = _slots_payload(slots)
+        try:
+            payload = self._post_draft("/v2/draft-docstring", body, context.name)
+        except _EndpointMissing:
+            return super().draft_docstring(context, known, slots)
+        draft = self._read_reply(
+            payload, draft_from_payload, DocstringDraft(failed=True)
+        )
+        return replace(draft, failed=True) if self._service_failed() else draft
+
+    def draft_class_docstring(
+        self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
+    ) -> ClassDraft:
+        """Drafts a class's summary and attributes via the backend's
+        ``/v2/draft-class-docstring`` endpoint, with the same rate-limit and
+        stop handling as :meth:`draft_docstring`. A backend without the
+        endpoint (HTTP 404) is remembered and not asked again: the class
+        keeps its TODO markers.
+
+        Args:
+            context (ClassContext): The class's AST-derived facts.
+            known (Dict[str, str]): Attribute text already settled.
+            slots (ClassSlots): The parts to draft.
+
+        Returns:
+            ClassDraft: Whatever the backend drafted; may be empty.
+
+        Raises:
+            DraftingStopped: The daily allowance or shared cap is spent.
+        """
+        if self._stopped is not None:
+            raise self._stopped
+        if self._class_endpoint_missing:
+            return ClassDraft(failed=True)
+
+        body = _class_payload(context, known, slots)
+        try:
+            payload = self._post_draft("/v2/draft-class-docstring", body, context.name)
+        except _EndpointMissing:
+            self._class_endpoint_missing = True
+            return ClassDraft(failed=True)
+        draft = self._read_reply(
+            payload, _class_draft_from_payload, ClassDraft(failed=True)
+        )
+        return replace(draft, failed=True) if self._service_failed() else draft
+
+    def _service_failed(self) -> bool:
+        """Whether the service said it could not produce this draft (no
+        model gave a usable answer), as opposed to answering with nothing."""
+        return self._last_outcome == "failed"
+
+    @staticmethod
+    def _read_reply(payload: Optional[dict], reader: Callable, empty: Any) -> Any:
+        """Turns a reply into a draft; ``empty`` (a failed draft) if there was
+        no reply or it could not be read."""
+        if payload is None:
+            return empty
+        try:
+            return reader(payload)
+        except Exception as e:
+            logger.warning(f"Hosted AI backend reply could not be read: {e}")
+            return empty
+
+    def _post_draft(self, path: str, body: dict, name: str) -> Optional[dict]:
+        """POSTs a draft request, waiting out a per-minute rate limit once.
+
+        Returns:
+            Optional[dict]: The reply, or ``None`` if the request failed
+                (logged; the gaps stay).
+
+        Raises:
+            _EndpointMissing: The backend answered 404 (an older version).
+            DraftingStopped: The daily allowance or shared cap is spent.
+        """
         for attempt in range(2):
             try:
-                payload = self._post_json("/v2/draft-docstring", body)
-                return draft_from_payload(payload)
+                return self._post_json(path, body)
             except urllib.error.HTTPError as e:
                 if e.code == 404:
-                    return super().draft_docstring(context, known, slots)
+                    raise _EndpointMissing(path) from e
                 if e.code != 429:
                     logger.warning(f"Hosted AI backend returned HTTP {e.code}: {e}")
-                    return DocstringDraft()
+                    return None
                 error = _error_body(e)
                 if error.get("error") != "rate_limited":
                     self._stop(error)
                     raise self._stopped
                 if attempt == 0:
-                    time.sleep(_bounded_wait(e, self.MAX_RATE_LIMIT_WAIT_S))
+                    wait = _bounded_wait(e, self.MAX_RATE_LIMIT_WAIT_S)
+                    if self._on_wait is not None:
+                        self._on_wait(wait)
+                    time.sleep(wait)
             except Exception as e:
-                logger.warning(
-                    f"Hosted AI backend request failed for {context.name}: {e}"
-                )
-                return DocstringDraft()
-        return DocstringDraft()
+                logger.warning(f"Hosted AI backend request failed for {name}: {e}")
+                return None
+        return None
 
     def _post_json(self, path: str, body: dict) -> dict:
         """POSTs JSON and returns the parsed reply, recording the allowance
@@ -148,6 +241,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
             urllib.error.HTTPError: The backend answered with an error status.
             Exception: A network, timeout, or parsing failure.
         """
+        self._last_outcome = None
         request = urllib.request.Request(
             f"{self.backend_url}{path}",
             data=json.dumps(body).encode("utf-8"),
@@ -168,6 +262,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
             self.drafts_remaining = remaining
         if limit is not None:
             self.drafts_limit = limit
+        self._last_outcome = headers.get("X-AI-Draft-Outcome")
 
     def _stop(self, error: Dict[str, Any]) -> None:
         reason = str(error.get("error") or "limit_reached")
@@ -247,6 +342,39 @@ class RemoteDescriptionProvider(DescriptionProvider):
             "raised_exceptions": context.raised_exceptions,
             "source": context.source,
         }
+
+
+class _EndpointMissing(Exception):
+    """The backend has no such endpoint (it is an older version)."""
+
+
+def _class_payload(
+    context: ClassContext, known: Dict[str, str], slots: ClassSlots
+) -> dict:
+    return {
+        "name": context.name,
+        "bases": list(context.bases),
+        "attributes": [
+            {"name": a.name, "type_hint": a.type_hint, "default": a.default}
+            for a in context.attributes
+        ],
+        "source": context.source,
+        "known": {"attributes": dict(known)},
+        "slots": {"summary": slots.summary, "attributes": list(slots.attributes)},
+    }
+
+
+def _class_draft_from_payload(payload: dict) -> ClassDraft:
+    summary = payload.get("summary")
+    attributes = payload.get("attributes")
+    return ClassDraft(
+        summary=summary if isinstance(summary, str) else None,
+        attributes=(
+            {k: v for k, v in attributes.items() if isinstance(v, str)}
+            if isinstance(attributes, dict)
+            else {}
+        ),
+    )
 
 
 def _slots_payload(slots: DraftSlots) -> dict:

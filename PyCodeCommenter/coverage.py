@@ -20,6 +20,11 @@ from pathlib import Path
 from typing import Dict, List
 from dataclasses import dataclass, field
 
+try:
+    from .inference import AI_DRAFT_MARKER, GUESS_MARKER
+except (ImportError, ValueError):
+    from inference import AI_DRAFT_MARKER, GUESS_MARKER
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -93,6 +98,7 @@ class ProjectCoverage:
     """Coverage statistics for entire project."""
 
     files: Dict[str, FileCoverage] = field(default_factory=dict)
+    strict: bool = False
 
     @property
     def total_coverage(self) -> float:
@@ -107,7 +113,9 @@ class ProjectCoverage:
     def print_report(self):
         """Print coverage report to console."""
         print("\n" + "=" * 80)
-        print("DOCUMENTATION COVERAGE REPORT")
+        print("DOCUMENTATION COVERAGE REPORT" + (" (STRICT)" if self.strict else ""))
+        if self.strict:
+            print(STRICT_NOTE)
         print("=" * 80)
 
         for path, coverage in sorted(self.files.items()):
@@ -122,7 +130,7 @@ class ProjectCoverage:
 
     def to_json(self) -> dict:
         """Export as JSON."""
-        return {
+        exported = {
             "total_coverage": self.total_coverage,
             "files": {
                 path: {
@@ -133,6 +141,9 @@ class ProjectCoverage:
                 for path, cov in self.files.items()
             },
         }
+        if self.strict:
+            exported["strict"] = True
+        return exported
 
 
 def shields_badge_dict(percentage: float, label: str = "docs coverage") -> dict:
@@ -163,8 +174,32 @@ def shields_badge_dict(percentage: float, label: str = "docs coverage") -> dict:
     }
 
 
+STRICT_NOTE = (
+    "Strict: a docstring with a TODO(pycodecommenter) placeholder or an "
+    "unreviewed AI-drafted line does not count."
+)
+
+
 class CoverageAnalyzer:
-    """Analyzes documentation coverage for files or projects."""
+    """Analyzes documentation coverage for files or projects.
+
+    By default a function or class counts as documented if it has a
+    non-empty docstring: a presence metric. With ``strict=True`` a docstring
+    that still holds a ``TODO(pycodecommenter)`` placeholder or an
+    unreviewed AI-drafted line does not count, so a project of generated
+    stubs does not read as 100%.
+    """
+
+    def __init__(self, strict: bool = False):
+        self.strict = strict
+
+    def _is_documented(self, node: ast.AST) -> bool:
+        docstring = ast.get_docstring(node)
+        if not docstring:
+            return False
+        if self.strict:
+            return GUESS_MARKER not in docstring and AI_DRAFT_MARKER not in docstring
+        return True
 
     def analyze_file(self, file_path: str) -> FileCoverage:
         """Analyze a single Python file."""
@@ -177,11 +212,11 @@ class CoverageAnalyzer:
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 coverage.total_functions += 1
-                if ast.get_docstring(node):
+                if self._is_documented(node):
                     coverage.documented_functions += 1
             elif isinstance(node, ast.ClassDef):
                 coverage.total_classes += 1
-                if ast.get_docstring(node):
+                if self._is_documented(node):
                     coverage.documented_classes += 1
 
         return coverage
@@ -191,7 +226,7 @@ class CoverageAnalyzer:
     ) -> ProjectCoverage:
         """Analyze all Python files in a directory."""
         patterns = list(DEFAULT_COVERAGE_EXCLUDES) + list(exclude_patterns or [])
-        project = ProjectCoverage()
+        project = ProjectCoverage(strict=self.strict)
 
         root = Path(directory)
         for py_file in root.rglob("*.py"):
