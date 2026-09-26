@@ -9,7 +9,7 @@ project file, where they would end up in version control.
 import getpass
 import os
 import sys
-from typing import Optional
+from typing import List, Optional
 
 try:
     from .consent import HOSTED, ensure_consent
@@ -25,6 +25,7 @@ try:
         make_provider,
         sdk_installed,
     )
+    from .draft_limits import count_draft_requests
     from .progress import Progress
     from .remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 except ImportError:
@@ -37,6 +38,7 @@ except ImportError:
         make_provider,
         sdk_installed,
     )
+    from draft_limits import count_draft_requests
     from progress import Progress
     from remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 
@@ -110,6 +112,48 @@ def build_ai_provider(
     if progress is not None:
         provider.on_wait = progress.waiting
     return _with_progress(SwitchOnStop(provider, _no_replacement), progress)
+
+
+def preflight(
+    targets: List[str], limit: Optional[int], ask: bool, include_module_docstrings: bool
+) -> bool:
+    """Says how many requests an AI run over a directory would make, and
+    (when asked to) whether to go ahead. Nothing is sent to find out.
+
+    Args:
+        targets (List[str]): The files the run would process.
+        limit (Optional[int]): ``--max-drafts``, if given.
+        ask (bool): Ask for a yes before going on (an interactive run
+            that has not passed the consent flag).
+        include_module_docstrings (bool): As for the real run.
+
+    Returns:
+        bool: ``True`` to go ahead, ``False`` if the user said no.
+    """
+    counts = count_draft_requests(targets, include_module_docstrings)
+    if counts.requests == 0:
+        return True
+    files = f"{counts.files} file{'' if counts.files == 1 else 's'}"
+    things = (
+        "function or class has a gap"
+        if counts.requests == 1
+        else "functions and classes have gaps"
+    )
+    cap = (
+        f"; at most {limit} will be sent (--max-drafts {limit})"
+        if limit is not None and limit < counts.requests
+        else ""
+    )
+    status(
+        f"AI drafting: {files}, {counts.requests} {things} to draft "
+        f"(one request each){cap}."
+    )
+    if not ask:
+        return True
+    if _ask("Continue? [y/N]: ").lower() in ("y", "yes"):
+        return True
+    status("Nothing was sent.")
+    return False
 
 
 def provider_label(provider: SwitchOnStop) -> str:

@@ -18,9 +18,12 @@ from .ai_setup import (
     AI_PROVIDER_CHOICES,
     AISetupError,
     build_ai_provider,
+    is_interactive,
+    preflight,
     report_ai_outcome,
     status,
 )
+from .draft_limits import DraftBudget
 from .run_report import GenerationReport
 from .progress import Progress
 from .review_cli import run_review
@@ -99,7 +102,18 @@ def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
     ]
 
 
-def _generate(args, description_provider, run_report, progress=None):
+def _positive_int(text):
+    """argparse type for a whole number of at least 1."""
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number >= 1")
+    return value
+
+
+def _generate(args, description_provider, run_report, progress=None, budget=None):
     """Runs the generate command for a file or directory target.
 
     Args:
@@ -110,6 +124,8 @@ def _generate(args, description_provider, run_report, progress=None):
             the end-of-run summary.
         progress (Optional[Progress]): The live status line for AI
             drafting, or ``None``.
+        budget (Optional[DraftBudget]): The cap on AI requests
+            (``--max-drafts``), or ``None``.
     """
     if os.path.isdir(args.file):
         if args.output:
@@ -127,6 +143,14 @@ def _generate(args, description_provider, run_report, progress=None):
         if args.backup and not args.inplace:
             print("Warning: --backup has no effect without --inplace")
 
+        if description_provider is not None and not preflight(
+            targets,
+            args.max_drafts,
+            ask=is_interactive() and not args.yes_send_code_to_ai,
+            include_module_docstrings=args.include_module_docstrings,
+        ):
+            sys.exit(1)
+
         any_changed = False
         any_failed = False
         written_count = 0
@@ -137,6 +161,7 @@ def _generate(args, description_provider, run_report, progress=None):
                 description_provider=description_provider,
                 include_module_docstrings=args.include_module_docstrings,
                 progress=progress,
+                budget=budget,
             ).from_file(target)
             if not commenter.parsed_code:
                 print(f"[FAIL] Could not parse {target}")
@@ -225,6 +250,7 @@ def _generate(args, description_provider, run_report, progress=None):
         description_provider=description_provider,
         include_module_docstrings=args.include_module_docstrings,
         progress=progress,
+        budget=budget,
     ).from_file(args.file)
     if not commenter.parsed_code:
         print(f"Error: Could not parse {args.file}")
@@ -397,6 +423,17 @@ def main():
         ),
     )
     generate_parser.add_argument(
+        "--max-drafts",
+        type=_positive_int,
+        metavar="N",
+        help=(
+            "With --ai-draft, send at most N requests in the whole run (one "
+            "per function or class with gaps); the rest keep their TODO "
+            "markers. Useful to try AI drafting on a large project, or to "
+            "stay inside the hosted service's daily limit."
+        ),
+    )
+    generate_parser.add_argument(
         "--accept-ai-drafts",
         action="store_true",
         help=(
@@ -498,6 +535,9 @@ def main():
     if args.command == "generate":
         description_provider = None
         progress = Progress() if args.ai_draft else None
+        budget = DraftBudget(args.max_drafts) if args.max_drafts else None
+        if args.max_drafts and not args.ai_draft:
+            print("Warning: --max-drafts has no effect without --ai-draft")
         if args.ai_draft:
             if args.inplace and not args.accept_ai_drafts:
                 print(
@@ -525,7 +565,7 @@ def main():
 
         run_report = GenerationReport()
         try:
-            _generate(args, description_provider, run_report, progress)
+            _generate(args, description_provider, run_report, progress, budget)
         finally:
             # Runs however _generate exits (it calls sys.exit on several
             # paths), so the user always learns what the run did.
@@ -537,6 +577,11 @@ def main():
                     status(line)
             if description_provider is not None:
                 report_ai_outcome(description_provider)
+            if budget is not None and budget.spent:
+                status(
+                    f"\nAI drafting stopped at --max-drafts {budget.limit}. Functions "
+                    "after that point keep their TODO markers."
+                )
 
     elif args.command == "review":
         files = (

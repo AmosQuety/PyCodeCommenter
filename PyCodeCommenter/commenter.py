@@ -202,6 +202,7 @@ class PyCodeCommenter:
         description_provider: Optional[DescriptionProvider] = None,
         include_module_docstrings: bool = False,
         progress: Optional[Any] = None,
+        budget: Optional[Any] = None,
     ):
         """
         Args:
@@ -226,6 +227,10 @@ class PyCodeCommenter:
                 (``drafting(function_name)``) and when the request is over
                 (``clear()``), so a slow request can be shown on screen
                 (see ``progress.py``). ``None`` shows nothing.
+            budget (Optional[Any]): Caps AI requests across a whole run:
+                ``take()`` is called before each request and a ``False``
+                answer skips it (see ``draft_limits.DraftBudget``).
+                ``None`` means no cap.
         """
         self.code = ""
         self.parsed_code = None
@@ -235,6 +240,7 @@ class PyCodeCommenter:
         self.file_path = None
         self._description_provider = description_provider
         self._progress = progress
+        self._budget = budget
         # Set once a provider says it can't draft any more this run (for
         # example, the daily allowance is spent); later functions keep
         # their gaps and the CLI reports why.
@@ -610,8 +616,7 @@ class PyCodeCommenter:
         slots = slots_for(doc)
         if slots.is_empty():
             return
-        if self.drafting_stopped is not None:
-            self.report.record_not_tried()
+        if not self._may_ask_provider():
             return
         if self._progress is not None:
             self._progress.drafting(func_node.name)
@@ -638,6 +643,17 @@ class PyCodeCommenter:
             unfilled_parts(doc, slots), getattr(draft, "failed", False)
         )
 
+    def _may_ask_provider(self) -> bool:
+        """Whether a request may be made now. If not (drafting has stopped,
+        or the run's request budget is spent) the skip is counted for the
+        run summary."""
+        if self.drafting_stopped is not None or (
+            self._budget is not None and not self._budget.take()
+        ):
+            self.report.record_not_tried()
+            return False
+        return True
+
     def _fill_class_gaps_with_provider(
         self, class_node: ast.ClassDef, doc: ClassDoc
     ) -> None:
@@ -654,8 +670,7 @@ class PyCodeCommenter:
         slots = class_slots_for(doc)
         if slots.is_empty():
             return
-        if self.drafting_stopped is not None:
-            self.report.record_not_tried()
+        if not self._may_ask_provider():
             return
         if self._progress is not None:
             self._progress.drafting(f"class {class_node.name}")
