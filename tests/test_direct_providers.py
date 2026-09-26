@@ -276,7 +276,7 @@ def test_other_errors_skip_only_that_function():
         CONTEXT, KNOWN, SLOTS
     )
 
-    assert draft == DocstringDraft()
+    assert draft == DocstringDraft(failed=True)  # a failure, not a decline
 
 
 # ---------------------------------------------------------------------------
@@ -477,8 +477,8 @@ def test_class_draft_of_an_unusable_reply_is_empty():
     fake.response.content[0].text = "not json"
     provider = AnthropicProvider(api_key="k", client=fake)
 
-    assert (
-        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft()
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
     )
 
 
@@ -496,8 +496,8 @@ def test_class_draft_survives_an_ordinary_failure_as_an_empty_draft():
         api_key="k", client=FakeAnthropic(error=StatusError(500))
     )
 
-    assert (
-        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft()
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
     )
 
 
@@ -629,3 +629,15 @@ def test_class_drafting_waits_out_a_rate_limit_too(waits):
 
     assert waits == [4]
     assert draft.summary == "Keep recent results for a limited time."
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1]", '"a string"'])
+def test_a_reply_that_is_not_a_json_object_is_a_failure(raw):
+    assert parse_reply(raw).failed is True
+
+
+@pytest.mark.parametrize(
+    "raw", ["", "   ", '{"summary": null, "params": {}}', '{"summary": 5}']
+)
+def test_no_answer_and_null_answers_are_declines_not_failures(raw):
+    assert parse_reply(raw).failed is False

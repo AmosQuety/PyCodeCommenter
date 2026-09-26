@@ -137,7 +137,9 @@ class RemoteDescriptionProvider(DescriptionProvider):
             payload = self._post_draft("/v2/draft-docstring", body, context.name)
         except _EndpointMissing:
             return super().draft_docstring(context, known, slots)
-        return self._read_reply(payload, draft_from_payload, DocstringDraft())
+        return self._read_reply(
+            payload, draft_from_payload, DocstringDraft(failed=True)
+        )
 
     def draft_class_docstring(
         self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
@@ -162,19 +164,22 @@ class RemoteDescriptionProvider(DescriptionProvider):
         if self._stopped is not None:
             raise self._stopped
         if self._class_endpoint_missing:
-            return ClassDraft()
+            return ClassDraft(failed=True)
 
         body = _class_payload(context, known, slots)
         try:
             payload = self._post_draft("/v2/draft-class-docstring", body, context.name)
         except _EndpointMissing:
             self._class_endpoint_missing = True
-            return ClassDraft()
-        return self._read_reply(payload, _class_draft_from_payload, ClassDraft())
+            return ClassDraft(failed=True)
+        return self._read_reply(
+            payload, _class_draft_from_payload, ClassDraft(failed=True)
+        )
 
     @staticmethod
     def _read_reply(payload: Optional[dict], reader: Callable, empty: Any) -> Any:
-        """Turns a reply into a draft; anything unreadable is an empty one."""
+        """Turns a reply into a draft; ``empty`` (a failed draft) if there was
+        no reply or it could not be read."""
         if payload is None:
             return empty
         try:

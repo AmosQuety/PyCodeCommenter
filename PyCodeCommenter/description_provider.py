@@ -110,6 +110,10 @@ class DocstringDraft:
     params: Dict[str, str] = field(default_factory=dict)
     returns: Optional[str] = None
     raises: Dict[str, str] = field(default_factory=dict)
+    # True when the request itself failed (network or service error), as
+    # opposed to the model answering with nothing: the run summary tells the
+    # two apart.
+    failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,6 +154,7 @@ class ClassDraft:
 
     summary: Optional[str] = None
     attributes: Dict[str, str] = field(default_factory=dict)
+    failed: bool = False  # see DocstringDraft.failed
 
 
 class DraftingStopped(Exception):

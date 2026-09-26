@@ -469,7 +469,7 @@ def test_a_backend_without_class_support_is_asked_only_once(monkeypatch):
     first = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
     second = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
 
-    assert first == ClassDraft() and second == ClassDraft()
+    assert first == ClassDraft(failed=True) and second == ClassDraft(failed=True)
     assert urls == ["https://example.test/v2/draft-class-docstring"]
 
 
@@ -511,8 +511,8 @@ def test_class_draft_survives_a_network_failure_as_an_empty_draft(monkeypatch):
     provider = RemoteDescriptionProvider(backend_url="https://example.test")
     _patch_network(monkeypatch, [OSError("network down")])
 
-    assert (
-        provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft()
+    assert provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS) == ClassDraft(
+        failed=True
     )
 
 

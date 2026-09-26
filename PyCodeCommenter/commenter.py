@@ -51,6 +51,8 @@ try:
         class_slots_for,
         known_text,
         slots_for,
+        unfilled_class_parts,
+        unfilled_parts,
     )
     from .class_outline import outline_source
     from .comment_docs import (
@@ -104,6 +106,8 @@ except (ImportError, ValueError):
         class_slots_for,
         known_text,
         slots_for,
+        unfilled_class_parts,
+        unfilled_parts,
     )
     from class_outline import outline_source
     from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
@@ -601,10 +605,13 @@ class PyCodeCommenter:
                 function node.
             doc (FunctionDoc): The docstring parts, updated in place.
         """
-        if self._description_provider is None or self.drafting_stopped is not None:
+        if self._description_provider is None:
             return
         slots = slots_for(doc)
         if slots.is_empty():
+            return
+        if self.drafting_stopped is not None:
+            self.report.record_not_tried()
             return
         if self._progress is not None:
             self._progress.drafting(func_node.name)
@@ -614,17 +621,22 @@ class PyCodeCommenter:
             )
         except DraftingStopped as e:
             self.drafting_stopped = e
+            self.report.record_not_tried()
             return
         except Exception as e:
             logger.warning(
                 f"Description provider failed for {func_node.name}, "
                 f"leaving its gaps as they are: {e}"
             )
+            self.report.record_draft(declined=0, failed=True)
             return
         finally:
             if self._progress is not None:
                 self._progress.clear()
         apply_draft(doc, draft, slots)
+        self.report.record_draft(
+            unfilled_parts(doc, slots), getattr(draft, "failed", False)
+        )
 
     def _fill_class_gaps_with_provider(
         self, class_node: ast.ClassDef, doc: ClassDoc
@@ -637,10 +649,13 @@ class PyCodeCommenter:
             class_node (ast.ClassDef): The class node.
             doc (ClassDoc): The docstring parts, updated in place.
         """
-        if self._description_provider is None or self.drafting_stopped is not None:
+        if self._description_provider is None:
             return
         slots = class_slots_for(doc)
         if slots.is_empty():
+            return
+        if self.drafting_stopped is not None:
+            self.report.record_not_tried()
             return
         if self._progress is not None:
             self._progress.drafting(f"class {class_node.name}")
@@ -650,17 +665,22 @@ class PyCodeCommenter:
             )
         except DraftingStopped as e:
             self.drafting_stopped = e
+            self.report.record_not_tried()
             return
         except Exception as e:
             logger.warning(
                 f"Description provider failed for class {class_node.name}, "
                 f"leaving its gaps as they are: {e}"
             )
+            self.report.record_draft(declined=0, failed=True)
             return
         finally:
             if self._progress is not None:
                 self._progress.clear()
         apply_class_draft(doc, draft, slots)
+        self.report.record_draft(
+            unfilled_class_parts(doc, slots), getattr(draft, "failed", False)
+        )
 
     def _build_class_context(
         self, class_node: ast.ClassDef, doc: ClassDoc

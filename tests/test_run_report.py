@@ -158,3 +158,145 @@ def test_summary_follows_other_output_modes(tmp_path, monkeypatch, capsys, mode)
     captured = run_cli(["generate", str(target), *mode], monkeypatch, capsys)
 
     assert "Summary:" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Why gaps are left after AI drafting
+# ---------------------------------------------------------------------------
+
+from PyCodeCommenter.description_provider import (  # noqa: E402
+    ClassDraft,
+    DraftingStopped,
+)
+
+THREE = """def one(a):
+    return a
+
+
+def two(b):
+    return b
+
+
+def three(c):
+    return c
+"""
+
+CLASS_ONE = """class Box:
+    def __init__(self, size):
+        self.size = size
+"""
+
+
+class Scripted(DescriptionProvider):
+    """Answers each request from a list: a draft, or an error to raise."""
+
+    def __init__(self, answers):
+        self.answers = iter(answers)
+
+    def _next(self):
+        answer = next(self.answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def draft_docstring(self, context, known, slots):
+        return self._next()
+
+    def draft_class_docstring(self, context, known, slots):
+        return self._next()
+
+
+def filled(name):
+    return DocstringDraft(
+        summary=f"Do {name}.",
+        params={"a": "The value.", "b": "The value.", "c": "The value."},
+        returns="The result.",
+    )
+
+
+def drafted_report(code, answers):
+    return report_for(code, Scripted(answers))
+
+
+def test_every_request_that_was_answered_is_counted_with_nothing_left_over():
+    report = drafted_report(THREE, [filled("one"), filled("two"), filled("three")])
+
+    assert (report.ai_requests, report.ai_failed, report.ai_not_tried) == (3, 0, 0)
+    assert report.ai_declined == 0
+
+
+def test_gaps_the_model_declined_are_counted_and_worded():
+    report = drafted_report(THREE, [DocstringDraft()] * 3)
+
+    assert report.ai_declined > 0 and report.ai_failed == 0
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "declined" in text
+
+
+def test_a_failed_request_is_not_counted_as_a_decline():
+    report = drafted_report(
+        THREE, [DocstringDraft(failed=True), filled("two"), filled("three")]
+    )
+
+    assert report.ai_failed == 1
+    assert report.ai_declined == 0
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "1 request failed" in text
+
+
+def test_a_provider_that_raises_counts_as_a_failed_request():
+    report = drafted_report(
+        THREE, [RuntimeError("boom"), filled("two"), filled("three")]
+    )
+
+    assert report.ai_failed == 1 and report.ai_requests == 3
+
+
+def test_functions_after_a_stop_are_counted_as_not_tried():
+    stop = DraftingStopped("user_daily_limit_reached", "Daily limit reached.")
+
+    report = drafted_report(THREE, [filled("one"), stop])
+
+    assert report.ai_requests == 1  # only the first got an answer
+    assert report.ai_not_tried == 2  # the one that hit the limit, and the last
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "2 functions or classes not tried" in text
+
+
+def test_class_requests_are_counted_the_same_way():
+    failed = drafted_report(CLASS_ONE, [ClassDraft(failed=True), filled("__init__")])
+    declined = drafted_report(CLASS_ONE, [ClassDraft(), filled("__init__")])
+
+    assert failed.ai_failed == 1
+    assert declined.ai_declined > 0 and declined.ai_failed == 0
+
+
+def test_no_ai_numbers_appear_without_a_provider():
+    report = report_for(THREE)
+
+    assert (
+        report.ai_requests,
+        report.ai_declined,
+        report.ai_failed,
+        report.ai_not_tried,
+    ) == (0, 0, 0, 0)
+    text = "\n".join(report.summary_lines(preview=False, ai_used=False))
+    assert "declined" not in text and "failed" not in text
+
+
+def test_a_fully_drafted_run_adds_no_problem_lines():
+    report = drafted_report(THREE, [filled("one"), filled("two"), filled("three")])
+
+    text = "\n".join(report.summary_lines(preview=False, ai_used=True))
+    assert "declined" not in text and "failed" not in text and "not tried" not in text
+
+
+def test_the_new_counts_add_up_across_files():
+    first = drafted_report(THREE, [DocstringDraft(failed=True)] * 3)
+    second = drafted_report(THREE, [DocstringDraft(failed=True)] * 3)
+
+    total = GenerationReport()
+    total.merge(first)
+    total.merge(second)
+
+    assert total.ai_failed == 6

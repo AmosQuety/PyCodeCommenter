@@ -243,7 +243,9 @@ class DirectProvider(DescriptionProvider):
         draft = self._draft(
             build_class_prompt(context, known, slots), as_function, context.name
         )
-        return ClassDraft(summary=draft.summary, attributes=draft.params)
+        return ClassDraft(
+            summary=draft.summary, attributes=draft.params, failed=draft.failed
+        )
 
     def _draft(self, prompt: str, slots: DraftSlots, name: str) -> DocstringDraft:
         for attempt in range(2):
@@ -255,8 +257,8 @@ class DirectProvider(DescriptionProvider):
                     continue
                 self._raise_if_run_should_stop(e)
                 logger.warning(f"{self.label} request failed for {name}: {e}")
-                return DocstringDraft()
-        return DocstringDraft()
+                return DocstringDraft(failed=True)
+        return DocstringDraft(failed=True)
 
     def _wait_out_rate_limit(self, error: Exception) -> None:
         """Waits once for a 429 to clear before the run is given up on. A

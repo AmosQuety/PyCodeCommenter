@@ -142,6 +142,37 @@ def _fill(doc: FunctionDoc, attribute: str, text: Optional[str]) -> int:
     return 1
 
 
+def unfilled_parts(doc: FunctionDoc, slots: DraftSlots) -> int:
+    """How many requested parts an answer left unfilled. The optional
+    description is not counted: a model answering ``null`` for it is
+    normal, not a gap.
+
+    Args:
+        doc (FunctionDoc): The docstring parts, after the draft was applied.
+        slots (DraftSlots): What was requested.
+
+    Returns:
+        int: The number of requested parts still not AI-drafted.
+    """
+    left = int(slots.summary and doc.summary.origin != Origin.AI)
+    left += sum(a.part.origin != Origin.AI for a in doc.args if a.name in slots.params)
+    if slots.returns and doc.returns is not None:
+        left += int(doc.returns.part.origin != Origin.AI)
+    left += sum(
+        e.part.origin != Origin.AI for e in doc.raises if e.name in slots.raises
+    )
+    return left
+
+
+def unfilled_class_parts(doc: ClassDoc, slots: ClassSlots) -> int:
+    """:func:`unfilled_parts` for a class docstring."""
+    left = int(slots.summary and doc.summary_origin != Origin.AI)
+    left += sum(
+        a.origin != Origin.AI for a in doc.attributes if a.name in slots.attributes
+    )
+    return left
+
+
 def _answer_for(drafted: dict, name: str) -> Any:
     """The reply's entry for ``name``. A model may drop the stars from
     ``*args``/``**kwargs``, so an exact key wins and the unstarred name is
@@ -458,18 +489,22 @@ def parse_reply(raw: str) -> DocstringDraft:
 
     Returns:
         DocstringDraft: The draft; values are checked again before writing.
+            ``failed`` is set when the reply was not a JSON object; an
+            empty reply (a refusal) is a decline, not a failure.
     """
     text = (raw or "").strip()
+    if not text:
+        return DocstringDraft()  # nothing said, e.g. a refusal: a decline
     fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
     if fenced:
         text = fenced.group(1)
     try:
         payload = json.loads(text)
     except ValueError:
-        return DocstringDraft()
-    return (
-        draft_from_payload(payload) if isinstance(payload, dict) else DocstringDraft()
-    )
+        return DocstringDraft(failed=True)
+    if not isinstance(payload, dict):
+        return DocstringDraft(failed=True)  # not the JSON object asked for
+    return draft_from_payload(payload)
 
 
 def draft_from_payload(payload: Dict[str, Any]) -> DocstringDraft:
