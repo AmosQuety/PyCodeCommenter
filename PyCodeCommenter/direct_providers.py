@@ -12,7 +12,10 @@ key or exhausted quota stops drafting for the run (``DraftingStopped``);
 any other error leaves that one function's gaps as they are.
 """
 
+import importlib.util
 import logging
+import shlex
+import sys
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -101,6 +104,46 @@ PROVIDERS = {
         "OpenAI-compatible", "OPENAI_COMPATIBLE_API_KEY", None, "openai"
     ),
 }
+
+
+# The module each pip extra installs; its presence means the SDK is there.
+_SDK_MODULES = {
+    "gemini": "google.genai",
+    "openai": "openai",
+    "anthropic": "anthropic",
+}
+
+
+def sdk_installed(name: str) -> bool:
+    """Whether the SDK a provider needs can be imported here, checked
+    without importing it.
+
+    Args:
+        name (str): A key of :data:`PROVIDERS`.
+
+    Returns:
+        bool: ``True`` if the SDK is installed.
+    """
+    module = _SDK_MODULES[PROVIDERS[name].extra]
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        # find_spec raises when a parent package ("google") is missing.
+        return False
+
+
+def install_command(name: str) -> str:
+    """The command that installs a provider's SDK into this Python, ready
+    to copy. The tool prints it; it never runs it.
+
+    Args:
+        name (str): A key of :data:`PROVIDERS`.
+
+    Returns:
+        str: For example ``/path/to/python -m pip install "pycodecommenter[gemini]"``.
+    """
+    extra = PROVIDERS[name].extra
+    return f'{shlex.quote(sys.executable)} -m pip install "pycodecommenter[{extra}]"'
 
 
 def make_provider(

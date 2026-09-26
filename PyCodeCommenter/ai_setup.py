@@ -18,13 +18,25 @@ try:
         DraftingStopped,
         SwitchOnStop,
     )
-    from .direct_providers import PROVIDERS, ProviderUnavailable, make_provider
+    from .direct_providers import (
+        PROVIDERS,
+        ProviderUnavailable,
+        install_command,
+        make_provider,
+        sdk_installed,
+    )
     from .progress import Progress
     from .remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 except ImportError:
     from consent import HOSTED, ensure_consent
     from description_provider import DescriptionProvider, DraftingStopped, SwitchOnStop
-    from direct_providers import PROVIDERS, ProviderUnavailable, make_provider
+    from direct_providers import (
+        PROVIDERS,
+        ProviderUnavailable,
+        install_command,
+        make_provider,
+        sdk_installed,
+    )
     from progress import Progress
     from remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 
@@ -149,6 +161,9 @@ def direct_provider(
             provider can't be used as configured.
     """
     spec = PROVIDERS[provider_name]
+    # First, before consent or a key is asked for: a missing SDK would
+    # otherwise only show up after the user had done both.
+    _require_sdk(provider_name)
     _require_consent(provider_name, assume_consent)
     api_key = _api_key_for(provider_name)
     try:
@@ -164,7 +179,9 @@ def direct_provider(
 
 def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
     """Asks whether to continue with the user's own key after the hosted
-    service stops, and builds that provider if so.
+    service stops, and builds that provider if so. If the chosen provider
+    can't be used (its SDK is missing, consent is declined, there is no
+    key), says why and asks again, until one works or the user skips.
 
     Args:
         stopped (DraftingStopped): Why the hosted service stopped.
@@ -174,22 +191,33 @@ def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
             drafting (the remaining gaps stay as TODO markers).
     """
     status(f"\n{stopped.message}")
-    choice = _ask(
-        "Continue with your own API key? Provider " f"[{'/'.join(PROVIDERS)}/skip]: "
-    ).lower()
-    if choice not in PROVIDERS:
-        return None
+    while True:
+        try:
+            choice = _ask(
+                "Continue with your own API key? Provider "
+                f"[{'/'.join(PROVIDERS)}/skip]: "
+            ).lower()
+        except EOFError:
+            return None
+        if choice not in PROVIDERS:
+            return None
+        try:
+            return _direct_provider_from_answers(choice)
+        except AISetupError as e:
+            status(f"Can't continue with {PROVIDERS[choice].label}: {e}")
+        except EOFError:
+            return None
+
+
+def _direct_provider_from_answers(choice: str) -> DescriptionProvider:
+    """Asks for what the chosen provider still needs and builds it."""
     model = None
     if PROVIDERS[choice].default_model is None:
         model = _ask("Model name: ") or None
     base_url = None
     if choice == "openai-compatible":
         base_url = _ask("API base URL: ") or None
-    try:
-        return direct_provider(choice, model, base_url)
-    except AISetupError as e:
-        status(f"Can't continue with {PROVIDERS[choice].label}: {e}")
-        return None
+    return direct_provider(choice, model, base_url)
 
 
 def report_ai_outcome(provider: SwitchOnStop) -> None:
@@ -217,6 +245,16 @@ def report_ai_outcome(provider: SwitchOnStop) -> None:
         status(
             f"\nHosted AI drafts left today: {active.drafts_remaining} of "
             f"{active.drafts_limit}."
+        )
+
+
+def _require_sdk(provider_name: str) -> None:
+    if not sdk_installed(provider_name):
+        raise AISetupError(
+            f"The {PROVIDERS[provider_name].label} provider needs its SDK, "
+            "which is not installed for this Python. Install it with:\n"
+            f"  {install_command(provider_name)}\n"
+            "then run again, or pick another provider with --ai-provider."
         )
 
 

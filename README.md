@@ -242,6 +242,8 @@ By default drafts come from PyCodeCommenter's free hosted service: no key needed
 | `deepseek` | `DEEPSEEK_API_KEY` | `pip install "pycodecommenter[openai]"` | `deepseek-flash` |
 | `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | `pip install "pycodecommenter[openai]"` | none: pass `--ai-model` and `--ai-base-url` |
 
+If the provider's SDK isn't installed, PyCodeCommenter says so before it asks for consent or a key, and prints the exact command to install it into the Python you are running (it never runs pip itself). During a run, if you choose your own key after the hosted limit and that provider can't be used, you are asked again until one works or you type `skip`.
+
 **The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a more capable one:
 
 ```bash
