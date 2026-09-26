@@ -188,6 +188,11 @@ def render_class_doc(doc: ClassDoc) -> str:
     Returns:
         str: The docstring literal.
     """
+    if not doc.attributes and not doc.methods:
+        # Nothing after the summary/description: no trailing blank line.
+        if not doc.description:
+            return f'"""{doc.summary}"""'
+        return f'"""{doc.summary}\n\n{doc.description}\n"""'
     text = f'"""{doc.summary}\n\n'
     if doc.description:
         text += f"{doc.description}\n\n"

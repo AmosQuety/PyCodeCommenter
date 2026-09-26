@@ -222,3 +222,53 @@ def test_new_docstrings_are_google_style():
     doc = docstring_of(generate("def f(x: int) -> int:\n    return x\n"), "f")
 
     assert "Args:\n" in doc and "Returns:\n" in doc
+
+
+# ---------------------------------------------------------------------------
+# A class with nothing after its summary has no stray blank line
+# ---------------------------------------------------------------------------
+
+
+def _class_docstring(code):
+    from PyCodeCommenter import PyCodeCommenter
+
+    patched = PyCodeCommenter().from_string(code).get_patched_code()
+    return patched.split('"""', 1)[1].split('"""', 1)[0]
+
+
+def test_a_class_with_only_a_summary_has_a_one_line_docstring():
+    body = _class_docstring("class Priority:\n    LOW = 1\n")
+
+    assert body == "Priority class."
+
+
+def test_a_class_with_a_description_but_no_attributes_ends_cleanly():
+    code = '''class Box:
+    """A box.
+
+    It holds things.
+    """
+'''
+    from PyCodeCommenter import PyCodeCommenter
+
+    patched = PyCodeCommenter().from_string(code).get_patched_code()
+
+    assert patched == code
+
+
+def test_a_class_with_attributes_is_unchanged_in_shape():
+    body = _class_docstring(
+        "class Box:\n    def __init__(self, size: int):\n        self.size = size\n"
+    )
+
+    assert body.startswith("Box class.\n\n    Attributes:\n")
+    assert body.endswith("\n    ")
+
+
+def test_the_single_line_form_is_stable_when_regenerated():
+    from PyCodeCommenter import PyCodeCommenter
+
+    once = PyCodeCommenter().from_string("class Empty:\n    pass\n").get_patched_code()
+    twice = PyCodeCommenter().from_string(once).get_patched_code()
+
+    assert once == twice
