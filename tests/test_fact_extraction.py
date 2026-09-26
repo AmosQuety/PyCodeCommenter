@@ -241,6 +241,21 @@ def test_count_rule_ignores_substrings_inside_other_words(name):
     assert not infer_description(param_name=name).startswith("Number of")
 
 
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("path", "Path to the file or directory."),
+        ("Path", "Path to the file or directory."),
+        ("file_path", "Path to the file."),
+        ("dir_path", "Path to the dir."),
+        ("config_path", "Path to the config."),
+        ("directory", "Path to the directory."),
+    ],
+)
+def test_path_names_never_produce_an_empty_phrase(name, expected):
+    assert infer_description(param_name=name) == expected
+
+
 def test_bare_count_does_not_produce_empty_phrase():
     assert infer_description(param_name="count", type_hint="int") == "int value."
 
