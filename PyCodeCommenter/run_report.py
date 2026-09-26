@@ -39,6 +39,8 @@ class GenerationReport:
         ai_failed (int): Requests that failed (network or service error).
         ai_not_tried (int): Functions and classes with gaps that were never
             asked because drafting had stopped (for example a spent limit).
+        ai_withheld (int): Functions and classes not sent to the AI because
+            their source looks like it holds a secret.
         dropped_entries (int): Author-written Args: entries removed because
             their parameter is no longer in the signature.
     """
@@ -55,6 +57,7 @@ class GenerationReport:
     ai_declined: int = 0
     ai_failed: int = 0
     ai_not_tried: int = 0
+    ai_withheld: int = 0
     dropped_entries: int = 0
 
     def record_function(self, doc: FunctionDoc, outcome: str) -> None:
@@ -100,6 +103,11 @@ class GenerationReport:
             self.ai_failed += 1
         else:
             self.ai_declined += declined
+
+    def record_withheld(self) -> None:
+        """Counts a function or class kept out of AI drafting because its
+        source looks like it holds a secret."""
+        self.ai_withheld += 1
 
     def record_not_tried(self) -> None:
         """Counts a function or class whose gaps were not asked about
@@ -180,6 +188,14 @@ class GenerationReport:
             lines.append(
                 f"  {self.ai_failed} {noun} failed (network or service error); "
                 "those gaps are unchanged"
+            )
+        if self.ai_withheld:
+            noun = (
+                "function or class" if self.ai_withheld == 1 else "functions or classes"
+            )
+            lines.append(
+                f"  {self.ai_withheld} {noun} not sent to the AI because the source "
+                "looks like it holds a secret (key, password or token)"
             )
         if self.ai_not_tried:
             noun = (

@@ -55,6 +55,7 @@ try:
         unfilled_parts,
     )
     from .class_outline import outline_source
+    from .secret_scan import looks_like_secret
     from .comment_docs import (
         CommentDocstring,
         comment_block_text,
@@ -110,6 +111,7 @@ except (ImportError, ValueError):
         unfilled_parts,
     )
     from class_outline import outline_source
+    from secret_scan import looks_like_secret
     from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
     from function_doc import (
@@ -617,13 +619,16 @@ class PyCodeCommenter:
         slots = slots_for(doc)
         if slots.is_empty():
             return
+        context = self._build_function_context(func_node)
+        if self._withhold_secret(context.source, func_node.name):
+            return
         if not self._may_ask_provider():
             return
         if self._progress is not None:
             self._progress.drafting(func_node.name)
         try:
             draft = self._description_provider.draft_docstring(
-                self._build_function_context(func_node), known_text(doc), slots
+                context, known_text(doc), slots
             )
         except DraftingStopped as e:
             self.drafting_stopped = e
@@ -643,6 +648,16 @@ class PyCodeCommenter:
         self.report.record_draft(
             unfilled_parts(doc, slots), getattr(draft, "failed", False)
         )
+
+    def _withhold_secret(self, source: str, name: str) -> bool:
+        """Whether ``source`` looks like it holds a credential, in which
+        case it is not sent anywhere (and the run summary says so). Only the
+        name is logged, never the text."""
+        if not looks_like_secret(source):
+            return False
+        logger.warning(f"Not sending {name} to the AI: it looks like it holds a secret")
+        self.report.record_withheld()
+        return True
 
     def _may_ask_provider(self) -> bool:
         """Whether a request may be made now. If not (drafting has stopped,
@@ -671,13 +686,16 @@ class PyCodeCommenter:
         slots = class_slots_for(doc)
         if slots.is_empty():
             return
+        context = self._build_class_context(class_node, doc)
+        if self._withhold_secret(context.source, class_node.name):
+            return
         if not self._may_ask_provider():
             return
         if self._progress is not None:
             self._progress.drafting(f"class {class_node.name}")
         try:
             draft = self._description_provider.draft_class_docstring(
-                self._build_class_context(class_node, doc), class_known_text(doc), slots
+                context, class_known_text(doc), slots
             )
         except DraftingStopped as e:
             self.drafting_stopped = e
