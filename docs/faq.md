@@ -40,16 +40,16 @@ With `generate --ai-draft`, an AI model drafts only the parts the code can't sta
 
 ## How is PyCodeCommenter different from AI docstring generators?
 
-PyCodeCommenter is **deterministic and rule-based**. AI docstring generators send your code to an external API and return generated prose; PyCodeCommenter uses only your local AST.
+By default PyCodeCommenter is **deterministic and rule-based**. AI docstring generators send your code to an external API and return generated prose; by default PyCodeCommenter uses only your local AST. The optional `--ai-draft` mode is the exception: it sends the source of functions that have gaps to the hosted service or to your own provider, and the table below describes the default mode, not `--ai-draft`.
 
 The tradeoffs:
 
-| Property | PyCodeCommenter | AI generators |
+| Property | PyCodeCommenter (by default) | AI generators |
 |---|---|---|
 | Deterministic output | ✅ Yes | ❌ No |
-| Network required | ❌ No | ✅ Yes |
-| Rate limits | ❌ No | ✅ Yes |
-| Cost | ✅ Free | Often paid |
+| Network required | ❌ No (yes with `--ai-draft`) | ✅ Yes |
+| Rate limits | ❌ No (the hosted service behind `--ai-draft` has a daily limit) | ✅ Yes |
+| Cost | ✅ Free (with `--ai-draft`: free on the hosted service, billed by your provider with your own key) | Often paid |
 | Prose quality | Functional starting point | Richer prose |
 | Signature accuracy | ✅ Always correct | Can hallucinate |
 | Validation | ✅ Built-in | Rarely included |
