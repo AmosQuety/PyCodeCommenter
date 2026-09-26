@@ -400,8 +400,8 @@ def main():
         help=(
             "Opt in to AI drafting for the parts of a docstring the code "
             "can't state: summaries, and parameter, return and exception "
-            "descriptions that would otherwise be TODO markers or say "
-            "nothing beyond the type. Uses PyCodeCommenter's free hosted "
+            "descriptions, and class summaries and attributes, that would "
+            "otherwise be TODO markers or say nothing beyond the type. Uses PyCodeCommenter's free hosted "
             "service (daily limit) unless --ai-provider names your own. "
             "Every drafted line carries a permanent '(AI-drafted, "
             "unreviewed)' marker. Asks once for consent before sending "

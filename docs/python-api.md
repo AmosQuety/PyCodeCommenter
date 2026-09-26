@@ -731,6 +731,8 @@ class MyProvider(DescriptionProvider):
 
 Providers written before `draft_docstring` existed, which implement only `draft_function_description(context)`, still work: they fill the description paragraph.
 
+Classes are drafted with `draft_class_docstring(context, known, slots)`, which returns a `ClassDraft(summary, attributes)`. `context` is a `ClassContext` (`name`, `bases`, `attributes`, and a `source` outline: header, class-level fields, `__init__` in full, other methods as signatures), `known` maps attribute names to settled text, and `slots` is a `ClassSlots` (`summary`, and the `attributes` names to draft). The default declines everything, so a provider that only implements `draft_docstring` leaves class docstrings as they are. Set `failed=True` on a `DocstringDraft` or `ClassDraft` when the request itself failed, so the run summary can tell a failure from a decline.
+
 ---
 
 ## Related

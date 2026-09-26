@@ -62,12 +62,13 @@ pycodecommenter generate <file-or-directory> [options]
 | `--dry-run` | flag | off | Print a unified diff of what would change and exit. Does **not** write any files. Exits with code 1 if there are changes, 0 if not |
 | `--backup` | flag | off | Before modifying a file in place, copy it to `<file>.bak`. Has no effect without `--inplace` (a warning is printed) |
 | `-e`, `--exclude` | list | `.pycodecommenter.yaml`'s top-level `exclude` list, if set | Patterns to exclude, added to the built-in defaults (directory targets only). Built-in defaults: `__pycache__`, `.git`, `.venv`, `venv`, `env`, `.tox`, `.nox`, `__pypackages__`, `site-packages`, `build`, `dist`, `.eggs`, `.egg-info`, `.mypy_cache`, `.pytest_cache`, `node_modules` |
-| `--ai-draft` | flag | off | Have an AI model draft the parts the code can't state (summaries, and argument, return and exception descriptions that would otherwise be TODO markers or type-only). Only gaps are filled; every drafted line is labelled `(AI-drafted, unreviewed)` |
+| `--ai-draft` | flag | off | Have an AI model draft the parts the code can't state: function summaries and argument, return and exception descriptions, and class summaries and `Attributes:` entries, that would otherwise be TODO markers or type-only. Only gaps are filled; every drafted line is labelled `(AI-drafted, unreviewed)` |
 | `--ai-provider` | choice | `hosted` | Where `--ai-draft` sends code: `hosted` (free, daily limit, no key), or your own key with `gemini` (`GEMINI_API_KEY`), `openai` (`OPENAI_API_KEY`), `anthropic` (`ANTHROPIC_API_KEY`), `deepseek` (`DEEPSEEK_API_KEY`) or `openai-compatible` (`OPENAI_COMPATIBLE_API_KEY`). Install the SDK with `pip install "pycodecommenter[gemini]"`, `[openai]` or `[anthropic]` |
 | `--ai-model` | string | per provider | The model to use. Defaults: `gemini-2.5-flash`, `gpt-6-astra`, `claude-haiku-4-5-20251001`, `deepseek-flash`; these are only defaults, and any model your key can access works. Required for `openai-compatible` |
 | `--ai-base-url` | string | none | API endpoint for `openai-compatible` (e.g. Mistral, Groq, or a local Ollama server) |
 | `--accept-ai-drafts` | flag | off | Required with `--ai-draft --inplace`: an explicit acknowledgment that unreviewed AI drafts are written to your files |
-| `--yes-send-code-to-ai` | flag | off | Record consent for the chosen provider without asking (CI). `--yes-send-code-to-hosted-ai` still works as an alias |
+| `--yes-send-code-to-ai` | flag | off | Record consent for the chosen provider without asking (CI), and skip the "Continue?" question before a directory run. `--yes-send-code-to-hosted-ai` still works as an alias |
+| `--max-drafts` | integer | none | With `--ai-draft`, send at most `N` requests in the whole run (one per function or class with gaps). The rest keep their TODO markers and the summary says how many were not tried |
 
 > **Note:** An `--exclude` pattern matches a path component (directory or file name) exactly; a dot-prefixed pattern (e.g. `.egg-info`) also matches a component it's a suffix of (covers the `<name>.egg-info` convention). This is exact-component matching, not a substring check against the whole path — `rebuild_index.py` is not skipped just because it contains `build`, and `environment_config.py` is not skipped just because it contains `env`. (The `coverage` command's `-e`/`--exclude`, documented below, adds one more rule on top of these two — see its note.)
 
@@ -83,6 +84,10 @@ Next: fill in the gaps, or add --ai-draft to have them drafted; then run `pycode
 ```
 
 It counts docstrings written, updated (your text kept) or already complete; details taken straight from the code; lines drafted by AI; docstrings taken from the comment above a definition; and gaps left. For a directory, the numbers cover the whole run. AI status messages and consent prompts also go to stderr. On a terminal, `--ai-draft` also shows a live status line while each request is in flight (`[3/12] product_service.py - drafting create_product (hosted)`, or `waiting 30 s for the rate limit`), so a slow first request from the free hosted service does not look like a hang. It is not shown when stderr is redirected or in CI.
+
+**Before a directory run with `--ai-draft`**, the tool counts the requests it would make (nothing is sent to find out) and prints, for example, `AI drafting: 32 files, 121 functions and classes have gaps to draft (one request each).` In a terminal it then asks `Continue? [y/N]` (the default is no), so running it in the wrong directory does not quietly spend your allowance. `--yes-send-code-to-ai` or a run without a terminal skips the question, and `--max-drafts` caps the total.
+
+**Why gaps can remain after an AI run.** The summary says so: parts the AI *declined* to write (the code did not make them clear), requests that *failed* (network or service error), functions and classes *not tried* because drafting stopped (a spent limit or `--max-drafts`), and any *not sent* because their source looks like it holds a secret. Nothing that looks like a key, password or token is ever sent.
 
 ### Output modes (mutually used in order)
 
@@ -196,6 +201,8 @@ pycodecommenter validate <file-or-directory>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `-e`, `--exclude` | list | `.pycodecommenter.yaml`'s top-level `exclude` list, if set | Patterns to exclude, added to the built-in defaults (directory targets only) — same matching rules and defaults as `generate`'s `-e`/`--exclude`, above |
+| `--fail-on-todo` | flag | off | Exit with code `1` if any docstring still holds a `TODO(pycodecommenter)` marker or other placeholder text (by default these are only warnings) |
+| `--fail-on-ai-draft` | flag | off | Exit with code `1` if any docstring still holds an unreviewed `(AI-drafted, unreviewed)` line (see [`review`](#pycodecommenter-review)) |
 | `--output-format` | `text` \| `json` | `text` | Output format. `text` prints one human-readable report per file. `json` prints a single JSON array of per-file report objects to stdout for a directory target (a single object for a single-file target). |
 
 ### What the validator checks
@@ -299,6 +306,7 @@ pycodecommenter coverage <path> [options]
 |------|------|---------|-------------|
 | `-e`, `--exclude` | list | none | One or more patterns to exclude, added to the built-in defaults (they don't replace them). Built-in defaults when not provided: `__pycache__`, `.git`, `.venv`, `venv`, `env`, `.tox`, `.nox`, `__pypackages__`, `site-packages`, `build`, `dist`, `.eggs`, `.egg-info`, `.mypy_cache`, `.pytest_cache`, `node_modules`, `tests`, `test_` |
 | `--output-format` | `text` \| `json` | `text` | Output format. `text` prints the human-readable coverage table. `json` prints a machine-readable JSON object to stdout. |
+| `--strict` | flag | off | Count a function or class as documented only if its docstring holds no `TODO(pycodecommenter)` placeholder and no unreviewed AI-drafted line. By default any non-empty docstring counts, so a project of generated stubs reads as 100% |
 | `--fail-below` | float | none (or `coverage.threshold` from `.pycodecommenter.yaml`, if set) | Exit with code `1` if the overall coverage percentage is below `THRESHOLD` |
 | `--badge-output` | path | none | Write a [shields.io endpoint-badge](https://shields.io/badges/endpoint-badge) JSON file for the coverage percentage to `PATH` |
 

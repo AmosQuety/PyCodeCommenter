@@ -224,14 +224,15 @@ Some parts of a docstring can't be read off the code: what a function is *for*, 
 pycodecommenter generate app.py --ai-draft --dry-run
 ```
 
-- **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type.
+- **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type. That covers functions (summary, arguments, return, exceptions) and classes (summary and `Attributes:`).
 - **Every drafted line is labelled** `(AI-drafted, unreviewed)`. The label stays until a person accepts the line in `pycodecommenter review` (`review --list` shows what is waiting), and `pycodecommenter validate` reports those lines until then.
 - **Review first.** `--dry-run` and `--output-dir` show the result without touching your files; writing with `--inplace` also requires `--accept-ai-drafts`.
-- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI).
+- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets.
+- **Know the cost first.** For a directory, the tool counts the requests it would make (`32 files, 121 functions and classes have gaps to draft`) and asks before sending; `--max-drafts N` caps the whole run.
 
 ### Providers and models
 
-By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The count is kept in the service's memory, so the exact moment it resets is not guaranteed. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
+By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
 
 | `--ai-provider` | Key read from | Install | Default model |
 |---|---|---|---|
@@ -251,6 +252,10 @@ pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model cl
 ```
 
 Every run prints the provider and model it is using.
+
+### Why a TODO can still remain
+
+`--ai-draft` is meant to leave no `TODO(pycodecommenter)` behind, and the run summary says why any are left: the model **declined** a part (the code did not make it clear, and it would rather say nothing than guess), a request **failed**, drafting **stopped** (a spent limit, or `--max-drafts`), or the function's source looked like it holds a **secret** and was not sent. Fill what is left with `pycodecommenter review`, or run again. To check that nothing is unfinished, use `pycodecommenter coverage --strict` (counts only docstrings with no placeholder and no unreviewed AI line) and `pycodecommenter validate --fail-on-todo`.
 
 ### Setting your API key
 

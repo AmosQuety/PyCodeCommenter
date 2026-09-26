@@ -120,6 +120,42 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   string literal (`" ".join(...)`) give `str`. A function with a single
   boolean return expression gets ``True if `expr`, otherwise False.``
   instead of a guess marker.
+- **`--ai-draft` now drafts classes too.** Before, only functions were
+  sent to the AI, so every class `Attributes:` entry and every
+  "`<Name>` class." summary kept its TODO or type-only filler even with a
+  perfect model. A class request carries an outline of the class (header,
+  class-level fields, `__init__` in full, other methods as signatures);
+  the same rules apply as for functions (only gaps, author text and facts
+  never replaced, every line labelled, a declined value leaves its gap).
+  Providers gain `draft_class_docstring`, which declines by default so
+  existing providers keep working. The hosted service needs its new
+  `/v2/draft-class-docstring` endpoint; against an older deployment classes
+  simply keep their TODOs.
+- **The run summary says why gaps are left.** After AI drafting it counts
+  the parts the AI declined to write, the requests that failed, the
+  functions and classes not tried because drafting stopped, and those not
+  sent because their source looks like it holds a secret. It also reports
+  documented arguments removed because their parameter no longer exists.
+- **Know the cost first, and cap it.** For a directory, `--ai-draft`
+  counts the requests it would make (nothing is sent to find out), prints
+  `32 files, 121 functions and classes have gaps to draft`, and in a
+  terminal asks `Continue? [y/N]` (default no). `--max-drafts N` caps the
+  requests for the whole run.
+- **Source that looks like a secret is never sent.** A function or class
+  containing a private-key header, a well-known API key shape, a JWT, a URL
+  with a password, or a literal assigned to a password/token/key-named
+  variable is kept out of AI requests and keeps its deterministic
+  docstring. The consent notices now say what is sent (function source and
+  class outlines, comments included) and that likely secrets are left out;
+  because that wording changed, consent is asked for once more.
+- **Opt-in strictness.** `coverage --strict` counts only docstrings with no
+  `TODO(pycodecommenter)` placeholder and no unreviewed AI line, so a
+  project of generated stubs no longer reads as 100%. `validate
+  --fail-on-todo` and `--fail-on-ai-draft` exit 1 on those issues. Defaults
+  are unchanged.
+- **A rate limit no longer ends a bring-your-own-key run at once.** A 429
+  is waited out once (the response's `Retry-After`, 1-60 seconds, or 20
+  without one, shown on the status line) before drafting stops.
 - **`review` can accept a whole function's AI lines at once.** For a
   function with two or more AI-drafted lines, `review` shows its whole
   docstring and offers `A` to accept all of that function's remaining AI
@@ -146,6 +182,17 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   section is kept; entries left over from earlier runs are removed.
 
 ### Fixed
+- **`*args` and `**kwargs` drafts were dropped** when a model answered
+  under `layers` instead of `*layers`; the unstarred name is now accepted
+  as a fallback, so those parameters stop keeping filler text.
+- **`True if `bool(x)`, otherwise False.`** now reads
+  `True if `x`, otherwise False.`; the redundant wrapper is not repeated.
+- **A class with no attributes got a docstring ending in a blank line.**
+  It is now one line (or summary, description and closing quotes).
+- **An attribute assigned from a typed parameter was documented as `Any`.**
+  It takes the parameter's type.
+- **AI setup errors printed to stdout** (declined consent, missing key or
+  SDK); they go to stderr like every other AI message.
 - **Class `Attributes:` listed names that are not attributes.** An
   `__init__` argument was documented even when `__init__` never stored it
   (for example one only passed to `super().__init__`), and one stored under

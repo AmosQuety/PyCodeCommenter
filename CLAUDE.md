@@ -176,14 +176,17 @@ the tool's default behavior.
   any reporting work on the parts, never on rendered text.
 - **`description_provider.py`** — the provider interface. `draft_docstring
   (context, known, slots)` drafts the requested `DraftSlots` and returns a
-  `DocstringDraft`; its default falls back to the older
+  `DocstringDraft`; `draft_class_docstring(context, known, slots)` does the
+  same for a class (`ClassContext`/`ClassSlots`/`ClassDraft`) and declines by
+  default. A draft's `failed` flag separates a failed request from a decline; its default falls back to the older
   `draft_function_description` (description paragraph only), so providers
   written against that keep working. `DraftingStopped` ends drafting for
   the run (limit spent, key rejected); any other error skips one function.
   `SwitchOnStop` wraps a provider and asks once for a replacement when it
   stops (the "continue with your own key" prompt).
-- **`ai_drafting.py`** — which parts are gaps (`slots_for`: only `GUESS`/
-  `WEAK` parts), the settled text sent as context (`known_text`), applying
+- **`ai_drafting.py`** — which parts are gaps (`slots_for` and
+  `class_slots_for`: only `GUESS`/`WEAK` parts; classes are tagged the same
+  way, `ClassDoc.summary_origin` and `AttributeEntry.origin`), the settled text sent as context (`known_text`), applying
   a draft (`apply_draft`), and the client-side safety gate every drafted
   value passes (`clean_slot_text`: no triple quotes, backslashes, `TODO`,
   or marker text). Also the prompt/JSON schema/reply parser for direct
@@ -191,7 +194,8 @@ the tool's default behavior.
   the two in step.
 - **`remote_provider.py`** — `RemoteDescriptionProvider`, a stdlib-only
   (`urllib`) client for the separate `pycodecommenter-ai-backend` service's
-  `/v2/draft-docstring` (falls back to `/v1` on a 404). Records the
+  `/v2/draft-docstring` (falls back to `/v1` on a 404) and
+  `/v2/draft-class-docstring` (a 404 is remembered: classes keep their TODOs). Records the
   caller's daily allowance from response headers, waits out a per-minute
   rate limit once, and raises `DraftingStopped` when the allowance or
   shared cap is spent.
@@ -201,6 +205,11 @@ the tool's default behavior.
   `[openai]`, `[anthropic]`, `[ai]`). `PROVIDERS` holds each
   one's key variable and default model. SDKs are imported only when chosen;
   tests inject fake clients, so the suite needs no SDK or network.
+- **`class_outline.py`** / **`secret_scan.py`** / **`draft_limits.py`** /
+  **`progress.py`** — what a class request carries (header, fields, `__init__`,
+  other methods as signatures); the check that keeps source that looks like
+  a secret out of every request (`looks_like_secret`); the pre-flight count,
+  `DraftBudget` and `--max-drafts`; and the live status line (terminal only).
 - **`ai_setup.py`** — CLI-side setup: provider choice, key from the
   provider's env var or a hidden prompt (never a project file), consent,
   the "AI drafting: <provider>, model <m>" line, and the end-of-run report.
