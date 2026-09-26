@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 import time
 import urllib.error
 import urllib.request
@@ -101,6 +102,9 @@ class RemoteDescriptionProvider(DescriptionProvider):
         self.timeout_s = timeout_s
         self._on_wait = on_wait
         self._class_endpoint_missing = False
+        # What the service said about the latest draft (X-AI-Draft-Outcome:
+        # "ok" or "failed"); None from an older service that doesn't say.
+        self._last_outcome: Optional[str] = None
         # The caller's daily allowance, as last reported by the backend.
         self.drafts_remaining: Optional[int] = None
         self.drafts_limit: Optional[int] = None
@@ -137,9 +141,10 @@ class RemoteDescriptionProvider(DescriptionProvider):
             payload = self._post_draft("/v2/draft-docstring", body, context.name)
         except _EndpointMissing:
             return super().draft_docstring(context, known, slots)
-        return self._read_reply(
+        draft = self._read_reply(
             payload, draft_from_payload, DocstringDraft(failed=True)
         )
+        return replace(draft, failed=True) if self._service_failed() else draft
 
     def draft_class_docstring(
         self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
@@ -172,9 +177,15 @@ class RemoteDescriptionProvider(DescriptionProvider):
         except _EndpointMissing:
             self._class_endpoint_missing = True
             return ClassDraft(failed=True)
-        return self._read_reply(
+        draft = self._read_reply(
             payload, _class_draft_from_payload, ClassDraft(failed=True)
         )
+        return replace(draft, failed=True) if self._service_failed() else draft
+
+    def _service_failed(self) -> bool:
+        """Whether the service said it could not produce this draft (no
+        model gave a usable answer), as opposed to answering with nothing."""
+        return self._last_outcome == "failed"
 
     @staticmethod
     def _read_reply(payload: Optional[dict], reader: Callable, empty: Any) -> Any:
@@ -230,6 +241,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
             urllib.error.HTTPError: The backend answered with an error status.
             Exception: A network, timeout, or parsing failure.
         """
+        self._last_outcome = None
         request = urllib.request.Request(
             f"{self.backend_url}{path}",
             data=json.dumps(body).encode("utf-8"),
@@ -250,6 +262,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
             self.drafts_remaining = remaining
         if limit is not None:
             self.drafts_limit = limit
+        self._last_outcome = headers.get("X-AI-Draft-Outcome")
 
     def _stop(self, error: Dict[str, Any]) -> None:
         reason = str(error.get("error") or "limit_reached")

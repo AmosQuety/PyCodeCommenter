@@ -180,9 +180,11 @@ KNOWN = KnownText(params={"rate": "Discount rate."})
 
 
 class _FakeV2Response(_FakeHTTPResponse):
-    def __init__(self, body: dict, remaining="24", limit="25"):
+    def __init__(self, body: dict, remaining="24", limit="25", outcome=None):
         super().__init__(body)
         self.headers = {"X-AI-Drafts-Remaining": remaining, "X-AI-Drafts-Limit": limit}
+        if outcome is not None:
+            self.headers["X-AI-Draft-Outcome"] = outcome
 
 
 def _http_error(code: int, body: dict, retry_after: str = "30"):
@@ -526,3 +528,83 @@ def test_a_malformed_class_reply_is_an_empty_draft(monkeypatch):
     draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
 
     assert draft == ClassDraft(summary=None, attributes={})
+
+
+# ---------------------------------------------------------------------------
+# The service marks a draft it could not produce
+# ---------------------------------------------------------------------------
+
+
+def _one_reply(monkeypatch, response):
+    _patch_network(monkeypatch, [response])
+
+
+def test_a_draft_the_service_marked_failed_is_a_failed_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(
+        monkeypatch,
+        _FakeV2Response({"summary": None, "params": {}}, outcome="failed"),
+    )
+
+    draft = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert draft.failed is True
+    assert draft.summary is None
+
+
+def test_a_class_draft_the_service_marked_failed_is_a_failed_draft(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(
+        monkeypatch,
+        _FakeV2Response({"summary": None, "attributes": {}}, outcome="failed"),
+    )
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert draft.failed is True
+
+
+@pytest.mark.parametrize("outcome", ["ok", None])
+def test_ok_and_an_older_service_without_the_header_are_not_failures(
+    monkeypatch, outcome
+):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _one_reply(monkeypatch, _FakeV2Response({"summary": None}, outcome=outcome))
+
+    draft = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert draft.failed is False  # nothing came back: a decline, as before
+
+
+def test_one_failed_draft_does_not_taint_the_next(monkeypatch):
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [
+            _FakeV2Response({"summary": None}, outcome="failed"),
+            _FakeV2Response({"summary": "Apply a discount."}, outcome="ok"),
+        ],
+    )
+
+    first = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+    second = provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert first.failed is True
+    assert second.failed is False and second.summary == "Apply a discount."
+
+
+def test_a_failed_draft_is_counted_as_a_failure_not_a_decline_in_the_summary(
+    monkeypatch,
+):
+    from PyCodeCommenter import PyCodeCommenter
+
+    provider = RemoteDescriptionProvider(backend_url="https://example.test")
+    _patch_network(
+        monkeypatch,
+        [_FakeV2Response({"summary": None, "params": {}}, outcome="failed")],
+    )
+    commenter = PyCodeCommenter(description_provider=provider)
+    commenter.from_string("def one(a):\n    return a\n").get_patched_code()
+
+    assert commenter.report.ai_failed == 1
+    assert commenter.report.ai_declined == 0
