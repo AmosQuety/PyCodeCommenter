@@ -118,6 +118,10 @@ _DOCSTRING_LITERAL_RE = re.compile(
 )
 
 
+# Longest default shown as written; a longer one is left out of the line.
+_MAX_DEFAULT_CHARS = 40
+
+
 def _names_assigned_to_self(init_node: ast.AST) -> Set[str]:
     """Names ``__init__`` stores as ``self.<name>`` (plain, annotated or
     tuple assignment), ignoring nested classes, which have their own self."""
@@ -1076,7 +1080,7 @@ class PyCodeCommenter:
         """
         return TypeAnalyzer(local_types).infer_expr_type(expr)
 
-    def _get_default_value(self, default_node: Any) -> str:
+    def _get_default_value(self, default_node: Any) -> Optional[str]:
         """
         Gets the string representation of a default value.
 
@@ -1084,7 +1088,8 @@ class PyCodeCommenter:
             default_node (Any): The AST node for the default value.
 
         Returns:
-            str: String representation of the default value.
+            Optional[str]: The default as written in the source, or ``None``
+                when it is too long to read well inside a description.
         """
         if isinstance(default_node, ast.Constant):
             return repr(default_node.value)
@@ -1100,7 +1105,10 @@ class PyCodeCommenter:
         ):
             sign = "-" if isinstance(default_node.op, ast.USub) else "+"
             return f"{sign}{default_node.operand.value!r}"
-        return "unknown"
+        written = ast.unparse(default_node)
+        if len(written) > _MAX_DEFAULT_CHARS or "\n" in written:
+            return None
+        return written
 
     def _strip_own_default_annotation(self, description: str) -> str:
         """Removes a trailing " (default: ...)" suffix from a re-parsed
