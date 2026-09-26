@@ -74,19 +74,27 @@ def _path_is_excluded(py_file, patterns):
     return False
 
 
-def _collect_py_files(directory, exclude_patterns=None):
+def _is_inside(path, directory):
+    """True if resolved ``path`` is ``directory`` or lies below it."""
+    return directory == path or directory in path.parents
+
+
+def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
     """Recursively collect .py files under directory, skipping any path
     matched by _path_is_excluded() against DEFAULT_DIRECTORY_EXCLUDES plus
-    exclude_patterns.
+    exclude_patterns, and anything under skip_directory (the output tree
+    of a previous run, so it isn't generated from again).
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
     root = Path(directory)
+    skipped = Path(skip_directory).resolve() if skip_directory else None
     # Only the path *inside* the target directory is matched: a project that
     # lives under, say, ~/work/build/ must still be processed.
     return [
         str(py_file)
         for py_file in sorted(root.rglob("*.py"))
         if not _path_is_excluded(py_file.relative_to(root), patterns)
+        and not (skipped and _is_inside(py_file.resolve(), skipped))
     ]
 
 
@@ -108,7 +116,7 @@ def _generate(args, description_provider, run_report):
             print("Error: --output-dir cannot be combined with --inplace.")
             sys.exit(1)
 
-        targets = _collect_py_files(args.file, args.exclude)
+        targets = _collect_py_files(args.file, args.exclude, args.output_dir)
         if not targets:
             print(f"No Python files found in {args.file}")
             sys.exit(0)

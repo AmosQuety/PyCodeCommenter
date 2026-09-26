@@ -144,6 +144,45 @@ def test_generate_directory_output_dir_mirrors_tree_without_touching_originals(
     assert "Wrote 2/2 file(s)" in out
 
 
+def test_generate_directory_output_dir_inside_target_is_not_scanned_again(
+    project, monkeypatch, capsys
+):
+    """Re-running with --output-dir inside the target must not process the
+    previous run's output (out/out/a.py) or count its files."""
+    run_cli(["generate", ".", "--output-dir", "out"], monkeypatch, capsys)
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", "out"], monkeypatch, capsys
+    )
+    assert exit_code == 0
+    assert not (project / "out" / "out").exists()
+    assert "Wrote 2/2 file(s)" in out
+
+
+def test_generate_directory_output_dir_given_as_absolute_path_is_excluded(
+    project, monkeypatch, capsys
+):
+    absolute_out = project / "docs_out"
+    for _ in range(2):
+        run_cli(
+            ["generate", str(project), "--output-dir", str(absolute_out)],
+            monkeypatch,
+            capsys,
+        )
+    assert not (absolute_out / "docs_out").exists()
+    assert sorted(p.name for p in absolute_out.rglob("*.py")) == ["a.py", "b.py"]
+
+
+def test_generate_directory_output_dir_outside_target_changes_nothing(
+    project, tmp_path_factory, monkeypatch, capsys
+):
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    exit_code, out, _ = run_cli(
+        ["generate", ".", "--output-dir", str(elsewhere)], monkeypatch, capsys
+    )
+    assert exit_code == 0
+    assert "Wrote 2/2 file(s)" in out
+
+
 def test_generate_directory_output_dir_rejects_inplace(project, monkeypatch, capsys):
     exit_code, out, _ = run_cli(
         ["generate", ".", "--output-dir", "out", "--inplace"], monkeypatch, capsys
