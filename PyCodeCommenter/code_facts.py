@@ -126,10 +126,27 @@ def describe_bool_return(func_node: FunctionNode) -> Optional[str]:
     ]
     if len(returns) != 1 or isinstance(returns[0].value, ast.Constant):
         return None
-    expression = _short_source(returns[0].value)
+    returned = _without_bool_wrapper(returns[0].value)
+    if isinstance(returned, ast.Constant):
+        return None
+    expression = _short_source(returned)
     if expression is None:
         return None
     return f"True if `{expression}`, otherwise False."
+
+
+def _without_bool_wrapper(expression: ast.expr) -> ast.expr:
+    """``bool(x)`` says the same as ``x`` here ("True if x"), so the wrapper
+    is not repeated in the description."""
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "bool"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return expression.args[0]
+    return expression
 
 
 def _site_condition(

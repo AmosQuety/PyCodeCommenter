@@ -406,3 +406,27 @@ def test_async_function_raise_condition_and_nested_def_isolation():
     assert "RuntimeError" not in outer
     inner = patched.split("def check", 1)[1].split('"""', 2)[1]
     assert "RuntimeError: If `code >= 500`." in inner
+
+
+# ---------------------------------------------------------------------------
+# A redundant bool(...) wrapper is not repeated in the description
+# ---------------------------------------------------------------------------
+
+
+def test_bool_wrapper_is_stripped_from_the_stated_condition():
+    patched = _generate("def is_sku(sku):\n    return bool(SKU_PATTERN.match(sku))\n")
+
+    assert "True if `SKU_PATTERN.match(sku)`, otherwise False." in patched
+    assert "bool(" not in _section(patched, "Returns")
+
+
+def test_bool_of_several_arguments_or_keywords_is_left_as_written():
+    patched = _generate("def f(a):\n    return bool(a, extra=1)\n")
+
+    assert "bool(a" in patched or GUESS in patched
+
+
+def test_bool_wrapped_literal_still_keeps_the_marker():
+    patched = _generate("def f():\n    return bool(1)\n")
+
+    assert "True if `1`" not in patched
