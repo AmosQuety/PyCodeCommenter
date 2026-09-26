@@ -16,8 +16,9 @@ import importlib.util
 import logging
 import shlex
 import sys
+import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 try:
     from .ai_drafting import (
@@ -210,6 +211,9 @@ class DirectProvider(DescriptionProvider):
     extra = ""
     # The PROVIDERS entry whose default model applies when none is given.
     provider_name = ""
+    # Told the seconds about to be waited out for a rate limit, so the wait
+    # can be shown; set by whoever runs the provider (see ai_setup).
+    on_wait: Optional[Callable[[float], None]] = None
 
     def __init__(self, api_key: str, model: Optional[str] = None, client: Any = None):
         self.model = model or PROVIDERS[self.provider_name].default_model
@@ -242,12 +246,26 @@ class DirectProvider(DescriptionProvider):
         return ClassDraft(summary=draft.summary, attributes=draft.params)
 
     def _draft(self, prompt: str, slots: DraftSlots, name: str) -> DocstringDraft:
-        try:
-            return parse_reply(self._complete(prompt, slots))
-        except Exception as e:
-            self._raise_if_run_should_stop(e)
-            logger.warning(f"{self.label} request failed for {name}: {e}")
-            return DocstringDraft()
+        for attempt in range(2):
+            try:
+                return parse_reply(self._complete(prompt, slots))
+            except Exception as e:
+                if attempt == 0 and _status_of(e) == 429:
+                    self._wait_out_rate_limit(e)
+                    continue
+                self._raise_if_run_should_stop(e)
+                logger.warning(f"{self.label} request failed for {name}: {e}")
+                return DocstringDraft()
+        return DocstringDraft()
+
+    def _wait_out_rate_limit(self, error: Exception) -> None:
+        """Waits once for a 429 to clear before the run is given up on. A
+        per-minute limit usually clears; a spent quota fails again and
+        stops the run through :meth:`_raise_if_run_should_stop`."""
+        seconds = _retry_after_seconds(error)
+        if self.on_wait is not None:
+            self.on_wait(seconds)
+        _wait(seconds)
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
         """Makes the call and returns the reply text."""
@@ -447,6 +465,28 @@ class GeminiProvider(DirectProvider):
             },
         )
         return response.text or ""
+
+
+# How long a rate limit is waited out once: the server's Retry-After when it
+# gives one, kept within these bounds.
+_DEFAULT_RATE_LIMIT_WAIT_S = 20
+_MAX_RATE_LIMIT_WAIT_S = 60
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _retry_after_seconds(error: Exception) -> int:
+    """The Retry-After on an SDK error's response, within 1-60 seconds;
+    a default when there is none (google-genai errors carry no header)."""
+    headers = getattr(getattr(error, "response", None), "headers", None) or {}
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_RATE_LIMIT_WAIT_S
+    return max(1, min(seconds, _MAX_RATE_LIMIT_WAIT_S))
 
 
 def _status_of(error: Exception) -> Optional[int]:

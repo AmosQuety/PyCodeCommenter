@@ -313,3 +313,20 @@ def test_generate_writes_no_progress_when_output_is_not_a_terminal(
         pass
 
     assert "\r" not in capsys.readouterr().err
+
+
+def test_own_key_provider_reports_its_rate_limit_waits_on_the_status_line(monkeypatch):
+    from PyCodeCommenter import ai_setup
+
+    class Own(DescriptionProvider):
+        label = "Gemini"
+        model = "gemini-2.5-flash"
+
+    monkeypatch.setattr(ai_setup, "direct_provider", lambda *a, **k: Own())
+    progress, stream = make_progress()
+
+    provider = ai_setup.build_ai_provider("gemini", None, None, progress=progress)
+    progress.start_file("a.py", 1, 2)
+    provider.active.on_wait(20)
+
+    assert "waiting 20 s for the rate limit" in stream.getvalue()

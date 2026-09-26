@@ -516,3 +516,116 @@ def test_switch_on_stop_hands_class_drafting_to_the_replacement():
 
     assert draft.summary == "From the replacement."
     assert isinstance(provider.active, Replacement)
+
+
+# ---------------------------------------------------------------------------
+# A rate limit is waited out once before the run gives up
+# ---------------------------------------------------------------------------
+
+
+class RateLimited(Exception):
+    """An SDK 429, optionally carrying the response's Retry-After."""
+
+    def __init__(self, retry_after=None):
+        super().__init__("rate limited")
+        self.status_code = 429
+        headers = {} if retry_after is None else {"retry-after": str(retry_after)}
+        self.response = SimpleNamespace(headers=headers)
+
+
+class ScriptedAnthropic(FakeAnthropic):
+    """Raises each queued error in turn, then answers normally."""
+
+    def __init__(self, errors):
+        super().__init__()
+        self.errors = list(errors)
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.response
+
+
+@pytest.fixture
+def waits(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(
+        "PyCodeCommenter.direct_providers._wait",
+        lambda seconds: recorded.append(seconds),
+    )
+    return recorded
+
+
+def test_one_rate_limit_is_waited_out_and_the_request_retried(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=7)])
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [7]
+    assert len(fake.calls) == 2
+    assert draft.summary == "Shorten text to a maximum length."
+
+
+def test_a_second_rate_limit_stops_the_run_after_a_single_wait(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=3), RateLimited(retry_after=3)])
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    with pytest.raises(DraftingStopped) as stopped:
+        provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert stopped.value.reason == "rate_limited"
+    assert waits == [3]
+
+
+def test_a_missing_retry_after_uses_a_default_wait(waits):
+    provider = AnthropicProvider(api_key="k", client=ScriptedAnthropic([RateLimited()]))
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [20]
+
+
+@pytest.mark.parametrize("header, expected", [("3600", 60), ("0", 1), ("soon", 20)])
+def test_the_wait_is_kept_within_sensible_bounds(waits, header, expected):
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([RateLimited(retry_after=header)])
+    )
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == [expected]
+
+
+def test_the_wait_is_reported_before_it_starts(waits):
+    seen = []
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([RateLimited(retry_after=9)])
+    )
+    provider.on_wait = seen.append
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert seen == [9]
+
+
+def test_other_errors_never_wait(waits):
+    provider = AnthropicProvider(
+        api_key="k", client=ScriptedAnthropic([StatusError(500)])
+    )
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert waits == []
+
+
+def test_class_drafting_waits_out_a_rate_limit_too(waits):
+    fake = ScriptedAnthropic([RateLimited(retry_after=4)])
+    fake.response.content[0].text = json.dumps(CLASS_REPLY)
+    provider = AnthropicProvider(api_key="k", client=fake)
+
+    draft = provider.draft_class_docstring(CLASS_CONTEXT, {}, CLASS_SLOTS)
+
+    assert waits == [4]
+    assert draft.summary == "Keep recent results for a limited time."

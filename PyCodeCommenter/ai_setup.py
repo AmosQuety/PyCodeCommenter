@@ -107,6 +107,8 @@ def build_ai_provider(
         )
 
     provider = direct_provider(provider_name, model, base_url, assume_consent)
+    if progress is not None:
+        provider.on_wait = progress.waiting
     return _with_progress(SwitchOnStop(provider, _no_replacement), progress)
 
 
