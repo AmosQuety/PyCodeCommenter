@@ -39,6 +39,8 @@ class GenerationReport:
         ai_failed (int): Requests that failed (network or service error).
         ai_not_tried (int): Functions and classes with gaps that were never
             asked because drafting had stopped (for example a spent limit).
+        dropped_entries (int): Author-written Args: entries removed because
+            their parameter is no longer in the signature.
     """
 
     files: int = 0
@@ -53,6 +55,7 @@ class GenerationReport:
     ai_declined: int = 0
     ai_failed: int = 0
     ai_not_tried: int = 0
+    dropped_entries: int = 0
 
     def record_function(self, doc: FunctionDoc, outcome: str) -> None:
         """Counts one function's docstring.
@@ -62,6 +65,7 @@ class GenerationReport:
             outcome (str): ``"new"``, ``"updated"`` or ``"unchanged"``.
         """
         self._record_outcome(outcome)
+        self.dropped_entries += doc.dropped
         parts = doc.parts()
         self.todos += sum(p.origin == Origin.GUESS for p in parts)
         if outcome == "unchanged":
@@ -135,6 +139,14 @@ class GenerationReport:
             lines.append(
                 f"  {_count(self.ai_lines, 'line')} drafted by AI, "
                 'marked "(AI-drafted, unreviewed)"'
+            )
+        if self.dropped_entries:
+            plural = self.dropped_entries != 1
+            verb = "would be" if preview else ("were" if plural else "was")
+            lines.append(
+                f"  {self.dropped_entries} documented "
+                f"{'arguments' if plural else 'argument'} no longer in the "
+                f"signature {verb} removed from the docstrings"
             )
         lines += self._ai_problem_lines()
         if self.from_comments:

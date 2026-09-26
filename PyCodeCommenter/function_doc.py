@@ -87,6 +87,9 @@ class FunctionDoc:
     args: List[ArgEntry] = field(default_factory=list)
     returns: Optional[ReturnsEntry] = None
     raises: List[RaisesEntry] = field(default_factory=list)
+    # Author-written Args: entries dropped because the parameter no longer
+    # exists; not rendered, only counted for the run summary.
+    dropped: int = 0
 
     def parts(self) -> List[DocPart]:
         """Every part, in document order."""

@@ -300,3 +300,90 @@ def test_the_new_counts_add_up_across_files():
     total.merge(second)
 
     assert total.ai_failed == 6
+
+
+# ---------------------------------------------------------------------------
+# Documented arguments that no longer exist are reported when removed
+# ---------------------------------------------------------------------------
+
+DRIFTED = '''def combine(first, second):
+    """Combine two things.
+
+    Args:
+        first: The first thing.
+        ghost: A parameter that was removed long ago.
+        gone (int): Another removed one.
+
+    Returns:
+        Any: The result.
+    """
+    return first, second
+'''
+
+
+def test_removed_author_entries_are_counted():
+    report = report_for(DRIFTED)
+
+    assert report.dropped_entries == 2
+
+
+def test_the_summary_says_what_was_removed():
+    text = "\n".join(report_for(DRIFTED).summary_lines(preview=False, ai_used=False))
+
+    assert "2 documented arguments no longer in the signature were removed" in text
+
+
+def test_a_preview_says_would_be_removed():
+    text = "\n".join(report_for(DRIFTED).summary_lines(preview=True, ai_used=False))
+
+    assert "2 documented arguments no longer in the signature would be removed" in text
+
+
+def test_one_removed_entry_is_worded_in_the_singular():
+    code = DRIFTED.replace("        gone (int): Another removed one.\n", "")
+
+    text = "\n".join(report_for(code).summary_lines(preview=False, ai_used=False))
+
+    assert "1 documented argument no longer in the signature was removed" in text
+
+
+def test_the_tools_own_earlier_entries_are_not_reported_when_they_go():
+    code = '''def combine(first):
+    """Combine.
+
+    Args:
+        first (Any): TODO(pycodecommenter): describe
+        old (Any): TODO(pycodecommenter): describe
+
+    Returns:
+        Any: The result.
+    """
+    return first
+'''
+
+    assert report_for(code).dropped_entries == 0
+
+
+def test_a_docstring_that_matches_its_signature_reports_nothing():
+    code = (
+        DRIFTED.replace("        ghost: A parameter that was removed long ago.\n", "")
+        .replace("        gone (int): Another removed one.\n", "")
+        .replace(
+            "        first: The first thing.\n",
+            "        first: The first thing.\n        second: The second.\n",
+        )
+    )
+
+    report = report_for(code)
+    text = "\n".join(report.summary_lines(preview=False, ai_used=False))
+
+    assert report.dropped_entries == 0
+    assert "removed" not in text
+
+
+def test_removed_entries_add_up_across_files():
+    total = GenerationReport()
+    total.merge(report_for(DRIFTED))
+    total.merge(report_for(DRIFTED))
+
+    assert total.dropped_entries == 4

@@ -594,6 +594,7 @@ class PyCodeCommenter:
             summary=summary,
             description=self._description_part(parsed_info, summary),
             args=self._arg_entries(func_node, parsed_info),
+            dropped=self._dropped_entries(func_node, parsed_info),
             returns=self._returns_entry(func_node, parsed_info),
             raises=self._raises_entries(func_node, parsed_info.get("raises", {})),
         )
@@ -795,6 +796,22 @@ class PyCodeCommenter:
                 )
             )
         return entries
+
+    @staticmethod
+    def _dropped_entries(
+        func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        parsed_info: Dict[str, Any],
+    ) -> int:
+        """How many author-written Args: entries name a parameter the
+        function no longer has (they are dropped, so the run says so). The
+        tool's own earlier entries (guess markers) are not counted."""
+        current = {
+            p.display_name for p in exclude_self_cls(get_all_parameters(func_node))
+        }
+        return sum(
+            name not in current and _is_carried_forward(text)
+            for name, text in parsed_info.get("params", {}).items()
+        )
 
     def _arg_part(
         self,
