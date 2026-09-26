@@ -11,7 +11,7 @@ that no code changed before anything is saved.
 import ast
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Tuple
 
 try:
@@ -56,6 +56,9 @@ class ReviewItem:
             text (indent, opening quotes, entry label) -- kept on edit.
         keep_after (str): For an AI line, everything after the marker
             (e.g. a " (default: 3)" note) -- kept on accept and edit.
+        docstring_line (int): First line of the docstring holding the item
+            (0 for a comment, which lies outside it).
+        docstring_end (int): Last line of that docstring.
     """
 
     kind: str
@@ -65,6 +68,8 @@ class ReviewItem:
     text: str
     keep_before: str = ""
     keep_after: str = ""
+    docstring_line: int = 0
+    docstring_end: int = 0
 
 
 def is_interactive() -> bool:
@@ -172,7 +177,10 @@ def _docstring_items(
             items.append(_ai_item(line, number, name, style, first, in_section))
         elif GUESS_MARKER in line:
             items.append(ReviewItem(TODO, number, number, name, line.strip()))
-    return items
+    return [
+        replace(item, docstring_line=literal.lineno, docstring_end=literal.end_lineno)
+        for item in items
+    ]
 
 
 def _ai_item(line, number, name, style, first_line, in_section) -> ReviewItem:

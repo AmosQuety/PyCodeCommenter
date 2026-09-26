@@ -243,3 +243,79 @@ def test_nothing_to_review(tmp_path, monkeypatch, capsys):
     _, out = run_review(target, monkeypatch, capsys, [])
 
     assert "Nothing to review" in out
+
+
+# ---------------------------------------------------------------------------
+# Accepting every AI line of one function at once
+# ---------------------------------------------------------------------------
+
+
+def test_items_know_which_docstring_they_belong_to():
+    items = find_review_items(SOURCE)
+    add_ai = [i for i in items if i.definition == "add" and i.kind == "ai"]
+    check_ai = [i for i in items if i.definition == "check" and i.kind == "ai"]
+
+    assert len({i.docstring_line for i in add_ai}) == 1
+    assert add_ai[0].docstring_line != check_ai[0].docstring_line
+    assert add_ai[0].docstring_line <= add_ai[0].line <= add_ai[0].docstring_end
+
+
+def test_accept_all_takes_only_this_functions_ai_lines(tmp_path, monkeypatch, capsys):
+    target = tmp_path / "m.py"
+    target.write_text(SOURCE)
+
+    # comment: n | add: a-line -> "A" (also covers Returns) | gap b: s |
+    # check: summary a | gap: s
+    _, out = run_review(target, monkeypatch, capsys, ["n", "A", "s", "a", "s"])
+
+    result = target.read_text()
+    assert "a (Any): The first number.\n" in result
+    assert "Any: The sum.\n" in result
+    assert "Check x.\n" in result
+    assert MARK not in result
+    assert f"b (Any): {TODO}: describe. (default: 0)" in result  # gap still asked
+    assert "Saved" in out and "2 accepted" not in out and "3 accepted" in out
+
+
+def test_whole_docstring_is_shown_before_accept_all_is_offered(
+    tmp_path, monkeypatch, capsys
+):
+    target = tmp_path / "m.py"
+    target.write_text(SOURCE)
+
+    _, out = run_review(target, monkeypatch, capsys, ["n", "q"])
+
+    assert "Args:" in out and "Returns:" in out  # the docstring, in full
+    assert "[A]ccept all 2 AI-drafted lines in this function" in out
+
+
+def test_accept_all_is_not_offered_for_a_lone_ai_line(tmp_path, monkeypatch, capsys):
+    target = tmp_path / "m.py"
+    target.write_text(SOURCE)
+
+    # Skip through add's items, then look at check's single AI line.
+    _, out = run_review(target, monkeypatch, capsys, ["n", "s", "s", "s", "a", "s"])
+
+    assert out.count("[A]ccept all") == 1  # only while 2+ AI lines remain
+
+
+def test_lowercase_a_still_accepts_one_line_only(tmp_path, monkeypatch, capsys):
+    target = tmp_path / "m.py"
+    target.write_text(SOURCE)
+
+    run_review(target, monkeypatch, capsys, ["n", "a", "q"])
+
+    result = target.read_text()
+    assert "a (Any): The first number.\n" in result
+    assert f"Any: The sum. {MARK}" in result
+
+
+def test_quit_after_accept_all_keeps_the_accepted_lines(tmp_path, monkeypatch, capsys):
+    target = tmp_path / "m.py"
+    target.write_text(SOURCE)
+
+    run_review(target, monkeypatch, capsys, ["n", "A", "q"])
+
+    result = target.read_text()
+    assert "Any: The sum.\n" in result
+    assert f"Check x. {MARK}" in result

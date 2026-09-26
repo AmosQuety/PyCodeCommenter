@@ -145,6 +145,8 @@ pycodecommenter review <file_or_directory> [--list] [--exclude PATTERN ...]
 | A gap (`TODO(pycodecommenter): describe`) | **f**ill (type the text), **s**kip |
 | A `#` comment the docstring below it now repeats | **y**es to remove it, or **n**o (the default) to keep it |
 
+When a function has two or more AI-drafted lines, `review` first shows its whole docstring, and offers **A** (capital) to accept all of that function's remaining AI lines at once, after you have read them together. It covers that one function only; gaps and comments are still asked one by one, and there is deliberately no option to accept everything in a file, so removing the label always means a person looked at the text.
+
 **q** quits at any point; what you decided so far is saved.
 
 ### Safety
