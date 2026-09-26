@@ -88,7 +88,7 @@ PROVIDERS = {
     "gemini": ProviderSpec("Gemini", "GEMINI_API_KEY", "gemini-2.5-flash", "gemini"),
     "openai": ProviderSpec("OpenAI", "OPENAI_API_KEY", "gpt-6-astra", "openai"),
     "anthropic": ProviderSpec(
-        "Anthropic", "ANTHROPIC_API_KEY", "claude-opus-5", "anthropic"
+        "Anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001", "anthropic"
     ),
     "deepseek": ProviderSpec(
         "DeepSeek",

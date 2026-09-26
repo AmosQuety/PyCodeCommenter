@@ -67,7 +67,7 @@ finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.m
   its official SDK installed as an optional extra
   (`pip install "pycodecommenter[gemini]"`, `[openai]`, `[anthropic]`, or
   `[ai]` for all; Python 3.10+). Each provider has a default model
-  (Anthropic: `claude-opus-5`; Gemini: `gemini-2.5-flash`), printed at the
+  (Anthropic: `claude-haiku-4-5-20251001`; Gemini: `gemini-2.5-flash`), printed at the
   start of every run; `--ai-model` chooses any other, and
   `--ai-base-url` points `openai-compatible` at Mistral, Groq, Ollama, etc.
 - **Daily limit, then your own key**: the hosted service now allows 25

@@ -136,9 +136,21 @@ class FakeAnthropic:
         return self.response
 
 
-def test_anthropic_uses_structured_output_low_effort_and_refusal_fallback():
+def test_anthropic_default_is_a_small_model_without_effort_or_fallback_options():
     fake = FakeAnthropic()
     provider = AnthropicProvider(api_key="k", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    [call] = fake.calls
+    assert call["model"] == "claude-haiku-4-5-20251001"
+    assert "effort" not in call["output_config"]
+    assert "betas" not in call and "fallbacks" not in call
+
+
+def test_anthropic_uses_structured_output_low_effort_and_refusal_fallback():
+    fake = FakeAnthropic()
+    provider = AnthropicProvider(api_key="k", model="claude-opus-5", client=fake)
 
     draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
 
@@ -284,12 +296,10 @@ def test_make_provider_uses_the_default_model_unless_overridden():
     fake = FakeAnthropic()
 
     default = make_provider("anthropic", api_key="k", client=fake)
-    chosen = make_provider(
-        "anthropic", api_key="k", model="claude-haiku-4-5", client=fake
-    )
+    chosen = make_provider("anthropic", api_key="k", model="claude-opus-5", client=fake)
 
-    assert default.model == "claude-opus-5"
-    assert chosen.model == "claude-haiku-4-5"
+    assert default.model == "claude-haiku-4-5-20251001"
+    assert chosen.model == "claude-opus-5"
 
 
 def test_openai_compatible_requires_a_model_and_base_url():

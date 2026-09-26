@@ -551,8 +551,9 @@ def test_help_documents_default_models_and_that_they_can_be_changed(
 ):
     exit_code, out, err = run_cli(["generate", "--help"], monkeypatch, capsys)
     text = " ".join(out.split())  # argparse wraps lines
+    text = text.replace("- ", "-")  # ...and may break a model id after a hyphen
 
-    assert "anthropic=claude-opus-5" in text
+    assert "anthropic=claude-haiku-4-5-20251001" in text
     assert "you can always choose your own" in text
 
 
