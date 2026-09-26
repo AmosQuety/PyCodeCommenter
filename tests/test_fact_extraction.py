@@ -253,6 +253,47 @@ def test_untyped_attribute_uses_same_any_spelling_as_args():
     assert "repo (Any):" in _section(patched, "Attributes")
 
 
+def test_init_argument_that_is_not_assigned_is_not_an_attribute():
+    patched = _generate("""class InventoryError(Exception):
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
+""")
+    attributes = _section(patched, "Attributes")
+    assert "code (Any):" in attributes
+    assert "message" not in attributes
+
+
+def test_init_argument_stored_under_another_name_documents_the_stored_name():
+    patched = _generate("""class ProductService:
+    def __init__(self, products):
+        self._products = products
+""")
+    attributes = _section(patched, "Attributes")
+    names = [line.split()[0] for line in attributes.splitlines() if line.strip()]
+    assert names == ["_products"]
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    ["self.host: str = host", "self.host, self.port = host, port"],
+)
+def test_init_argument_assigned_in_other_statement_forms_is_an_attribute(assignment):
+    patched = _generate(f"""class Config:
+    def __init__(self, host: str, port: int):
+        {assignment}
+""")
+    assert "host (str):" in _section(patched, "Attributes")
+
+
+def test_class_with_no_stored_init_arguments_gets_no_attributes_section():
+    patched = _generate("""class Wrapper(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+""")
+    assert "Attributes:" not in patched
+
+
 # ---------------------------------------------------------------------------
 # End-to-end fixtures
 # ---------------------------------------------------------------------------

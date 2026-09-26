@@ -18,7 +18,7 @@ import tokenize
 import io
 import logging
 from pathlib import Path
-from typing import Union, Dict, Any, Optional
+from typing import Union, Dict, Any, List, Optional, Set
 import libcst as cst
 from libcst.metadata import PositionProvider
 
@@ -116,6 +116,31 @@ _DOCSTRING_LITERAL_RE = re.compile(
     + r")(?P<body>(?:(?!(?P=quote)).)*?)(?P=quote)$",
     re.DOTALL,
 )
+
+
+def _names_assigned_to_self(init_node: ast.AST) -> Set[str]:
+    """Names ``__init__`` stores as ``self.<name>`` (plain, annotated or
+    tuple assignment), ignoring nested classes, which have their own self."""
+    targets: List[ast.expr] = []
+    for node in walk_skipping_nested_classes(init_node):
+        if isinstance(node, ast.Assign):
+            targets.extend(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets.append(node.target)
+    names: Set[str] = set()
+    while targets:
+        target = targets.pop()
+        if isinstance(target, (ast.Tuple, ast.List)):
+            targets.extend(target.elts)
+        elif isinstance(target, ast.Starred):
+            targets.append(target.value)
+        elif (
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "self"
+        ):
+            names.add(target.attr)
+    return names
 
 
 def _is_carried_forward(text: Optional[str]) -> bool:
@@ -925,9 +950,10 @@ class PyCodeCommenter:
         """
         Extracts attributes from a class.
 
-        Three sources, in this order: __init__'s own parameters, ``self.x =
-        ...`` assignments anywhere in __init__'s body (for computed
-        attributes that aren't also parameters), and class-level
+        Three sources, in this order: __init__'s parameters that it stores
+        as ``self.<name>``, ``self.x = ...`` assignments anywhere in
+        __init__'s body (for computed attributes that aren't also
+        parameters), and class-level
         ``AnnAssign`` fields (covers ``@dataclass``-style classes with no
         __init__ written in source).
 
@@ -948,8 +974,12 @@ class PyCodeCommenter:
                 # so positional-only/keyword-only/*args/**kwargs params are
                 # picked up here too, and with the same (correctly inferred)
                 # type instead of falling back to "any" via a self.x= scan.
+                # A parameter is an attribute only if __init__ stores it as
+                # self.<name>; one merely passed on (e.g. to super()) is not.
+                stored = _names_assigned_to_self(item)
                 for param in exclude_self_cls(get_all_parameters(item)):
-                    attributes[param.name] = self._infer_param_type(param)
+                    if param.name in stored:
+                        attributes[param.name] = self._infer_param_type(param)
                 # walk_skipping_nested_classes (not ast.walk) so a
                 # self.x = ... assignment inside a class nested within
                 # __init__ isn't misattributed to *this* class -- it
