@@ -174,6 +174,7 @@ class PyCodeCommenter:
         self,
         description_provider: Optional[DescriptionProvider] = None,
         include_module_docstrings: bool = False,
+        progress: Optional[Any] = None,
     ):
         """
         Args:
@@ -194,6 +195,10 @@ class PyCodeCommenter:
                 other consequential behavior in this tool (``--inplace``,
                 ``--backup``, an AI description provider) requiring
                 explicit opt-in rather than a silent default change.
+            progress (Optional[Any]): Told when a draft is requested
+                (``drafting(function_name)``) and when the request is over
+                (``clear()``), so a slow request can be shown on screen
+                (see ``progress.py``). ``None`` shows nothing.
         """
         self.code = ""
         self.parsed_code = None
@@ -202,6 +207,7 @@ class PyCodeCommenter:
         self.type_analyzer = TypeAnalyzer()
         self.file_path = None
         self._description_provider = description_provider
+        self._progress = progress
         # Set once a provider says it can't draft any more this run (for
         # example, the daily allowance is spent); later functions keep
         # their gaps and the CLI reports why.
@@ -577,6 +583,8 @@ class PyCodeCommenter:
         slots = slots_for(doc)
         if slots.is_empty():
             return
+        if self._progress is not None:
+            self._progress.drafting(func_node.name)
         try:
             draft = self._description_provider.draft_docstring(
                 self._build_function_context(func_node), known_text(doc), slots
@@ -590,6 +598,9 @@ class PyCodeCommenter:
                 f"leaving its gaps as they are: {e}"
             )
             return
+        finally:
+            if self._progress is not None:
+                self._progress.clear()
         apply_draft(doc, draft, slots)
 
     def _summary_part(

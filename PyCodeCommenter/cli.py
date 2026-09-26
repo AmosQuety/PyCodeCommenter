@@ -22,6 +22,7 @@ from .ai_setup import (
     status,
 )
 from .run_report import GenerationReport
+from .progress import Progress
 from .review_cli import run_review
 from .direct_providers import PROVIDERS
 from .remote_provider import DEFAULT_BACKEND_URL
@@ -98,7 +99,7 @@ def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
     ]
 
 
-def _generate(args, description_provider, run_report):
+def _generate(args, description_provider, run_report, progress=None):
     """Runs the generate command for a file or directory target.
 
     Args:
@@ -107,6 +108,8 @@ def _generate(args, description_provider, run_report):
             provider for --ai-draft, or ``None``.
         run_report (GenerationReport): Accumulates each file's counts for
             the end-of-run summary.
+        progress (Optional[Progress]): The live status line for AI
+            drafting, or ``None``.
     """
     if os.path.isdir(args.file):
         if args.output:
@@ -127,10 +130,13 @@ def _generate(args, description_provider, run_report):
         any_changed = False
         any_failed = False
         written_count = 0
-        for target in targets:
+        for position, target in enumerate(targets, start=1):
+            if progress is not None:
+                progress.start_file(Path(target).name, position, len(targets))
             commenter = PyCodeCommenter(
                 description_provider=description_provider,
                 include_module_docstrings=args.include_module_docstrings,
+                progress=progress,
             ).from_file(target)
             if not commenter.parsed_code:
                 print(f"[FAIL] Could not parse {target}")
@@ -213,9 +219,12 @@ def _generate(args, description_provider, run_report):
         print("Error: --output-dir cannot be used with a single-file target.")
         sys.exit(1)
 
+    if progress is not None:
+        progress.start_file(Path(args.file).name)
     commenter = PyCodeCommenter(
         description_provider=description_provider,
         include_module_docstrings=args.include_module_docstrings,
+        progress=progress,
     ).from_file(args.file)
     if not commenter.parsed_code:
         print(f"Error: Could not parse {args.file}")
@@ -488,6 +497,7 @@ def main():
 
     if args.command == "generate":
         description_provider = None
+        progress = Progress() if args.ai_draft else None
         if args.ai_draft:
             if args.inplace and not args.accept_ai_drafts:
                 print(
@@ -507,6 +517,7 @@ def main():
                         "PYCODECOMMENTER_AI_BACKEND_URL", DEFAULT_BACKEND_URL
                     ),
                     assume_consent=args.yes_send_code_to_ai,
+                    progress=progress,
                 )
             except AISetupError as e:
                 print(f"Error: {e}")
@@ -514,7 +525,7 @@ def main():
 
         run_report = GenerationReport()
         try:
-            _generate(args, description_provider, run_report)
+            _generate(args, description_provider, run_report, progress)
         finally:
             # Runs however _generate exits (it calls sys.exit on several
             # paths), so the user always learns what the run did.

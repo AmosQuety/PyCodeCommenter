@@ -26,7 +26,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 try:
     from .description_provider import (
@@ -75,16 +75,25 @@ class RemoteDescriptionProvider(DescriptionProvider):
     # wait than this isn't worth holding a run for.
     MAX_RATE_LIMIT_WAIT_S = 60
 
-    def __init__(self, backend_url: str, timeout_s: float = 90.0):
+    def __init__(
+        self,
+        backend_url: str,
+        timeout_s: float = 90.0,
+        on_wait: Optional[Callable[[float], None]] = None,
+    ):
         """
         Args:
             backend_url (str): The backend's base URL.
             timeout_s (float): Per-request timeout, in seconds. See the
                 class docstring for why this defaults so much higher than
                 a typical HTTP client timeout.
+            on_wait (Optional[Callable[[float], None]]): Called with the
+                number of seconds just before a rate limit is waited out,
+                so the wait can be shown instead of looking like a hang.
         """
         self.backend_url = backend_url.rstrip("/")
         self.timeout_s = timeout_s
+        self._on_wait = on_wait
         # The caller's daily allowance, as last reported by the backend.
         self.drafts_remaining: Optional[int] = None
         self.drafts_limit: Optional[int] = None
@@ -132,7 +141,10 @@ class RemoteDescriptionProvider(DescriptionProvider):
                     self._stop(error)
                     raise self._stopped
                 if attempt == 0:
-                    time.sleep(_bounded_wait(e, self.MAX_RATE_LIMIT_WAIT_S))
+                    wait = _bounded_wait(e, self.MAX_RATE_LIMIT_WAIT_S)
+                    if self._on_wait is not None:
+                        self._on_wait(wait)
+                    time.sleep(wait)
             except Exception as e:
                 logger.warning(
                     f"Hosted AI backend request failed for {context.name}: {e}"

@@ -19,11 +19,13 @@ try:
         SwitchOnStop,
     )
     from .direct_providers import PROVIDERS, ProviderUnavailable, make_provider
+    from .progress import Progress
     from .remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 except ImportError:
     from consent import HOSTED, ensure_consent
     from description_provider import DescriptionProvider, DraftingStopped, SwitchOnStop
     from direct_providers import PROVIDERS, ProviderUnavailable, make_provider
+    from progress import Progress
     from remote_provider import DEFAULT_BACKEND_URL, RemoteDescriptionProvider
 
 AI_PROVIDER_CHOICES = [HOSTED] + list(PROVIDERS)
@@ -52,6 +54,7 @@ def build_ai_provider(
     base_url: Optional[str],
     backend_url: str = DEFAULT_BACKEND_URL,
     assume_consent: bool = False,
+    progress: Optional[Progress] = None,
 ) -> SwitchOnStop:
     """Builds the provider for a run and tells the user which one it is.
 
@@ -64,6 +67,9 @@ def build_ai_provider(
         base_url (Optional[str]): API endpoint for ``openai-compatible``.
         backend_url (str): The hosted service's address.
         assume_consent (bool): Record consent without asking (CI use).
+        progress (Optional[Progress]): The live status line. Its provider
+            name is set here, rate-limit waits are shown on it, and it is
+            cleared before any prompt.
 
     Returns:
         SwitchOnStop: The provider, wrapped for the limit-reached hand-off.
@@ -80,10 +86,45 @@ def build_ai_provider(
             f"{{{','.join(PROVIDERS)}}}."
         )
         on_stop = offer_own_key if is_interactive() else _no_replacement
-        return SwitchOnStop(RemoteDescriptionProvider(backend_url=backend_url), on_stop)
+        remote = RemoteDescriptionProvider(
+            backend_url=backend_url,
+            on_wait=progress.waiting if progress else None,
+        )
+        return _with_progress(
+            SwitchOnStop(remote, _clearing(progress, on_stop)), progress
+        )
 
     provider = direct_provider(provider_name, model, base_url, assume_consent)
-    return SwitchOnStop(provider, _no_replacement)
+    return _with_progress(SwitchOnStop(provider, _no_replacement), progress)
+
+
+def provider_label(provider: SwitchOnStop) -> str:
+    """A short name for the provider drafting right now, for the status
+    line: ``hosted``, or the vendor and model."""
+    active = provider.active
+    if isinstance(active, RemoteDescriptionProvider):
+        return "hosted"
+    label = getattr(active, "label", "")
+    model = getattr(active, "model", "")
+    return ", ".join(part for part in (label, model) if part)
+
+
+def _with_progress(provider: SwitchOnStop, progress: Optional[Progress]):
+    if progress is not None:
+        progress.provider_label = lambda: provider_label(provider)
+    return provider
+
+
+def _clearing(progress: Optional[Progress], on_stop):
+    """Wraps a hand-off so the status line is gone before it prompts."""
+    if progress is None:
+        return on_stop
+
+    def clear_then_ask(stopped: DraftingStopped):
+        progress.clear()
+        return on_stop(stopped)
+
+    return clear_then_ask
 
 
 def direct_provider(

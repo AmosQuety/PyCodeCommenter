@@ -321,6 +321,38 @@ def test_rate_limit_wait_is_capped(monkeypatch):
     assert draft.summary is None
 
 
+def test_rate_limit_wait_is_reported_before_sleeping(monkeypatch):
+    events = []
+    provider = RemoteDescriptionProvider(
+        backend_url="https://example.test",
+        on_wait=lambda seconds: events.append(("wait", seconds)),
+    )
+    responses = iter(
+        [
+            _http_error(429, {"error": "rate_limited"}, retry_after="7"),
+            _FakeV2Response({"summary": "Apply a discount."}),
+        ]
+    )
+
+    def fake_urlopen(request, timeout):
+        result = next(responses)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "PyCodeCommenter.remote_provider.time.sleep",
+        lambda seconds: events.append(("sleep", seconds)),
+    )
+
+    provider.draft_docstring(make_context(), KNOWN, SLOTS)
+
+    assert events == [("wait", 7), ("sleep", 7)]
+
+
 def test_older_backend_without_v2_falls_back_to_v1_description(monkeypatch):
     provider = RemoteDescriptionProvider(backend_url="https://example.test")
     urls = []

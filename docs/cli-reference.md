@@ -82,7 +82,7 @@ Summary: 4 docstrings would be written.
 Next: fill in the gaps, or add --ai-draft to have them drafted; then run `pycodecommenter validate`.
 ```
 
-It counts docstrings written, updated (your text kept) or already complete; details taken straight from the code; lines drafted by AI; docstrings taken from the comment above a definition; and gaps left. For a directory, the numbers cover the whole run. AI status messages and consent prompts also go to stderr.
+It counts docstrings written, updated (your text kept) or already complete; details taken straight from the code; lines drafted by AI; docstrings taken from the comment above a definition; and gaps left. For a directory, the numbers cover the whole run. AI status messages and consent prompts also go to stderr. On a terminal, `--ai-draft` also shows a live status line while each request is in flight (`[3/12] product_service.py - drafting create_product (hosted)`, or `waiting 30 s for the rate limit`), so a slow first request from the free hosted service does not look like a hang. It is not shown when stderr is redirected or in CI.
 
 ### Output modes (mutually used in order)
 
