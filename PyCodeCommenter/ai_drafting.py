@@ -142,6 +142,15 @@ def _fill(doc: FunctionDoc, attribute: str, text: Optional[str]) -> int:
     return 1
 
 
+def _answer_for(drafted: dict, name: str) -> Any:
+    """The reply's entry for ``name``. A model may drop the stars from
+    ``*args``/``**kwargs``, so an exact key wins and the unstarred name is
+    the fallback."""
+    if name in drafted:
+        return drafted[name]
+    return drafted.get(name.lstrip("*")) if name.startswith("*") else None
+
+
 def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
     """Fills Args:/Raises: entries by name, for requested names only."""
     if not isinstance(drafted, dict):
@@ -149,7 +158,7 @@ def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
     filled = 0
     for entry in entries:
         text = (
-            clean_slot_text(drafted.get(entry.name))
+            clean_slot_text(_answer_for(drafted, entry.name))
             if entry.name in requested
             else None
         )

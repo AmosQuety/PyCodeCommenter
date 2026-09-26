@@ -276,3 +276,56 @@ def test_null_like_drafts_are_not_written_and_the_gap_stays(value):
 
 def test_clean_slot_text_normalises_whitespace_and_period():
     assert clean_slot_text("  Amount\n owed ") == "Amount owed."
+
+
+# ---------------------------------------------------------------------------
+# Star parameters
+# ---------------------------------------------------------------------------
+
+STARRED = """def merge(base, *layers, strict=False, **extra):
+    return base
+"""
+
+
+def test_star_parameters_are_requested_by_their_starred_names():
+    provider = FakeProvider()
+    generate(STARRED, provider)
+
+    [(_, _, slots)] = provider.requests
+    assert "*layers" in slots.params and "**extra" in slots.params
+
+
+def test_a_reply_that_drops_the_stars_still_fills_star_parameters():
+    draft = DocstringDraft(
+        params={
+            "base": "The starting mapping.",
+            "layers": "Mappings merged over the base.",
+            "strict": "Whether unknown keys are rejected.",
+            "extra": "Further keys to add.",
+        },
+        returns="The merged mapping.",
+    )
+    patched = generate(STARRED, FakeProvider(draft))
+
+    assert f"*layers (tuple): Mappings merged over the base. {MARKER}" in patched
+    assert f"**extra (dict): Further keys to add. {MARKER}" in patched
+    assert GUESS not in patched
+
+
+def test_an_exact_starred_key_wins_over_the_unstarred_one():
+    draft = DocstringDraft(
+        params={"*layers": "Exact.", "layers": "Loose.", "base": "B.", "strict": "S."}
+    )
+    patched = generate(STARRED, FakeProvider(draft))
+
+    assert f"*layers (tuple): Exact. {MARKER}" in patched
+    assert "Loose." not in patched
+
+
+def test_an_unstarred_key_does_not_fill_a_plain_parameter_of_another_name():
+    draft = DocstringDraft(params={"layers": "Only for the star parameter."})
+    patched = generate(
+        "def f(layers_count, *layers):\n    return layers\n", FakeProvider(draft)
+    )
+
+    assert "layers_count (Any): Only for" not in patched
