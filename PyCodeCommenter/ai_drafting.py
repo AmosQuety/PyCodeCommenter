@@ -37,6 +37,10 @@ MAX_SUMMARY_CHARS = 80
 # early, start an escape sequence, or pass a placeholder off as an answer.
 _FORBIDDEN_FRAGMENTS = ('"""', "'''", "\\", "TODO", "AI-drafted")
 
+# A reply that is only one of these means "no answer", not an answer (some
+# services send the string "null" instead of a JSON null).
+_NO_ANSWER_WORDS = frozenset({"null", "none", "n/a", "nil", "undefined"})
+
 # Parts whose text an AI draft may replace.
 _REPLACEABLE = (Origin.GUESS, Origin.WEAK)
 
@@ -152,7 +156,8 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
     """Normalises one drafted value, or declines it.
 
     Whitespace is collapsed to single spaces (a docstring line must stay one
-    line) and a final period is added if missing.
+    line) and a final period is added if missing. A value that is only a
+    "no answer" word (null, none, n/a, nil, undefined) is declined.
 
     Args:
         value (Any): The raw value from the provider.
@@ -165,6 +170,8 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
         return None
     text = re.sub(r"\s+", " ", value).strip()
     if not text or any(fragment in text for fragment in _FORBIDDEN_FRAGMENTS):
+        return None
+    if text.rstrip(". ").lower() in _NO_ANSWER_WORDS:
         return None
     if not text.endswith((".", "!", "?")):
         text += "."

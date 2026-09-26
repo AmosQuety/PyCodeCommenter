@@ -229,5 +229,50 @@ def test_clean_slot_text_declines_unsafe_or_empty_values(value):
     assert clean_slot_text(value) is None
 
 
+NULL_LIKE_VALUES = [
+    "null",
+    "NULL",
+    "Null.",
+    "none",
+    "None.",
+    "n/a",
+    "N/A",
+    "nil",
+    "undefined",
+    "  null  ",
+    "null .",
+]
+
+
+@pytest.mark.parametrize("value", NULL_LIKE_VALUES)
+def test_clean_slot_text_declines_null_like_answers(value):
+    assert clean_slot_text(value) is None
+
+
+@pytest.mark.parametrize(
+    "value", ["Null pointer guard.", "Returns None when empty.", "Nil is fine here."]
+)
+def test_clean_slot_text_keeps_sentences_that_only_mention_null(value):
+    assert clean_slot_text(value) == value
+
+
+@pytest.mark.parametrize("value", NULL_LIKE_VALUES)
+def test_null_like_drafts_are_not_written_and_the_gap_stays(value):
+    draft = DocstringDraft(
+        summary=value,
+        description=value,
+        params={"discount": value, "repo": value},
+        returns=value,
+        raises={"ValueError": value},
+    )
+    patched = generate(FRESH, FakeProvider(draft))
+
+    assert MARKER not in patched
+    assert GUESS in patched
+    for line in patched.splitlines():
+        assert line.strip().rstrip(".").lower() not in {"null", "none", "n/a", "nil"}
+        assert "undefined" not in line
+
+
 def test_clean_slot_text_normalises_whitespace_and_period():
     assert clean_slot_text("  Amount\n owed ") == "Amount owed."
