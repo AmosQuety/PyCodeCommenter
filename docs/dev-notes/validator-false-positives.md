@@ -13,6 +13,7 @@ docstring coverage.
 |---|---|---|
 | "Function has return type hint 'None' but no Returns section" | A `-> None` function returns nothing; requiring a `Returns:` section only produced noise (96 of the baseline warnings carried a return hint, most of them `None`). | `validator.py` skips the check when the hint is `None`. Regression test `test_none_return_hint_needs_no_returns_section`. |
 | "Function has Returns section but doesn't return a value" on `raise NotImplementedError` / `...` bodies | An abstract method documents what implementations return; the body of an abstract stub never returns. | `validator.py` `_is_abstract_stub` skips the check. Regression tests added. |
+| "Placeholder text 'Description of' found" on prose such as "a description of this definition" | The placeholder check was a case-insensitive substring match, so it also matched inside ordinary sentences (and would match `HACK` inside "hackathon"). | Markers are matched as whole uppercase words; "Description of" only at the start of a line. Regression tests added. |
 
 ## Generator faults noticed (not yet fixed; listed for a decision)
 
@@ -31,6 +32,14 @@ docstring coverage.
 
 ## Open questions (not resolved)
 
-- The placeholder check is a case-insensitive substring match, so prose that
-  legitimately mentions the word "TODO" (for example describing a `TODO`
-  review kind) is flagged. Worded around in the docstrings so far.
+- Prose that legitimately mentions the whole word "TODO" (for example
+  describing the tool's own gap markers) is still flagged as a placeholder,
+  because the marker word cannot be told from a leftover note. Worded around
+  in the docstrings (`gap marker`) so far.
+
+## Possible real bugs found (not fixed, docstring-only commits)
+
+- `coverage.py` `CoverageAnalyzer.analyze_directory`: `except (SyntaxError,
+  ValueError)` comes before `except UnicodeDecodeError`, and
+  `UnicodeDecodeError` is a subclass of `ValueError`, so the encoding branch
+  is unreachable and encoding failures are logged as "Error parsing".
