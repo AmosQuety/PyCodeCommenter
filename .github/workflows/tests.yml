@@ -1,6 +1,7 @@
 # .github/workflows/tests.yml
-# Runs the test suite (including doctest-modules for PyCodeCommenter/)
-# on every push and pull request against main.
+# Runs the test suite (including doctest-modules for PyCodeCommenter/) and
+# the style and documentation-quality checks on every push and pull request
+# against main.
 
 name: Tests
 
@@ -31,3 +32,33 @@ jobs:
 
       - name: Run test suite
         run: pytest
+
+  lint-and-docs:
+    name: style and documentation quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Check formatting
+        run: black --check .
+
+      - name: Lint
+        run: flake8
+
+      # The package documents itself with its own tool: no validation
+      # errors, no leftover TODO(pycodecommenter) gaps, and (strictly
+      # counted) at least 90% of functions and classes documented.
+      - name: Validate the package's own docstrings
+        run: pycodecommenter validate PyCodeCommenter --fail-on-todo
+
+      - name: Check the package's docstring coverage
+        run: pycodecommenter coverage PyCodeCommenter --strict --fail-below 90
