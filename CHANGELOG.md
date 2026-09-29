@@ -40,6 +40,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   continuation text. It now continues the entry above.
 
 ### Changed
+- **New default models for Gemini and Anthropic.** Anthropic now defaults to
+  `claude-sonnet-5-5` (asked for low effort) instead of
+  `claude-haiku-4-5-20251001`, which Anthropic lists for retirement no sooner
+  than 2026-10-15. Gemini now defaults to `gemini-3.8-flash`; if Google says it
+  is unavailable to your key (not found, no access, or still failing after the
+  SDK's retries) the request moves on to `gemini-3.5-flash-lite` and then
+  `gemini-2.5-flash`, and stays on the one that worked for the rest of the
+  run. A Gemini model you choose with `--ai-model` is never replaced. Nothing
+  changes for the OpenAI, DeepSeek or OpenAI-compatible defaults.
 - **The hosted-service consent notice is accurate about Google.** It now says
   the service does not store your code, forwards it to Google's Gemini API,
   and that Google handles it under its free-tier terms and may use it to

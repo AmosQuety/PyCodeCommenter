@@ -179,7 +179,7 @@ def provider_label(provider: SwitchOnStop) -> str:
 
     Returns:
         str: ``hosted``, or the vendor and model, for example
-        ``Gemini, gemini-2.5-flash``.
+        ``Gemini, gemini-3.8-flash``.
     """
     active = provider.active
     if isinstance(active, RemoteDescriptionProvider):

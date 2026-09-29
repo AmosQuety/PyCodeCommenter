@@ -1001,7 +1001,7 @@ hosted = RemoteDescriptionProvider(backend_url=DEFAULT_BACKEND_URL)
 
 # Your own key: "gemini", "openai", "anthropic", "deepseek" or "openai-compatible".
 # Needs the matching extra, e.g. pip install "pycodecommenter[anthropic]".
-own_key = make_provider("anthropic", api_key="...", model="claude-opus-5")
+own_key = make_provider("anthropic", api_key="...", model="claude-opus-5-5")
 
 patched = PyCodeCommenter(description_provider=own_key).from_file("app.py").get_patched_code()
 ```

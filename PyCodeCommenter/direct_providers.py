@@ -95,15 +95,15 @@ class ProviderSpec:
     base_url: Optional[str] = None
 
 
-# Default models were chosen for reliability on short structured replies,
-# not recency: in live testing (2026-09) gemini-3.8-flash was repeatedly
-# overloaded while gemini-2.5-flash answered every request. Users can
-# always choose another with --ai-model.
+# Default models. Model names change often, so a default is only a starting
+# point: users can always choose another with --ai-model. Gemini also has a
+# fallback chain (see GEMINI_FALLBACK_MODELS) that is used only when the user
+# did not choose a model.
 PROVIDERS = {
-    "gemini": ProviderSpec("Gemini", "GEMINI_API_KEY", "gemini-2.5-flash", "gemini"),
+    "gemini": ProviderSpec("Gemini", "GEMINI_API_KEY", "gemini-3.8-flash", "gemini"),
     "openai": ProviderSpec("OpenAI", "OPENAI_API_KEY", "gpt-6-astra", "openai"),
     "anthropic": ProviderSpec(
-        "Anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001", "anthropic"
+        "Anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-5-5", "anthropic"
     ),
     "deepseek": ProviderSpec(
         "DeepSeek",
@@ -117,6 +117,17 @@ PROVIDERS = {
     ),
 }
 
+
+# Tried in order when the default Gemini model is unavailable to the key (for
+# example Google limits access to an older model, or a new one is overloaded
+# after the SDK's own retries). The 2.5 model comes last: Google restricts it
+# to keys that have used it before, so it is a last resort, not a first choice.
+GEMINI_FALLBACK_MODELS = ("gemini-3.5-flash-lite", "gemini-2.5-flash")
+
+# HTTP statuses that mean "this model can't serve the request", as opposed to
+# a bad key (401/403/400 invalid key) or a rate limit (429), which are
+# handled elsewhere.
+_MODEL_UNAVAILABLE_STATUSES = frozenset({404, 500, 502, 503, 504})
 
 # The module each pip extra installs; its presence means the SDK is there.
 _SDK_MODULES = {
@@ -190,7 +201,9 @@ def make_provider(
     if not chosen_model:
         raise ValueError(f"The {spec.label} provider needs a model: pass --ai-model.")
     if name == "gemini":
-        return GeminiProvider(api_key, chosen_model, client)
+        # Pass the user's own choice, not the default: only an unchosen model
+        # gets the fallback chain.
+        return GeminiProvider(api_key, model, client)
     if name == "openai":
         return OpenAIProvider(api_key, chosen_model, client)
     if name == "anthropic":
@@ -632,13 +645,34 @@ class OpenAICompatibleProvider(DirectProvider):
 
 
 class GeminiProvider(DirectProvider):
-    """Gemini, through the official ``google-genai`` SDK."""
+    """Gemini, through the official ``google-genai`` SDK.
+
+    When no model is chosen, the default is tried first and, if Google says
+    it can't serve the request, the models in ``GEMINI_FALLBACK_MODELS`` in
+    turn. A model the user chose is never swapped for another.
+    """
 
     provider_name = "gemini"
 
     label = "Gemini"
     env_var = "GEMINI_API_KEY"
     extra = "gemini"
+
+    def __init__(self, api_key: str, model: Optional[str] = None, client: Any = None):
+        """Create the provider, with a fallback chain if no model is chosen.
+
+        Args:
+            api_key (str): The user's Gemini API key.
+            model (Optional[str]): The model to use. When omitted, the default
+                is used and the fallback models stand ready behind it.
+            client (Any): A ready-made SDK client, for tests.
+
+        Raises:
+            ProviderUnavailable: If the SDK isn't installed and no ``client``
+                was given.
+        """
+        super().__init__(api_key, model, client)
+        self._fallback_models = list(GEMINI_FALLBACK_MODELS) if model is None else []
 
     def _create_client(self, api_key: str) -> Any:
         """Create a ``genai.Client`` that retries transient server errors.
@@ -663,7 +697,37 @@ class GeminiProvider(DirectProvider):
         return genai.Client(api_key=api_key, http_options={"retry_options": retry})
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
-        """Ask for a JSON reply that follows the schema.
+        """Ask for a JSON reply, moving to a fallback model if need be.
+
+        A model that can't serve the request (not found or no access, or still
+        failing after the SDK's retries) is replaced, for the rest of the run,
+        by the next fallback model. Any other error is raised as it is.
+
+        Args:
+            prompt (str): The full prompt.
+            slots (DraftSlots): Which parts the schema should require.
+
+        Returns:
+            str: The reply text, or an empty string if there is none.
+        """
+        while True:
+            try:
+                return self._generate(prompt, slots)
+            except Exception as error:
+                if (
+                    not self._fallback_models
+                    or _status_of(error) not in _MODEL_UNAVAILABLE_STATUSES
+                ):
+                    raise
+                following = self._fallback_models.pop(0)
+                logger.warning(
+                    f"Gemini model {self.model} is unavailable ({error}); "
+                    f"trying {following}"
+                )
+                self.model = following
+
+    def _generate(self, prompt: str, slots: DraftSlots) -> str:
+        """Make one Gemini call with the current model.
 
         Args:
             prompt (str): The full prompt.
