@@ -31,6 +31,8 @@ ENV/
 env.bak/
 venv.bak/
 
+opensci/
+
 # Pytest
 .pytest_cache/
 .coverage

@@ -28,13 +28,15 @@ The main class for loading Python code, generating docstrings, and patching the 
 ### Constructor
 
 ```python
-PyCodeCommenter(description_provider=None, include_module_docstrings=False)
+PyCodeCommenter(description_provider=None, include_module_docstrings=False, progress=None, budget=None)
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `description_provider` | `DescriptionProvider` or `None` | `None` | Opt-in AI drafting of the parts the code can't state (see [AI drafting providers](#ai-drafting-providers)). `None` keeps generation fully deterministic, with no network calls |
 | `include_module_docstrings` | `bool` | `False` | Also write a module docstring for a file that has none |
+| `progress` | object with `drafting(name)` and `clear()`, or `None` | `None` | Told when a draft is requested and when it ends, so a slow request can be shown on screen (the CLI passes one; see `progress.py`) |
+| `budget` | object with `take()`, or `None` | `None` | Called before each AI request; a `False` answer skips it. Caps the requests of a whole run (the CLI's `--max-drafts`) |
 
 After construction, call `from_string()` or `from_file()` to load code.
 
@@ -80,6 +82,19 @@ def greet(name: str) -> str:
 commenter = PyCodeCommenter().from_string(code)
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> from PyCodeCommenter import PyCodeCommenter
+>>> code = 'def greet(name: str) -> str:\n    return f"Hello, {name}"\n'
+>>> commenter = PyCodeCommenter().from_string(code)
+>>> commenter.parsed_code is not None
+True
+>>> PyCodeCommenter().from_string("def broken(:").parsed_code is None
+True
+
+```
+
 ---
 
 #### from_file(file_path) -> PyCodeCommenter
@@ -104,6 +119,22 @@ if not commenter.parsed_code:
     print("Could not parse the file")
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> import os, tempfile
+>>> with tempfile.TemporaryDirectory() as folder:
+...     path = os.path.join(folder, "api.py")
+...     with open(path, "w", encoding="utf-8") as handle:
+...         _ = handle.write(code)
+...     loaded = PyCodeCommenter().from_file(path)
+>>> loaded.parsed_code is not None
+True
+>>> PyCodeCommenter().from_file("no/such/file.py").parsed_code is None
+True
+
+```
+
 ---
 
 #### generate_docstrings() -> list
@@ -121,6 +152,17 @@ commenter = PyCodeCommenter().from_string(code)
 docstrings = commenter.generate_docstrings()
 for doc in docstrings:
     print(doc)
+```
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> docstrings = PyCodeCommenter().from_string(code).generate_docstrings()
+>>> len(docstrings)
+1
+>>> docstrings[0].splitlines()[0]
+'"""Greet.'
+
 ```
 
 ---
@@ -143,6 +185,19 @@ print(patched)
 # Write to disk yourself:
 with open("output.py", "w", encoding="utf-8") as f:
     f.write(patched)
+```
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> patched = PyCodeCommenter().from_string(code).get_patched_code()
+>>> patched.splitlines()[:3]
+['def greet(name: str) -> str:', '    """Greet.', '']
+>>> 'name (str): The name.' in patched
+True
+>>> patched.endswith('return f"Hello, {name}"\n')
+True
+
 ```
 
 ---
@@ -175,6 +230,17 @@ if report.stats.errors > 0:
     sys.exit(1)
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> report = PyCodeCommenter().from_string(code).validate()
+>>> (report.stats.errors, report.stats.total_functions)
+(1, 1)
+>>> report.issues[0].message
+"Function 'greet' has no docstring"
+
+```
+
 ---
 
 #### check_coverage() -> FileCoverage
@@ -193,6 +259,17 @@ coverage = commenter.check_coverage()
 print(f"{coverage.coverage_percentage:.1f}%")
 print(f"Functions: {coverage.documented_functions}/{coverage.total_functions}")
 print(f"Classes:   {coverage.documented_classes}/{coverage.total_classes}")
+```
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> coverage = PyCodeCommenter().from_string(code).check_coverage()
+>>> (coverage.path, coverage.total_functions, coverage.documented_functions)
+('<string>', 1, 0)
+>>> coverage.coverage_percentage
+0.0
+
 ```
 
 ---
@@ -246,6 +323,19 @@ report = validator.validate_all()
 report.print_summary()
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> from PyCodeCommenter import DocstringValidator
+>>> validator = DocstringValidator(code_string=code)
+>>> report = validator.validate_all()
+>>> (report.stats.errors, report.stats.warnings, report.stats.info)
+(1, 0, 0)
+>>> DocstringValidator(file_path="no/such/file.py").validate_all().issues
+[]
+
+```
+
 ---
 
 #### check_signature_match(func_node, docstring, location) -> List[ValidationIssue]
@@ -262,6 +352,26 @@ Check that every parameter in the function signature is documented and every doc
 
 **Returns:** `List[ValidationIssue]`
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> import ast
+>>> source = '''
+... def f(a: int, b: str = "x") -> int:
+...     if a < 0:
+...         raise ValueError("negative")
+...     return a
+... '''
+>>> func = ast.parse(source).body[0]
+>>> validator = DocstringValidator(code_string=source)
+>>> issues = validator.check_signature_match(
+...     func, "Do f.\n\nArgs:\n    a (int): The a.\n", "demo.py:2:f"
+... )
+>>> [(issue.severity.name, issue.message) for issue in issues]
+[('ERROR', "Parameter 'b' is not documented in docstring")]
+
+```
+
 ---
 
 #### check_type_consistency(func_node, docstring, location) -> List[ValidationIssue]
@@ -271,6 +381,17 @@ Check that annotated parameters and return types are reflected in the docstring.
 **Parameters:** Same structure as `check_signature_match`.
 
 **Returns:** `List[ValidationIssue]`
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> issues = validator.check_type_consistency(
+...     func, "Do f.\n\nArgs:\n    a (int): The a.\n", "demo.py:2:f"
+... )
+>>> [(issue.severity.name, issue.message) for issue in issues]
+[('WARNING', "Function has return type hint 'int' but no Returns section in docstring"), ('INFO', "Parameter 'b' has type hint 'str' but is not documented")]
+
+```
 
 ---
 
@@ -282,6 +403,15 @@ Check that any `raise` statements in the function body are matched by a recognis
 
 **Returns:** `List[ValidationIssue]`
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> issues = validator.check_exception_documentation(func, "Do f.", "demo.py:2:f")
+>>> [issue.message for issue in issues]
+["Function raises exceptions {'ValueError'} but has no Raises section"]
+
+```
+
 ---
 
 #### check_return_documentation(func_node, docstring, location) -> List[ValidationIssue]
@@ -291,6 +421,15 @@ Check that `return <value>` statements are matched by a `Returns:` section and v
 **Parameters:** Same structure as `check_signature_match`.
 
 **Returns:** `List[ValidationIssue]`
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> issues = validator.check_return_documentation(func, "Do f.", "demo.py:2:f")
+>>> [issue.message for issue in issues]
+['Function returns a value but has no Returns section in docstring']
+
+```
 
 ---
 
@@ -307,6 +446,16 @@ Check that the docstring has a summary line and only uses recognised Google-styl
 
 **Returns:** `List[ValidationIssue]`
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> [issue.message for issue in validator.check_format_compliance("", "demo.py:2:f")]
+['Docstring is empty']
+>>> validator.check_format_compliance("Do f.", "demo.py:2:f")
+[]
+
+```
+
 ---
 
 #### check_content_quality(docstring, location) -> List[ValidationIssue]
@@ -316,6 +465,15 @@ Check for placeholder text, very short summaries, and duplicate parameter descri
 **Parameters:** Same as `check_format_compliance`.
 
 **Returns:** `List[ValidationIssue]`
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> issues = validator.check_content_quality("TODO: write this.", "demo.py:2:f")
+>>> [issue.message for issue in issues]
+["Placeholder text 'TODO' found in docstring"]
+
+```
 
 ---
 
@@ -375,6 +533,40 @@ with open("report.md", "w") as f:
 
 ---
 
+#### count_placeholders() -> int
+
+Count the issues that report placeholder text (`TODO`, `FIXME`, this tool's own `TODO(pycodecommenter)` marker and the like). This is what the `--fail-on-todo` flag of `validate` checks.
+
+---
+
+#### count_ai_drafts() -> int
+
+Count the docstrings that still hold an unreviewed `(AI-drafted, unreviewed)` line. This is what `--fail-on-ai-draft` checks.
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> import json
+>>> from PyCodeCommenter import Severity, ValidationIssue, ValidationReport
+>>> report = ValidationReport()
+>>> report.add_issue(
+...     ValidationIssue(Severity.WARNING, "quality", "f.py:1:f", "Placeholder text", "Replace it")
+... )
+>>> (report.stats.total_issues, report.stats.warnings)
+(1, 1)
+>>> report.to_dict()["issues"]
+[{'line': 1, 'severity': 'WARNING', 'check': 'quality', 'message': 'Placeholder text'}]
+>>> json.loads(json.dumps(report.to_dict()))["stats"]["warnings"]
+1
+>>> report.to_markdown().splitlines()[0]
+'# Validation Report'
+>>> (report.count_placeholders(), report.count_ai_drafts())
+(1, 0)
+
+```
+
+---
+
 ## ValidationStats
 
 Dataclass holding aggregated counts from a validation run. Accessed via `report.stats`.
@@ -391,6 +583,16 @@ Dataclass holding aggregated counts from a validation run. Accessed via `report.
 | `info` | `int` | INFO-level issue count (renamed from `infos` in v2.3.0 to match the `"info"` key in JSON/Markdown output; `.infos` still works as a backward-compatible property alias) |
 | `coverage_percentage` | `float` (property) | `(documented / total) * 100` |
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> report.stats.infos == report.stats.info
+True
+>>> round(report.stats.coverage_percentage, 1)
+0.0
+
+```
+
 ---
 
 ## ValidationIssue
@@ -400,10 +602,21 @@ Dataclass representing a single documentation problem.
 | Field | Type | Description |
 |-------|------|-------------|
 | `severity` | `Severity` | `Severity.ERROR`, `Severity.WARNING`, or `Severity.INFO` |
-| `category` | `str` | One of `"missing"`, `"signature"`, `"types"`, `"exceptions"`, `"returns"`, `"format"`, `"quality"` |
+| `category` | `str` | One of `"missing"`, `"signature"`, `"types"`, `"exceptions"`, `"returns"`, `"format"`, `"quality"`, `"ai_draft"` |
 | `location` | `str` | `"file.py:line:function_name"` |
 | `message` | `str` | Human-readable description of the issue |
 | `suggestion` | `str` or `None` | How to fix the issue |
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> issue = report.issues[0]
+>>> (issue.severity, issue.category, issue.location)
+(<Severity.WARNING: 'warning'>, 'quality', 'f.py:1:f')
+>>> str(issue)
+'[WARNING] f.py:1:f: Placeholder text'
+
+```
 
 ---
 
@@ -419,6 +632,14 @@ Severity.WARNING  # value: "warning" — Should fix; does not affect exit code
 Severity.INFO     # value: "info"    — Nice to have; does not affect exit code
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> [severity.value for severity in Severity]
+['error', 'warning', 'info']
+
+```
+
 ---
 
 ## CoverageAnalyzer
@@ -428,10 +649,12 @@ Analyses documentation coverage for individual files or entire directory trees.
 ### Constructor
 
 ```python
-CoverageAnalyzer()
+CoverageAnalyzer(strict=False)
 ```
 
-No parameters.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `strict` | `bool` | `False` | Do not count a docstring that still holds a `TODO(pycodecommenter)` placeholder or an unreviewed AI-drafted line (the CLI's `coverage --strict`) |
 
 ### Methods
 
@@ -485,6 +708,25 @@ if project.total_coverage < 80.0:
     print(f"Coverage {project.total_coverage:.1f}% is below threshold")
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> import os, tempfile
+>>> from PyCodeCommenter import CoverageAnalyzer
+>>> folder = tempfile.mkdtemp()
+>>> path = os.path.join(folder, "module.py")
+>>> with open(path, "w", encoding="utf-8") as handle:
+...     _ = handle.write('def documented():\n    """Doc."""\n\n\ndef bare():\n    pass\n')
+>>> analyzer = CoverageAnalyzer()
+>>> analyzer.analyze_file(path).coverage_percentage
+50.0
+>>> analyzer.analyze_directory(folder).total_coverage
+50.0
+>>> analyzer.analyze_directory(folder, exclude_patterns=["module.py"]).files
+{}
+
+```
+
 ---
 
 ## FileCoverage
@@ -499,6 +741,17 @@ Dataclass holding coverage statistics for one file.
 | `total_classes` | `int` | Total classes found |
 | `documented_classes` | `int` | Classes with docstrings |
 | `coverage_percentage` | `float` (property) | `(documented / total) * 100` |
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> file_coverage = analyzer.analyze_file(path)
+>>> (file_coverage.total_functions, file_coverage.documented_functions)
+(2, 1)
+>>> (file_coverage.total_classes, file_coverage.documented_classes)
+(0, 0)
+
+```
 
 ---
 
@@ -530,6 +783,19 @@ import json
 data = project.to_json()
 with open("coverage.json", "w") as f:
     json.dump(data, f, indent=2)
+```
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> project = analyzer.analyze_directory(folder)
+>>> list(project.files) == [path]
+True
+>>> project.to_json()["total_coverage"]
+50.0
+>>> project.to_json()["files"][path]["functions"]
+'1/2'
+
 ```
 
 ---
@@ -568,6 +834,17 @@ with open("coverage_badge.json", "w") as f:
     json.dump(badge, f, indent=2)
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> from PyCodeCommenter.coverage import shields_badge_dict
+>>> shields_badge_dict(95)
+{'schemaVersion': 1, 'label': 'docs coverage', 'message': '95%', 'color': 'brightgreen'}
+>>> shields_badge_dict(50.0, label="docs")["color"]
+'yellow'
+
+```
+
 ---
 
 ## TypeAnalyzer
@@ -596,7 +873,26 @@ Infer type from an expression node (literal, list, dict, binary op, call, etc.).
 
 #### get_annotation_type(annotation) -> str
 
-Translate an annotation AST node (supports PEP 604 `|` and PEP 585 generics) into a readable string such as `"List[str]"` or `"Union[int, str]"`.
+Translate an annotation AST node (supports PEP 604 `|` and PEP 585 generics) into a readable string such as `"list[str]"` or `"Union[int, None]"`.
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> import ast
+>>> from PyCodeCommenter import TypeAnalyzer
+>>> tree = ast.parse("def k(x: int | None, y: list[str]): ...\nz = 3")
+>>> function, assignment = tree.body
+>>> analyzer = TypeAnalyzer()
+>>> analyzer.infer_type(function.args.args[0])
+'Union[int, None]'
+>>> analyzer.infer_type(function.args.args[1])
+'list[str]'
+>>> analyzer.infer_expr_type(assignment.value)
+'int'
+>>> analyzer.get_annotation_type(function.args.args[0].annotation)
+'Union[int, None]'
+
+```
 
 ---
 
@@ -673,6 +969,20 @@ print(info["params"])       # {"data": "The data to process."}
 print(info["returns"])      # "str: The processed result."
 ```
 
+**Runnable example** (checked by the test suite):
+
+```python
+>>> from PyCodeCommenter import DocstringParser
+>>> parser = DocstringParser("Do it.\n\nArgs:\n    x (int): The x.\n")
+>>> parser.get_info()["params"]
+{'x': 'The x.'}
+>>> (parser.style, parser.param_types)
+('google', {'x': 'int'})
+>>> DocstringParser().summary
+''
+
+```
+
 ---
 
 ## AI drafting providers
@@ -691,12 +1001,33 @@ hosted = RemoteDescriptionProvider(backend_url=DEFAULT_BACKEND_URL)
 
 # Your own key: "gemini", "openai", "anthropic", "deepseek" or "openai-compatible".
 # Needs the matching extra, e.g. pip install "pycodecommenter[anthropic]".
-own_key = make_provider("anthropic", api_key="...", model="claude-opus-5")
+own_key = make_provider("anthropic", api_key="...", model="claude-opus-5-5")
 
 patched = PyCodeCommenter(description_provider=own_key).from_file("app.py").get_patched_code()
 ```
 
 The CLI's `--ai-draft` also asks for consent before sending code anywhere; when you use a provider from the API, that decision is yours.
+
+**Runnable example** (checked by the test suite):
+
+```python
+>>> from PyCodeCommenter.description_provider import DescriptionProvider, DocstringDraft
+>>> class OfflineProvider(DescriptionProvider):
+...     def draft_docstring(self, context, known, slots):
+...         return DocstringDraft(
+...             summary="Compute the total." if slots.summary else None,
+...             params={name: "The value." for name in slots.params},
+...             returns="The total." if slots.returns else None,
+...         )
+>>> source = "def total(amount, tax):\n    return amount + tax\n"
+>>> commenter = PyCodeCommenter(description_provider=OfflineProvider())
+>>> patched = commenter.from_string(source).get_patched_code()
+>>> patched.splitlines()[1]
+'    """Compute the total. (AI-drafted, unreviewed)'
+>>> commenter.report.ai_lines
+4
+
+```
 
 ### Writing your own provider
 

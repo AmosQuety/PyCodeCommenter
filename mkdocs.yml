@@ -52,6 +52,7 @@ nav:
     - Python API: python-api.md
     - Configuration: configuration.md
     - Validation Checks: validation-checks.md
+    - Data and Privacy: data-and-privacy.md
   - Project:
     - Changelog: changelog.md
     - FAQ: faq.md

@@ -24,10 +24,10 @@ MAX_CONDITION_LENGTH = 60
 
 
 def raise_sites(func_node: FunctionNode) -> Dict[str, List[ast.Raise]]:
-    """Groups the function's own ``raise`` statements by exception class.
+    """Group the function's own ``raise`` statements by exception class.
 
     ``raise SomeError(...)`` names its class at the raise site. So does a
-    bare ``raise SomeError`` -- but only when the name is recognisably a
+    bare ``raise SomeError``, but only when the name is recognisably a
     class (see :func:`_names_exception_class`), since ``raise err`` raises
     an already-constructed instance whose class would need data-flow
     analysis. A bare re-raise (``raise``) is skipped.
@@ -37,7 +37,7 @@ def raise_sites(func_node: FunctionNode) -> Dict[str, List[ast.Raise]]:
 
     Returns:
         Dict[str, List[ast.Raise]]: Raise statements by short class name
-            (``errors.ConfigError`` -> ``ConfigError``), in source order.
+        (``errors.ConfigError`` becomes ``ConfigError``), in source order.
     """
     raises = [
         node
@@ -57,8 +57,15 @@ _EXCEPTION_CLASS_NAME = re.compile(r"^[A-Z]\w*(Error|Exception|Warning)$")
 
 
 def _raised_class_name(exc: ast.expr) -> Optional[str]:
-    """The exception class a ``raise`` names, or ``None`` if it can't be read
-    off the raise site."""
+    """Get the exception class a ``raise`` names.
+
+    Args:
+        exc (ast.expr): The expression after ``raise``.
+
+    Returns:
+        Optional[str]: The short class name, or ``None`` if it can't be read
+        off the raise site.
+    """
     if isinstance(exc, ast.Call):
         return _short_name(exc.func)
     name = _short_name(exc)
@@ -66,8 +73,17 @@ def _raised_class_name(exc: ast.expr) -> Optional[str]:
 
 
 def _names_exception_class(name: str) -> bool:
-    """Whether a bare name is a class rather than an exception instance: a
-    built-in exception, or named like one (``ConfigError``)."""
+    """Say whether a bare name is an exception class rather than an instance.
+
+    It is when it is a built-in exception, or is named like one
+    (``ConfigError``).
+
+    Args:
+        name (str): The name.
+
+    Returns:
+        bool: ``True`` if the name is taken to be an exception class.
+    """
     builtin = getattr(builtins, name, None)
     if isinstance(builtin, type) and issubclass(builtin, BaseException):
         return True
@@ -77,7 +93,7 @@ def _names_exception_class(name: str) -> bool:
 def describe_raise_condition(
     func_node: FunctionNode, raise_nodes: List[ast.Raise]
 ) -> Optional[str]:
-    """States when an exception is raised, if every raise site says so exactly.
+    """State when an exception is raised, if every raise site says so exactly.
 
     A site's condition is exact only when its check sits directly in the
     function body: an ``if`` (not an ``elif``), an ``except`` clause, or an
@@ -91,8 +107,8 @@ def describe_raise_condition(
 
     Returns:
         Optional[str]: A sentence such as ``"If `x < 0`."``, or ``None`` if
-            any site's condition isn't exact -- stating only the known ones
-            would read as the complete list.
+        any site's condition isn't exact: stating only the known ones would
+        read as the complete list.
     """
     parents = _parent_map(func_node)
     conditions = [_site_condition(func_node, node, parents) for node in raise_nodes]
@@ -106,7 +122,7 @@ def describe_raise_condition(
 
 
 def describe_bool_return(func_node: FunctionNode) -> Optional[str]:
-    """States what a boolean function's single return expression tests.
+    """State what a boolean function's single return expression tests.
 
     The caller is responsible for having established that the function
     returns ``bool``; this only phrases the one expression it returns.
@@ -116,8 +132,8 @@ def describe_bool_return(func_node: FunctionNode) -> Optional[str]:
 
     Returns:
         Optional[str]: ``"True if `expr`, otherwise False."``, or ``None``
-            when there is more than one return path (no single expression
-            describes the result) or the expression is a bare literal.
+        when there is more than one return path (no single expression
+        describes the result) or the expression is a bare literal.
     """
     returns = [
         node
@@ -136,8 +152,18 @@ def describe_bool_return(func_node: FunctionNode) -> Optional[str]:
 
 
 def _without_bool_wrapper(expression: ast.expr) -> ast.expr:
-    """``bool(x)`` says the same as ``x`` here ("True if x"), so the wrapper
-    is not repeated in the description."""
+    """Remove a ``bool(...)`` call around an expression.
+
+    ``bool(x)`` says the same as ``x`` here ("True if x"), so the wrapper is
+    not repeated in the description.
+
+    Args:
+        expression (ast.expr): The returned expression.
+
+    Returns:
+        ast.expr: The wrapped argument for a one-argument ``bool(x)`` call,
+        otherwise ``expression`` itself.
+    """
     if (
         isinstance(expression, ast.Call)
         and isinstance(expression.func, ast.Name)
@@ -152,7 +178,19 @@ def _without_bool_wrapper(expression: ast.expr) -> ast.expr:
 def _site_condition(
     func_node: FunctionNode, raise_node: ast.Raise, parents: Dict[ast.AST, ast.AST]
 ) -> Optional[str]:
-    """The exact condition for one raise site, without a trailing period."""
+    """Find the exact condition for one raise site, without a trailing period.
+
+    Args:
+        func_node (FunctionNode): The function containing the raise.
+        raise_node (ast.Raise): The raise statement.
+        parents (Dict[ast.AST, ast.AST]): Each node's parent, from
+            :func:`_parent_map`.
+
+    Returns:
+        Optional[str]: ``"Always"``, ``"If `test`"``, ``"If `test` is
+        false"`` or ``"If `Error` occurs"``; ``None`` when the condition
+        isn't exact.
+    """
     parent = parents.get(raise_node)
 
     if parent is func_node:
@@ -178,8 +216,15 @@ def _site_condition(
 
 
 def _caught_names(type_node: Optional[ast.expr]) -> Optional[List[str]]:
-    """Exception names an ``except`` clause catches, or ``None`` for a bare
-    ``except:`` or a computed expression."""
+    """List the exception names an ``except`` clause catches.
+
+    Args:
+        type_node (Optional[ast.expr]): The clause's exception expression.
+
+    Returns:
+        Optional[List[str]]: The short names, or ``None`` for a bare
+        ``except:`` or a computed expression.
+    """
     if type_node is None:
         return None
     nodes = type_node.elts if isinstance(type_node, ast.Tuple) else [type_node]
@@ -188,8 +233,17 @@ def _caught_names(type_node: Optional[ast.expr]) -> Optional[List[str]]:
 
 
 def _short_name(node: ast.expr) -> Optional[str]:
-    """``ValueError`` -> ``ValueError``, ``errors.ConfigError`` ->
-    ``ConfigError``; anything else -> ``None``."""
+    """Read the short name of a name or attribute expression.
+
+    ``ValueError`` gives ``ValueError`` and ``errors.ConfigError`` gives
+    ``ConfigError``.
+
+    Args:
+        node (ast.expr): The expression.
+
+    Returns:
+        Optional[str]: The name, or ``None`` for anything else.
+    """
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -198,11 +252,18 @@ def _short_name(node: ast.expr) -> Optional[str]:
 
 
 def _short_source(node: ast.expr) -> Optional[str]:
-    """The expression's source, if it fits in one readable inline span.
+    """Get an expression's source, if it fits in one readable inline span.
 
     Colons and backticks are refused: a colon would be misread as a
     "type: description" separator when the docstring is parsed back on the
     next run, and a backtick would end the inline code span early.
+
+    Args:
+        node (ast.expr): The expression.
+
+    Returns:
+        Optional[str]: The source text, or ``None`` if it is too long
+        (``MAX_CONDITION_LENGTH``) or holds a colon, backtick or newline.
     """
     text = ast.unparse(node)
     if len(text) > MAX_CONDITION_LENGTH or any(c in text for c in ":`\n"):
@@ -211,7 +272,14 @@ def _short_source(node: ast.expr) -> Optional[str]:
 
 
 def _parent_map(func_node: FunctionNode) -> Dict[ast.AST, ast.AST]:
-    """Maps each node in the function's own scope to its parent node."""
+    """Map each node in the function's own scope to its parent node.
+
+    Args:
+        func_node (FunctionNode): The function.
+
+    Returns:
+        Dict[ast.AST, ast.AST]: Each child node and the node holding it.
+    """
     parents: Dict[ast.AST, ast.AST] = {}
     for node in [func_node, *walk_own_scope(func_node)]:
         for child in ast.iter_child_nodes(node):

@@ -56,7 +56,7 @@ pycodecommenter coverage ./src --output-format json
 - **Parsed input styles**: Google, Sphinx, NumPy (all full)
 - **Runtime dependencies**: `ruamel.yaml` (config files), `libcst` (docstring patching)
 - **AI / LLM calls**: none by default (deterministic); optional with `--ai-draft`
-- **Version**: 2.6.0
+- **Version**: 2.6.1
 - **License**: MIT
 - **Repository**: https://github.com/AmosQuety/PyCodeCommenter
 

@@ -88,7 +88,15 @@ def walk_skipping_nested_classes(node: ast.AST) -> Iterator[ast.AST]:
 
 class Parameter(NamedTuple):
     """One parameter of a function, normalized across every kind
-    ``ast.arguments`` can hold."""
+    ``ast.arguments`` can hold.
+
+    Attributes:
+        arg (ast.arg): The parameter's AST node, holding its name and
+            annotation.
+        kind (str): ``"positional"``, ``"vararg"``, ``"kwonly"`` or ``"kwarg"``.
+        default (Optional[ast.expr]): The default value's node, or ``None`` if
+            it has none.
+    """
 
     arg: ast.arg
     kind: str  # "positional", "vararg", "kwonly", or "kwarg"
@@ -96,12 +104,20 @@ class Parameter(NamedTuple):
 
     @property
     def name(self) -> str:
+        """The parameter's bare name, without any ``*`` prefix.
+
+        Returns:
+            str: The identifier as written in the signature.
+        """
         return self.arg.arg
 
     @property
     def display_name(self) -> str:
-        """Name as it should appear in (and be matched against) a docstring
-        Args section."""
+        """Give the name as it should appear in (and be matched against) Args.
+
+        Returns:
+            str: The name, with ``*`` for ``*args`` and ``**`` for ``**kwargs``.
+        """
         if self.kind == "vararg":
             return f"*{self.arg.arg}"
         if self.kind == "kwarg":

@@ -66,16 +66,23 @@ DEFAULT_BACKEND_URL = "https://pycodecommenter-backend.onrender.com"
 
 
 class RemoteDescriptionProvider(DescriptionProvider):
-    """Drafts function descriptions via the hosted backend.
+    """Drafts docstring parts through the hosted backend.
 
     Attributes:
-        backend_url (str): The backend's base URL (no trailing slash),
-            e.g. ``https://pycodecommenter-backend.onrender.com``.
-        timeout_s (float): Per-request timeout, in seconds. Defaults high
-            (90s) specifically because Render's free tier sleeps an
-            inactive service and pays a real cold-start cost -- tens of
-            seconds -- on the first request after that; the direct-Gemini
-            provider's much shorter default would false-fail here.
+        backend_url (str): The backend's base URL, without a trailing slash,
+            for example ``https://pycodecommenter-backend.onrender.com``.
+        timeout_s (float): Per-request timeout, in seconds. Defaults high (90)
+            because Render's free tier sleeps an inactive service and pays a
+            cold-start cost of tens of seconds on the first request after
+            that; the direct providers' shorter timeouts would false-fail here.
+        drafts_remaining (Optional[int]): The caller's daily allowance left, as
+            last reported by the backend; ``None`` until it has said.
+        drafts_limit (Optional[int]): The caller's daily allowance in total, as
+            last reported by the backend.
+        _on_wait (Optional[Callable[[float], None]]): Told the seconds about to be
+            waited out for a rate limit.
+        _class_endpoint_missing (bool): Set when the backend has no class endpoint,
+            so classes are not asked about again.
     """
 
     # The backend's per-minute rate limit asks callers to wait; a longer
@@ -88,15 +95,16 @@ class RemoteDescriptionProvider(DescriptionProvider):
         timeout_s: float = 90.0,
         on_wait: Optional[Callable[[float], None]] = None,
     ):
-        """
+        """Create a client for one backend.
+
         Args:
             backend_url (str): The backend's base URL.
-            timeout_s (float): Per-request timeout, in seconds. See the
-                class docstring for why this defaults so much higher than
-                a typical HTTP client timeout.
-            on_wait (Optional[Callable[[float], None]]): Called with the
-                number of seconds just before a rate limit is waited out,
-                so the wait can be shown instead of looking like a hang.
+            timeout_s (float): Per-request timeout, in seconds. See the class
+                docstring for why this defaults so much higher than a typical HTTP
+                client timeout.
+            on_wait (Optional[Callable[[float], None]]): Called with the number of
+                seconds just before a rate limit is waited out, so the wait can be
+                shown instead of looking like a hang.
         """
         self.backend_url = backend_url.rstrip("/")
         self.timeout_s = timeout_s
@@ -149,11 +157,12 @@ class RemoteDescriptionProvider(DescriptionProvider):
     def draft_class_docstring(
         self, context: ClassContext, known: Dict[str, str], slots: ClassSlots
     ) -> ClassDraft:
-        """Drafts a class's summary and attributes via the backend's
-        ``/v2/draft-class-docstring`` endpoint, with the same rate-limit and
-        stop handling as :meth:`draft_docstring`. A backend without the
-        endpoint (HTTP 404) is remembered and not asked again: the class
-        keeps its TODO markers.
+        """Draft a class's summary and attributes via the backend.
+
+        Uses the ``/v2/draft-class-docstring`` endpoint, with the same rate-limit
+        and stop handling as :meth:`draft_docstring`. A backend without the
+        endpoint (HTTP 404) is remembered and not asked again: the class keeps its gap
+        markers.
 
         Args:
             context (ClassContext): The class's AST-derived facts.
@@ -161,7 +170,9 @@ class RemoteDescriptionProvider(DescriptionProvider):
             slots (ClassSlots): The parts to draft.
 
         Returns:
-            ClassDraft: Whatever the backend drafted; may be empty.
+            ClassDraft: Whatever the backend drafted; may be empty. ``failed`` is
+            set when the request failed or the service reported it could not
+            produce a draft.
 
         Raises:
             DraftingStopped: The daily allowance or shared cap is spent.
@@ -183,14 +194,31 @@ class RemoteDescriptionProvider(DescriptionProvider):
         return replace(draft, failed=True) if self._service_failed() else draft
 
     def _service_failed(self) -> bool:
-        """Whether the service said it could not produce this draft (no
-        model gave a usable answer), as opposed to answering with nothing."""
+        """Say whether the service reported that it could not produce the last draft.
+
+        That is different from the service answering with nothing: it means no
+        model gave a usable answer.
+
+        Returns:
+            bool: ``True`` if the last response carried ``X-AI-Draft-Outcome:
+            failed``.
+        """
         return self._last_outcome == "failed"
 
     @staticmethod
     def _read_reply(payload: Optional[dict], reader: Callable, empty: Any) -> Any:
-        """Turns a reply into a draft; ``empty`` (a failed draft) if there was
-        no reply or it could not be read."""
+        """Turn a reply into a draft, or return ``empty`` if that is not possible.
+
+        Args:
+            payload (Optional[dict]): The parsed JSON reply, or ``None`` if the
+                request failed.
+            reader (Callable): Builds a draft from a payload.
+            empty (Any): The failed draft to return when there is no reply or it
+                can't be read.
+
+        Returns:
+            Any: The draft ``reader`` built, or ``empty``.
+        """
         if payload is None:
             return empty
         try:
@@ -200,11 +228,16 @@ class RemoteDescriptionProvider(DescriptionProvider):
             return empty
 
     def _post_draft(self, path: str, body: dict, name: str) -> Optional[dict]:
-        """POSTs a draft request, waiting out a per-minute rate limit once.
+        """POST a draft request, waiting out a per-minute rate limit once.
+
+        Args:
+            path (str): The endpoint path, for example ``/v2/draft-docstring``.
+            body (dict): The JSON request body.
+            name (str): The function or class name, for the log message.
 
         Returns:
             Optional[dict]: The reply, or ``None`` if the request failed
-                (logged; the gaps stay).
+            (logged; the gaps stay).
 
         Raises:
             _EndpointMissing: The backend answered 404 (an older version).
@@ -234,10 +267,17 @@ class RemoteDescriptionProvider(DescriptionProvider):
         return None
 
     def _post_json(self, path: str, body: dict) -> dict:
-        """POSTs JSON and returns the parsed reply, recording the allowance
-        headers.
+        """POST JSON and return the parsed reply, recording the allowance headers.
+
+        Args:
+            path (str): The endpoint path.
+            body (dict): The JSON request body.
+
+        Returns:
+            dict: The parsed JSON reply.
 
         Raises:
+            ValueError: If the reply is not a JSON object.
             urllib.error.HTTPError: The backend answered with an error status.
             Exception: A network, timeout, or parsing failure.
         """
@@ -256,6 +296,15 @@ class RemoteDescriptionProvider(DescriptionProvider):
         return payload
 
     def _record_allowance(self, headers: Any) -> None:
+        """Remember the allowance and outcome headers of a response.
+
+        Reads ``X-AI-Drafts-Remaining``, ``X-AI-Drafts-Limit`` and
+        ``X-AI-Draft-Outcome``. A missing or malformed count leaves the earlier
+        value in place.
+
+        Args:
+            headers (Any): The response headers.
+        """
         remaining = _int_or_none(headers.get("X-AI-Drafts-Remaining"))
         limit = _int_or_none(headers.get("X-AI-Drafts-Limit"))
         if remaining is not None:
@@ -265,6 +314,14 @@ class RemoteDescriptionProvider(DescriptionProvider):
         self._last_outcome = headers.get("X-AI-Draft-Outcome")
 
     def _stop(self, error: Dict[str, Any]) -> None:
+        """Record that drafting must stop for the rest of the run.
+
+        Reads the backend's error body. A ``user_daily_limit_reached`` reason also
+        sets ``drafts_remaining`` to zero.
+
+        Args:
+            error (Dict[str, Any]): The parsed error body of a 429 response.
+        """
         reason = str(error.get("error") or "limit_reached")
         if reason == "user_daily_limit_reached":
             self.drafts_remaining = 0
@@ -277,16 +334,17 @@ class RemoteDescriptionProvider(DescriptionProvider):
         )
 
     def draft_function_description(self, context: FunctionContext) -> Optional[str]:
-        """Attempts to draft a description via the hosted backend, failing
-        closed to ``None`` on any expected failure mode.
+        """Draft a description via the hosted backend's ``/v1`` endpoint.
+
+        Fails closed to ``None`` on any expected failure mode.
 
         Args:
             context (FunctionContext): The function's AST-derived facts.
 
         Returns:
             Optional[str]: The drafted, trimmed text, or ``None`` if the
-                backend declined, was rate-limited/capped (HTTP 429),
-                timed out, or returned a malformed response.
+            backend declined, was rate-limited or capped (HTTP 429), timed out,
+            or returned a malformed response.
         """
         body = json.dumps(self._to_payload(context)).encode("utf-8")
         request = urllib.request.Request(
@@ -322,8 +380,9 @@ class RemoteDescriptionProvider(DescriptionProvider):
 
     @staticmethod
     def _to_payload(context: FunctionContext) -> dict:
-        """Serializes a :class:`FunctionContext` to the backend's wire
-        contract (see the backend repo's docs/API.md).
+        """Serialize a :class:`FunctionContext` to the backend's wire contract.
+
+        The contract is described in the backend repository's ``docs/API.md``.
 
         Args:
             context (FunctionContext): The function's AST-derived facts.
@@ -351,6 +410,16 @@ class _EndpointMissing(Exception):
 def _class_payload(
     context: ClassContext, known: Dict[str, str], slots: ClassSlots
 ) -> dict:
+    """Build the JSON request body for a class draft.
+
+    Args:
+        context (ClassContext): The class's AST-derived facts.
+        known (Dict[str, str]): Attribute text already settled.
+        slots (ClassSlots): The parts to draft.
+
+    Returns:
+        dict: The JSON-serializable request body.
+    """
     return {
         "name": context.name,
         "bases": list(context.bases),
@@ -365,6 +434,17 @@ def _class_payload(
 
 
 def _class_draft_from_payload(payload: dict) -> ClassDraft:
+    """Read a class draft from the backend's reply.
+
+    Anything that is not a string is ignored, so a malformed reply gives an
+    empty draft rather than an error.
+
+    Args:
+        payload (dict): The parsed JSON reply.
+
+    Returns:
+        ClassDraft: The summary and attribute descriptions found.
+    """
     summary = payload.get("summary")
     attributes = payload.get("attributes")
     return ClassDraft(
@@ -378,6 +458,14 @@ def _class_draft_from_payload(payload: dict) -> ClassDraft:
 
 
 def _slots_payload(slots: DraftSlots) -> dict:
+    """Describe which function parts are wanted, in the backend's format.
+
+    Args:
+        slots (DraftSlots): The parts to draft.
+
+    Returns:
+        dict: The ``slots`` member of the request body.
+    """
     return {
         "summary": slots.summary,
         "description": slots.description,
@@ -388,6 +476,14 @@ def _slots_payload(slots: DraftSlots) -> dict:
 
 
 def _known_payload(known: KnownText) -> dict:
+    """Describe the already settled text, in the backend's format.
+
+    Args:
+        known (KnownText): Text already settled.
+
+    Returns:
+        dict: The ``known`` member of the request body.
+    """
     return {
         "params": dict(known.params),
         "returns": known.returns,
@@ -396,6 +492,15 @@ def _known_payload(known: KnownText) -> dict:
 
 
 def _int_or_none(value: Any) -> Optional[int]:
+    """Convert a value to an int, or give ``None`` if it can't be.
+
+    Args:
+        value (Any): Usually a header value string, or ``None``.
+
+    Returns:
+        Optional[int]: The integer, or ``None`` for a missing or malformed
+        value.
+    """
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -403,6 +508,15 @@ def _int_or_none(value: Any) -> Optional[int]:
 
 
 def _error_body(error: urllib.error.HTTPError) -> Dict[str, Any]:
+    """Read the JSON body of an HTTP error response.
+
+    Args:
+        error (urllib.error.HTTPError): The error to read.
+
+    Returns:
+        Dict[str, Any]: The parsed body, or an empty dict if it is not a JSON
+        object or can't be read.
+    """
     try:
         body = json.loads(error.read().decode("utf-8"))
     except Exception:
@@ -411,7 +525,16 @@ def _error_body(error: urllib.error.HTTPError) -> Dict[str, Any]:
 
 
 def _bounded_wait(error: urllib.error.HTTPError, cap: float) -> float:
-    """The server's Retry-After, clamped to ``[1, cap]`` seconds."""
+    """Read the server's ``Retry-After`` and limit it to a sensible wait.
+
+    Args:
+        error (urllib.error.HTTPError): The 429 response.
+        cap (float): The longest wait to accept, in seconds.
+
+    Returns:
+        float: The requested seconds, clamped to ``[1, cap]``; 1 if the header
+        is missing or malformed.
+    """
     headers = error.headers or {}
     requested = _int_or_none(headers.get("Retry-After")) or 1
     return max(1, min(requested, cap))

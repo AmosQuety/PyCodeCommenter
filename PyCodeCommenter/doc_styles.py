@@ -36,7 +36,10 @@ SPHINX = "sphinx"
 
 
 def render_function(doc: FunctionDoc, style: str = GOOGLE) -> str:
-    """Renders a function docstring in the given style.
+    """Render a function docstring in the given style.
+
+    NumPy and Sphinx styles omit an empty parameter list and a function that
+    returns nothing; any other ``style`` value renders Google style.
 
     Args:
         doc (FunctionDoc): The parts to render.
@@ -53,7 +56,10 @@ def render_function(doc: FunctionDoc, style: str = GOOGLE) -> str:
 
 
 def render_class(doc: ClassDoc, style: str = GOOGLE) -> str:
-    """Renders a class docstring in the given style.
+    """Render a class docstring in the given style.
+
+    Any ``style`` value other than ``"numpy"`` or ``"sphinx"`` renders Google
+    style.
 
     Args:
         doc (ClassDoc): The parts to render.
@@ -70,11 +76,31 @@ def render_class(doc: ClassDoc, style: str = GOOGLE) -> str:
 
 
 def _description(doc: FunctionDoc):
+    """Get the description paragraph of a function docstring, if it has one.
+
+    Args:
+        doc (FunctionDoc): The parts to read.
+
+    Returns:
+        Optional[str]: The description text, or ``None`` when absent or empty.
+    """
     return doc.description.text if doc.description and doc.description.text else None
 
 
 def _assemble(summary: str, description, sections: List[str]) -> str:
-    """Summary, optional description, then sections separated by blank lines."""
+    """Join summary, optional description and sections into a docstring literal.
+
+    Sections are separated by blank lines. With a description but no sections
+    the closing quotes go on their own line.
+
+    Args:
+        summary (str): The one-line summary.
+        description (Optional[str]): The description paragraph, if any.
+        sections (List[str]): Rendered sections, in order.
+
+    Returns:
+        str: The docstring literal, including its triple quotes.
+    """
     head = summary if not description else f"{summary}\n\n{description}"
     if not sections:
         return f'"""{head}"""' if not description else f'"""{head}\n"""'
@@ -82,6 +108,15 @@ def _assemble(summary: str, description, sections: List[str]) -> str:
 
 
 def _sentence(text: str) -> str:
+    """End a piece of text with a period unless it already ends a sentence.
+
+    Args:
+        text (str): The text to finish.
+
+    Returns:
+        str: ``text``, with a period added when ``needs_closing_period``
+        says one is missing.
+    """
     return text + "." if needs_closing_period(text) else text
 
 
@@ -91,10 +126,31 @@ def _sentence(text: str) -> str:
 
 
 def _numpy_section(title: str, entries: List[str]) -> str:
+    """Format one NumPy section: the title, an underline, then the entries.
+
+    Args:
+        title (str): The section name, for example ``"Parameters"``.
+        entries (List[str]): The already formatted entries, each ending in a
+            newline.
+
+    Returns:
+        str: The section text.
+    """
     return f"{title}\n{'-' * len(title)}\n" + "".join(entries)
 
 
 def _numpy_function(doc: FunctionDoc) -> List[str]:
+    """Build the NumPy sections (Parameters, Returns or Yields, Raises).
+
+    A section is left out when it has nothing to show. A parameter with a
+    default is marked ``optional`` and the default is added to its text.
+
+    Args:
+        doc (FunctionDoc): The parts to render.
+
+    Returns:
+        List[str]: The sections, in order; empty if there are none.
+    """
     sections = []
     if doc.args:
         entries = []
@@ -123,6 +179,15 @@ def _numpy_function(doc: FunctionDoc) -> List[str]:
 
 
 def _numpy_class(doc: ClassDoc) -> List[str]:
+    """Build the NumPy Attributes section of a class docstring.
+
+    Args:
+        doc (ClassDoc): The parts to render.
+
+    Returns:
+        List[str]: A one-item list, or an empty list if the class has no
+        documented attributes.
+    """
     if not doc.attributes:
         return []
     entries = [
@@ -139,6 +204,17 @@ def _numpy_class(doc: ClassDoc) -> List[str]:
 
 
 def _sphinx_function(doc: FunctionDoc) -> List[str]:
+    """Build the Sphinx field list (param, type, returns, rtype, raises).
+
+    Generators use ``:yields:`` and ``:ytype:`` in place of the return fields.
+
+    Args:
+        doc (FunctionDoc): The parts to render.
+
+    Returns:
+        List[str]: A one-item list holding the field list, or an empty list
+        if there are no fields.
+    """
     fields = []
     for arg in doc.args:
         default = f" (default: {arg.default})" if arg.default is not None else ""
@@ -154,6 +230,15 @@ def _sphinx_function(doc: FunctionDoc) -> List[str]:
 
 
 def _sphinx_class(doc: ClassDoc) -> List[str]:
+    """Build the Sphinx ``:ivar:`` and ``:vartype:`` fields of a class docstring.
+
+    Args:
+        doc (ClassDoc): The parts to render.
+
+    Returns:
+        List[str]: A one-item list holding the field list, or an empty list
+        if the class has no documented attributes.
+    """
     fields = []
     for a in doc.attributes:
         fields.append(f":ivar {a.name}: {a.text}\n")

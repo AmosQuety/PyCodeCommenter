@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "2.6.0"
+version = "2.6.1"
 
 description = "Write, validate and measure Python docstrings from your code's AST: deterministic by default, with optional, labelled AI drafting."
 readme = "README.md"
@@ -29,6 +29,7 @@ classifiers = [
     "Topic :: Utilities",
     "Environment :: Console",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 keywords = [
     "docstring",
@@ -80,13 +81,17 @@ Changelog = "https://github.com/AmosQuety/PyCodeCommenter/blob/main/CHANGELOG.md
 [tool.setuptools]
 packages = ["PyCodeCommenter"]
 
+[tool.setuptools.package-data]
+PyCodeCommenter = ["py.typed"]
+
 [project.scripts]
 pycodecommenter = "PyCodeCommenter.cli:main"
 
 [tool.pytest.ini_options]
-# Tests live in tests/; the package's docstring examples run as doctests.
-testpaths = ["tests", "PyCodeCommenter"]
-addopts = "--doctest-modules"
+# Tests live in tests/; the package's docstring examples and the runnable
+# examples in docs/python-api.md run as doctests.
+testpaths = ["tests", "PyCodeCommenter", "docs/python-api.md"]
+addopts = "--doctest-modules --doctest-glob=*.md"
 pythonpath = ["."]
 
 [tool.black]

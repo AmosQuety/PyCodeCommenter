@@ -252,13 +252,20 @@ def _infer_from_default(default_value: Optional[str]) -> Optional[str]:
 
 
 def has_name_signal(param_name: str) -> bool:
-    """Whether a parameter's name alone matches a known description pattern
-    (so its inferred description says something beyond the type).
+    """Say whether a parameter's name alone matches a known description pattern.
+
+    When it does, its inferred description says something beyond the type.
 
     >>> has_name_signal('file_path')
     True
     >>> has_name_signal('price')
     False
+
+    Args:
+        param_name (str): The parameter name.
+
+    Returns:
+        bool: ``True`` if a description can be inferred from the name.
     """
     return _infer_from_name(param_name) is not None
 

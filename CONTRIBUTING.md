@@ -42,7 +42,9 @@ flake8            # linting
 ```
 
 The tests never make network calls: AI providers are tested against fake
-clients. Continuous integration runs the suite on Python 3.10–3.13 for every
+clients, so a change to a provider's request shape also needs one live run with
+that provider's own key (see "How each provider has been tested" in the README
+for what has been run so far). Continuous integration runs the suite on Python 3.10–3.13 for every
 pull request.
 
 If you change how docstrings are generated, also compare the output before

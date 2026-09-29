@@ -41,7 +41,7 @@ class GenerationReport:
             asked because drafting had stopped (for example a spent limit).
         ai_withheld (int): Functions and classes not sent to the AI because
             their source looks like it holds a secret.
-        dropped_entries (int): Author-written Args: entries removed because
+        dropped_entries (int): Author-written Args entries removed because
             their parameter is no longer in the signature.
     """
 
@@ -61,7 +61,10 @@ class GenerationReport:
     dropped_entries: int = 0
 
     def record_function(self, doc: FunctionDoc, outcome: str) -> None:
-        """Counts one function's docstring.
+        """Count one function's docstring.
+
+        Gaps are counted whatever the outcome; facts and AI-drafted lines only
+        when the docstring was written or changed in this run.
 
         Args:
             doc (FunctionDoc): Its parts.
@@ -79,7 +82,7 @@ class GenerationReport:
         )
 
     def record_class(self, doc: ClassDoc, outcome: str) -> None:
-        """Counts one class's docstring.
+        """Count one class's docstring.
 
         Args:
             doc (ClassDoc): Its parts.
@@ -92,7 +95,7 @@ class GenerationReport:
             self.ai_lines += sum(origin == Origin.AI for origin in origins)
 
     def record_draft(self, declined: int, failed: bool) -> None:
-        """Counts one AI request and how it ended.
+        """Count one AI request and how it ended.
 
         Args:
             declined (int): Requested parts the answer left unfilled.
@@ -105,26 +108,34 @@ class GenerationReport:
             self.ai_declined += declined
 
     def record_withheld(self) -> None:
-        """Counts a function or class kept out of AI drafting because its
-        source looks like it holds a secret."""
+        """Count a function or class kept out of AI drafting as a suspected secret.
+
+        Its source looked like it holds a secret, so it was not sent.
+        """
         self.ai_withheld += 1
 
     def record_not_tried(self) -> None:
-        """Counts a function or class whose gaps were not asked about
-        because drafting had stopped."""
+        """Count a function or class whose gaps were not asked about.
+
+        Drafting had stopped, for example because a limit was spent.
+        """
         self.ai_not_tried += 1
 
     def merge(self, other: "GenerationReport") -> None:
-        """Adds another report's counts to this one."""
+        """Add another report's counts to this one.
+
+        Args:
+            other (GenerationReport): The report to add; it is not changed.
+        """
         for f in fields(self):
             setattr(self, f.name, getattr(self, f.name) + getattr(other, f.name))
 
     def summary_lines(self, preview: bool, ai_used: bool) -> List[str]:
-        """The summary, in plain words, with a suggested next step.
+        """Write the summary in plain words, with a suggested next step.
 
         Args:
-            preview (bool): The run only showed changes (``--dry-run``), so
-                the wording says what *would* be written.
+            preview (bool): The run only showed changes (``--dry-run``), so the
+                wording says what *would* be written.
             ai_used (bool): ``--ai-draft`` was on for this run.
 
         Returns:
@@ -176,7 +187,12 @@ class GenerationReport:
         return lines
 
     def _ai_problem_lines(self) -> List[str]:
-        """Why AI drafting left gaps, so "gaps left" is not a mystery."""
+        """Explain why AI drafting left gaps, so "gaps left" is not a mystery.
+
+        Returns:
+            List[str]: One line for each of declined parts, failed requests,
+            withheld sources and untried requests that is not zero.
+        """
         lines = []
         if self.ai_declined:
             lines.append(
@@ -209,6 +225,15 @@ class GenerationReport:
         return lines
 
     def _next_step(self, ai_used: bool) -> str:
+        """Suggest what to do after this run.
+
+        Args:
+            ai_used (bool): ``--ai-draft`` was on for this run.
+
+        Returns:
+            str: The suggestion, which depends on whether there are AI-drafted
+            lines, gaps or comment-derived docstrings to deal with.
+        """
         if self.ai_lines:
             return (
                 "go through the AI-drafted lines with `pycodecommenter review` "
@@ -227,10 +252,24 @@ class GenerationReport:
         return "run `pycodecommenter validate` to keep the docstrings accurate."
 
     def _record_outcome(self, outcome: str) -> None:
+        """Add one to the count named by the outcome.
+
+        Args:
+            outcome (str): ``"new"``, ``"updated"`` or ``"unchanged"``.
+        """
         setattr(self, outcome, getattr(self, outcome) + 1)
 
 
 def _count(number: int, noun: str) -> str:
+    """Format a count with its noun, adding ``s`` unless the count is one.
+
+    Args:
+        number (int): The count.
+        noun (str): The singular noun.
+
+    Returns:
+        str: For example ``1 gap`` or ``3 gaps``.
+    """
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
 

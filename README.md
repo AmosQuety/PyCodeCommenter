@@ -1,5 +1,6 @@
 # PyCodeCommenter — Python Docstring Generator & Validator
 
+[![Tests](https://github.com/AmosQuety/PyCodeCommenter/actions/workflows/tests.yml/badge.svg)](https://github.com/AmosQuety/PyCodeCommenter/actions/workflows/tests.yml)
 [![PyPI version](https://badge.fury.io/py/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
 [![Documentation](https://img.shields.io/badge/docs-amosquety.github.io%2FPyCodeCommenter-blue)](https://amosquety.github.io/PyCodeCommenter/)
 [![Python Support](https://img.shields.io/pypi/pyversions/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
@@ -127,6 +128,24 @@ pycodecommenter validate app.py
 pycodecommenter coverage ./src
 ```
 
+### Installing the development version
+
+To work on PyCodeCommenter itself, or to try the unreleased code on `main`
+(Python 3.10 or newer):
+
+```bash
+git clone https://github.com/AmosQuety/PyCodeCommenter.git
+cd PyCodeCommenter
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+pytest
+```
+
+`pytest` runs the test suite and the package's doctests; none of it needs a
+network connection or an AI SDK. Before sending a change, also run `black .`
+and `flake8`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow
+(also on the [documentation site](https://amosquety.github.io/PyCodeCommenter/contributing/)).
+
 ---
 
 ## Why PyCodeCommenter?
@@ -227,28 +246,30 @@ pycodecommenter generate app.py --ai-draft --dry-run
 - **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type. That covers functions (summary, arguments, return, exceptions) and classes (summary and `Attributes:`).
 - **Every drafted line is labelled** `(AI-drafted, unreviewed)`. The label stays until a person accepts the line in `pycodecommenter review` (`review --list` shows what is waiting), and `pycodecommenter validate` reports those lines until then.
 - **Review first.** `--dry-run` and `--output-dir` show the result without touching your files; writing with `--inplace` also requires `--accept-ai-drafts`.
-- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets.
+- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets. See [Data and Privacy](https://amosquety.github.io/PyCodeCommenter/data-and-privacy/).
 - **Know the cost first.** For a directory, the tool counts the requests it would make (`32 files, 121 functions and classes have gaps to draft`) and asks before sending; `--max-drafts N` caps the whole run.
 
 ### Providers and models
 
-By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
+By default drafts come from PyCodeCommenter's free hosted service: no key needed (the service does not store your code, but it forwards it to Google's Gemini API on a free tier, and Google may use content sent on that tier to improve its products; use your own key if that is not acceptable), with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
 
 | `--ai-provider` | Key read from | Install | Default model |
 |---|---|---|---|
 | `hosted` (default) | — | included | chosen by the service |
-| `gemini` | `GEMINI_API_KEY` | `pip install "pycodecommenter[gemini]"` | `gemini-2.5-flash` |
-| `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-astra` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-haiku-4-5-20251001` |
+| `gemini` | `GEMINI_API_KEY` | `pip install "pycodecommenter[gemini]"` | `gemini-3.8-flash`, then `gemini-3.5-flash-lite`, then `gemini-2.5-flash` if the earlier ones are unavailable to your key |
+| `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-luna` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-sonnet-5-5` |
 | `deepseek` | `DEEPSEEK_API_KEY` | `pip install "pycodecommenter[openai]"` | `deepseek-flash` |
 | `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | `pip install "pycodecommenter[openai]"` | none: pass `--ai-model` and `--ai-base-url` |
 
 If the provider's SDK isn't installed, PyCodeCommenter says so before it asks for consent or a key, and prints the exact command to install it into the Python you are running (it never runs pip itself). During a run, if you choose your own key after the hosted limit and that provider can't be used, you are asked again until one works or you type `skip`.
 
+**How each provider has been tested.** The automated tests run every provider against fake SDK clients and make no network calls, so they check what PyCodeCommenter sends and how it handles replies and errors, not what a vendor's service accepts today. Live runs so far: the hosted service and Gemini have been used end to end, and Anthropic was run with `claude-haiku-4-5-20251001` (its current default, `claude-sonnet-5-5`, has not been run live). OpenAI and DeepSeek have not been run against real keys; their request shapes and default models follow each vendor's documentation as of September 2026. If a request is rejected, that function keeps its `TODO(pycodecommenter)` marker (or, for a bad key or a spent quota, drafting stops for the run) and no code is changed. Please [open an issue](https://github.com/AmosQuety/PyCodeCommenter/issues) if a provider or model does not work for you.
+
 **The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a more capable one:
 
 ```bash
-pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-opus-5 --dry-run
+pycodecommenter generate app.py --ai-draft --ai-provider anthropic --ai-model claude-opus-5-5 --dry-run
 ```
 
 Every run prints the provider and model it is using.
@@ -277,7 +298,7 @@ $env:ANTHROPIC_API_KEY = "your-key"
 
 ### What it costs
 
-Each function that still has gaps is one request to the provider, so a run over a large project makes many requests. With your own key the requests are billed by the provider. Bigger models cost more per request. The Anthropic default, `claude-haiku-4-5-20251001`, is a small model chosen because it is enough for one-sentence docstrings; a larger one such as `claude-opus-5` costs more per request and is chosen with `--ai-model`. Check your provider's price list before a large run. Try `--dry-run` on one file first.
+Each function that still has gaps is one request to the provider, so a run over a large project makes many requests. With your own key the requests are billed by the provider. Bigger models cost more per request. The Anthropic default, `claude-sonnet-5-5`, is a mid-priced model asked for low effort, which is enough for one-sentence docstrings; a smaller one such as `claude-haiku-4-5-20251001` costs less, and a larger one such as `claude-opus-5-5` costs more, both chosen with `--ai-model`. The OpenAI default, `gpt-6-luna`, is that family's cheapest model and is asked for low reasoning effort. Check your provider's price list before a large run. Try `--dry-run` on one file first.
 
 ---
 
@@ -465,6 +486,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 - [CLI Reference](https://amosquety.github.io/PyCodeCommenter/cli-reference/)
 - [Python API](https://amosquety.github.io/PyCodeCommenter/python-api/)
 - [Recipes & CI](https://amosquety.github.io/PyCodeCommenter/recipes/)
+- [Data and Privacy](https://amosquety.github.io/PyCodeCommenter/data-and-privacy/)
 - [FAQ](https://amosquety.github.io/PyCodeCommenter/faq/)
 
 ---

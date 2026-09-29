@@ -5,6 +5,66 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-29
+
+### Added
+- **A Data and Privacy page** in the docs (`docs/data-and-privacy.md`): what
+  `--ai-draft` sends, what the secret check leaves out, how consent works,
+  where the hosted service and each provider send code, and where to report a
+  problem. Linked from the README and the FAQ.
+
+### Upgrade notes
+- **Everyone is asked for hosted-AI consent again once.** The consent notice
+  now says the hosted service forwards code to Google's Gemini API on a free
+  tier, where Google may use it to improve its products, so
+  `CONSENT_NOTICE_VERSION` is 3. CI jobs that use `--ai-draft` without
+  `--yes-send-code-to-ai` will fail until someone agrees or the flag is added.
+
+### Fixed
+- **`--ai-draft` without a terminal no longer crashes at the consent prompt.**
+  With no consent on file and nothing to read an answer from (CI, closed
+  standard input) it raised `EOFError`; it now stops cleanly with "AI drafting
+  needs your consent" and says to run in a terminal or pass
+  `--yes-send-code-to-ai`.
+- **The validator no longer asks for a `Returns:` section on a `-> None`
+  function**, and allows one on an abstract method whose body only raises
+  `NotImplementedError` (or is `...`).
+- **Placeholder detection matches whole marker words.** `TODO`, `FIXME`,
+  `XXX`, `HACK` and `TBD` are matched as whole uppercase words, and
+  `Description of` only at the start of a line, so ordinary prose (such as
+  "a description of the file") is no longer reported as a placeholder.
+- **A wrapped `Args:` description is no longer split into a phantom entry.**
+  A deeper-indented continuation line shaped like `word: text` was read as a
+  new parameter; the validator then reported it as documented but missing
+  from the signature, and regenerating a docstring dropped the author's
+  continuation text. It now continues the entry above.
+
+### Changed
+- **New default models for Gemini and Anthropic.** Anthropic now defaults to
+  `claude-sonnet-5-5` (asked for low effort) instead of
+  `claude-haiku-4-5-20251001`, which Anthropic lists for retirement no sooner
+  than 2026-10-15. Gemini now defaults to `gemini-3.8-flash`; if Google says it
+  is unavailable to your key (not found, no access, or still failing after the
+  SDK's retries) the request moves on to `gemini-3.5-flash-lite` and then
+  `gemini-2.5-flash`, and stays on the one that worked for the rest of the
+  run. A Gemini model you choose with `--ai-model` is never replaced. Nothing
+  changes for the DeepSeek or OpenAI-compatible defaults.
+- **OpenAI now defaults to `gpt-6-luna`** (about $0.1 / $0.5 per million
+  input / output tokens) instead of the flagship `gpt-6-astra` ($10 / $50), and
+  GPT-6 models are asked for low reasoning effort, since their default is
+  medium and reasoning tokens are billed as output. A one-sentence docstring
+  does not need the flagship.
+- **The hosted-service consent notice is accurate about Google.** It now says
+  the service does not store your code, forwards it to Google's Gemini API,
+  and that Google handles it under its free-tier terms and may use it to
+  improve its products. The old wording ("No source code is stored beyond the
+  time it takes to process each request") implied no copy existed anywhere.
+  `CONSENT_NOTICE_VERSION` is now 3, so everyone is asked again once.
+- The package's own docstrings are complete: 0 validator findings and 100%
+  docstring coverage (also counted with `--strict`). CI now checks
+  formatting, lint and the package's own docstring quality on every push.
+- The package ships a `py.typed` marker.
+
 ## [2.6.0] - 2026-09-27
 
 The tool now states everything the code proves, keeps everything the author
@@ -13,8 +73,8 @@ wrote, and makes what's left easy to finish: optional AI drafting of the gaps
 of every run. Requires Python 3.10+.
 
 Also includes follow-up work from a dogfooding audit run against the tool's own codebase
-(`Another_Test_PyCodeCommenter/Feedback/AUDIT_REPORT.md`) — every numbered
-finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.md` for the full history.
+— every numbered finding in that audit is now closed; see
+`docs/dev-notes/audit-remediation-log.md` for the full history.
 
 ### Changed
 - **README and docs show real output.** The README opens with a real

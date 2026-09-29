@@ -41,17 +41,44 @@ class Preflight:
 
 
 class _Counter(DescriptionProvider):
-    """Counts the requests a run would make and answers nothing, so counting
-    uses the generator's own rules for what is a gap."""
+    """Count the requests a run would make, and answer nothing.
+
+    Counting through the generator itself means the count follows the
+    generator's own rules for what is a gap.
+
+    Attributes:
+        requests (int): How many drafts have been asked for so far.
+    """
 
     def __init__(self):
+        """Start counting from zero."""
         self.requests = 0
 
     def draft_docstring(self, context, known, slots) -> DocstringDraft:
+        """Count one function request and return an empty draft.
+
+        Args:
+            context: The function's source and facts (unused).
+            known: Text already settled (unused).
+            slots: The parts that would be drafted (unused).
+
+        Returns:
+            DocstringDraft: An empty draft, so no text is applied.
+        """
         self.requests += 1
         return DocstringDraft()
 
     def draft_class_docstring(self, context, known, slots) -> ClassDraft:
+        """Count one class request and return an empty draft.
+
+        Args:
+            context: The class outline and facts (unused).
+            known: Text already settled (unused).
+            slots: The parts that would be drafted (unused).
+
+        Returns:
+            ClassDraft: An empty draft, so no text is applied.
+        """
         self.requests += 1
         return ClassDraft()
 
@@ -59,7 +86,7 @@ class _Counter(DescriptionProvider):
 def count_draft_requests(
     targets: Iterable[str], include_module_docstrings: bool = False
 ) -> Preflight:
-    """Counts the requests an AI run over these files would make.
+    """Count the requests an AI run over these files would make.
 
     Nothing is sent and nothing is written: the files are generated in
     memory with a provider that only counts. A file that does not parse is
@@ -93,16 +120,25 @@ def count_draft_requests(
 
 
 class DraftBudget:
-    """A cap on how many AI requests a whole run may make, shared by every
-    file. Once a request is refused the budget is *spent*.
+    """A cap on how many AI requests a whole run may make, shared by every file.
+
+    Once a request is refused the budget is *spent*.
 
     Attributes:
         limit (int): The most requests allowed.
-        used (int): Requests granted so far.
         spent (bool): A request was refused because the limit was reached.
+        used (int): Requests granted so far.
     """
 
     def __init__(self, limit: int):
+        """Set the cap.
+
+        Args:
+            limit (int): The most requests allowed; at least 1.
+
+        Raises:
+            ValueError: If ``limit`` is less than 1.
+        """
         if limit < 1:
             raise ValueError("A draft limit must be at least 1")
         self.limit = limit
@@ -110,8 +146,12 @@ class DraftBudget:
         self.spent = False
 
     def take(self) -> bool:
-        """Claims one request; ``False`` (and the budget is spent) if the
-        limit has been reached."""
+        """Claim one request from the budget.
+
+        Returns:
+            bool: ``True`` if the request may be made. ``False`` if the limit
+            has been reached, in which case the budget is marked spent.
+        """
         if self.used >= self.limit:
             self.spent = True
             return False

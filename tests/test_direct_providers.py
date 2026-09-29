@@ -136,26 +136,38 @@ class FakeAnthropic:
         return self.response
 
 
-def test_anthropic_default_is_a_small_model_without_effort_or_fallback_options():
+def test_anthropic_default_asks_for_low_effort_but_not_the_opus_refusal_fallback():
     fake = FakeAnthropic()
     provider = AnthropicProvider(api_key="k", client=fake)
 
     provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
 
     [call] = fake.calls
-    assert call["model"] == "claude-haiku-4-5-20251001"
-    assert "effort" not in call["output_config"]
+    assert call["model"] == "claude-sonnet-5-5"
+    assert call["output_config"]["effort"] == "low"
     assert "betas" not in call and "fallbacks" not in call
+
+
+def test_anthropic_haiku_still_works_without_the_effort_option():
+    fake = FakeAnthropic()
+    provider = AnthropicProvider(
+        api_key="k", model="claude-haiku-4-5-20251001", client=fake
+    )
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    [call] = fake.calls
+    assert "effort" not in call["output_config"]
 
 
 def test_anthropic_uses_structured_output_low_effort_and_refusal_fallback():
     fake = FakeAnthropic()
-    provider = AnthropicProvider(api_key="k", model="claude-opus-5", client=fake)
+    provider = AnthropicProvider(api_key="k", model="claude-opus-5-5", client=fake)
 
     draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
 
     [call] = fake.calls
-    assert call["model"] == "claude-opus-5"
+    assert call["model"] == "claude-opus-5-5"
     assert call["output_config"]["effort"] == "low"
     assert call["output_config"]["format"]["type"] == "json_schema"
     assert call["fallbacks"] == "default"
@@ -189,6 +201,39 @@ def test_openai_uses_strict_json_schema_on_the_responses_api():
     assert call["text"]["format"]["type"] == "json_schema"
     assert call["text"]["format"]["strict"] is True
     assert draft.returns == "The shortened text."
+
+
+def test_openai_default_is_the_cheapest_gpt_6_model_at_low_reasoning_effort():
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(output_text=json.dumps(REPLY))
+
+    fake = SimpleNamespace(responses=SimpleNamespace(create=create))
+    provider = make_provider("openai", api_key="k", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    [call] = calls
+    assert PROVIDERS["openai"].default_model == "gpt-6-luna"
+    assert call["model"] == "gpt-6-luna"
+    assert call["reasoning"] == {"effort": "low"}
+
+
+def test_openai_models_that_are_not_gpt_6_get_no_reasoning_option():
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(output_text=json.dumps(REPLY))
+
+    fake = SimpleNamespace(responses=SimpleNamespace(create=create))
+    provider = OpenAIProvider(api_key="k", model="gpt-4o-mini", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert "reasoning" not in calls[0]
 
 
 def test_openai_compatible_uses_json_object_mode_on_chat_completions():
@@ -296,10 +341,12 @@ def test_make_provider_uses_the_default_model_unless_overridden():
     fake = FakeAnthropic()
 
     default = make_provider("anthropic", api_key="k", client=fake)
-    chosen = make_provider("anthropic", api_key="k", model="claude-opus-5", client=fake)
+    chosen = make_provider(
+        "anthropic", api_key="k", model="claude-opus-5-5", client=fake
+    )
 
-    assert default.model == "claude-haiku-4-5-20251001"
-    assert chosen.model == "claude-opus-5"
+    assert default.model == "claude-sonnet-5-5"
+    assert chosen.model == "claude-opus-5-5"
 
 
 def test_openai_compatible_requires_a_model_and_base_url():
@@ -641,3 +688,110 @@ def test_a_reply_that_is_not_a_json_object_is_a_failure(raw):
 )
 def test_no_answer_and_null_answers_are_declines_not_failures(raw):
     assert parse_reply(raw).failed is False
+
+
+# ---------------------------------------------------------------------------
+# Gemini: default model and the fallback chain
+# ---------------------------------------------------------------------------
+
+
+def _gemini_client(fail_models=(), status=404):
+    """A fake client that fails, with ``status``, for the named models."""
+    calls = []
+
+    def generate_content(model, contents, config):
+        calls.append(model)
+        if model in fail_models:
+            error = Exception(f"{model} is not available")
+            error.code = status
+            raise error
+        return SimpleNamespace(text=json.dumps(REPLY))
+
+    fake = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    return fake, calls
+
+
+def test_gemini_default_model_is_the_current_flash_model():
+    assert PROVIDERS["gemini"].default_model == "gemini-3.8-flash"
+    fake, calls = _gemini_client()
+
+    make_provider("gemini", api_key="k", client=fake).draft_docstring(
+        CONTEXT, KNOWN, SLOTS
+    )
+
+    assert calls == ["gemini-3.8-flash"]
+
+
+@pytest.mark.parametrize("status", [404, 503])
+def test_gemini_falls_back_to_the_next_model_when_the_default_is_unavailable(status):
+    fake, calls = _gemini_client(fail_models={"gemini-3.8-flash"}, status=status)
+    provider = make_provider("gemini", api_key="k", client=fake)
+
+    draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert calls == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+    assert draft.summary == "Shorten text to a maximum length."
+    assert provider.model == "gemini-3.5-flash-lite"  # what the status line shows
+
+
+def test_gemini_uses_the_2_5_model_only_after_the_newer_ones_fail():
+    fake, calls = _gemini_client(
+        fail_models={"gemini-3.8-flash", "gemini-3.5-flash-lite"}
+    )
+    provider = make_provider("gemini", api_key="k", client=fake)
+
+    draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert calls == ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    assert draft.summary == "Shorten text to a maximum length."
+
+
+def test_gemini_keeps_the_working_model_for_later_requests():
+    fake, calls = _gemini_client(fail_models={"gemini-3.8-flash"})
+    provider = make_provider("gemini", api_key="k", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert calls == [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite",
+    ]
+
+
+def test_gemini_model_chosen_by_the_user_is_never_swapped():
+    fake, calls = _gemini_client(fail_models={"gemini-2.5-flash"})
+    provider = make_provider(
+        "gemini", api_key="k", model="gemini-2.5-flash", client=fake
+    )
+
+    draft = provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert calls == ["gemini-2.5-flash"]
+    assert draft.failed  # skipped this function; no silent substitution
+
+
+def test_gemini_every_model_failing_skips_the_function_without_crashing():
+    fake, calls = _gemini_client(
+        fail_models={"gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"}
+    )
+
+    draft = make_provider("gemini", api_key="k", client=fake).draft_docstring(
+        CONTEXT, KNOWN, SLOTS
+    )
+
+    assert len(calls) == 3
+    assert draft.failed
+
+
+def test_gemini_bad_key_does_not_trigger_a_model_fallback():
+    fake, calls = _gemini_client(fail_models={"gemini-3.8-flash"}, status=403)
+
+    with pytest.raises(DraftingStopped) as stopped:
+        make_provider("gemini", api_key="k", client=fake).draft_docstring(
+            CONTEXT, KNOWN, SLOTS
+        )
+
+    assert stopped.value.reason == "invalid_api_key"
+    assert calls == ["gemini-3.8-flash"]

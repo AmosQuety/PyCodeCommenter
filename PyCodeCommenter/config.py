@@ -23,9 +23,18 @@ class ConfigError(Exception):
 
     The original exception message is included in the error string for easier
     debugging.
+
+    Attributes:
+        original (Optional[Exception]): The parsing exception, if any.
     """
 
     def __init__(self, message: str, original: Optional[Exception] = None):
+        """Build the error, appending the original exception's message.
+
+        Args:
+            message (str): What went wrong.
+            original (Optional[Exception]): The exception that caused it.
+        """
         full_msg = message
         if original is not None:
             full_msg = f"{message}: {original}"
@@ -34,10 +43,15 @@ class ConfigError(Exception):
 
 
 def _find_config_path(start_path: Optional[str] = None) -> Optional[Path]:
-    """Search upward from *start_path* for ``.pycodecommenter.yaml``.
+    """Search upward from ``start_path`` for ``.pycodecommenter.yaml``.
 
-    Returns the :class:`~pathlib.Path` to the config file if found, otherwise
-    ``None``.
+    Args:
+        start_path (Optional[str]): Directory to start from; the current
+            working directory if omitted.
+
+    Returns:
+        Optional[Path]: The path to the config file, or ``None`` if none is
+        found before the filesystem root.
     """
     if start_path is None:
         start_path = os.getcwd()
@@ -55,22 +69,16 @@ def _find_config_path(start_path: Optional[str] = None) -> Optional[Path]:
 def load_config(start_path: Optional[str] = None) -> Dict[str, Any]:
     """Load configuration for PyCodeCommenter.
 
-    Parameters
-    ----------
-    start_path: str | None, optional
-        Directory to start the search from.  Defaults to the current working
-        directory.
+    Args:
+        start_path (Optional[str]): Directory to start the search from.
+            Defaults to the current working directory.
 
-    Returns
-    -------
-    dict
-        Parsed configuration dictionary.  Returns an empty dictionary if no
-        ``.pycodecommenter.yaml`` file is discovered.
+    Returns:
+        Dict[str, Any]: The parsed configuration. Empty if no
+        ``.pycodecommenter.yaml`` file is found.
 
-    Raises
-    ------
-    ConfigError
-        If a config file is discovered but parsing fails.
+    Raises:
+        ConfigError: If a config file is found but parsing fails.
     """
     config_path = _find_config_path(start_path)
     if config_path is None:

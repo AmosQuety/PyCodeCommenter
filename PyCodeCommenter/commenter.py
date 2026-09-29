@@ -147,8 +147,17 @@ _MAX_DEFAULT_CHARS = 40
 
 
 def _names_assigned_to_self(init_node: ast.AST) -> Set[str]:
-    """Names ``__init__`` stores as ``self.<name>`` (plain, annotated or
-    tuple assignment), ignoring nested classes, which have their own self."""
+    """Collect the names ``__init__`` stores as ``self.<name>``.
+
+    Plain, annotated and tuple assignments count. Nested classes are ignored,
+    since they have their own ``self``.
+
+    Args:
+        init_node (ast.AST): The ``__init__`` function node.
+
+    Returns:
+        Set[str]: The attribute names assigned.
+    """
     targets: List[ast.expr] = []
     for node in walk_skipping_nested_classes(init_node):
         if isinstance(node, ast.Assign):
@@ -172,16 +181,31 @@ def _names_assigned_to_self(init_node: ast.AST) -> Set[str]:
 
 
 def _is_carried_forward(text: Optional[str]) -> bool:
-    """Whether existing docstring text is real content worth keeping.
+    """Say whether existing docstring text is real content worth keeping.
 
     Text containing the guess marker was written by an earlier run of this
     tool, not by an author, so it is regenerated rather than preserved.
+
+    Args:
+        text (Optional[str]): The existing text.
+
+    Returns:
+        bool: ``True`` for non-empty text without the guess marker.
     """
     return bool(text) and GUESS_MARKER not in text
 
 
 def _is_same_sentence(text: str, other: str) -> bool:
-    """Whether two descriptions match apart from a final period."""
+    """Say whether two descriptions match apart from a final period.
+
+    Args:
+        text (str): One description.
+        other (str): The other description.
+
+    Returns:
+        bool: ``True`` if they are equal, or equal once ``text`` ends in a
+        period.
+    """
     return text == other or text.rstrip(".") + "." == other
 
 
@@ -195,8 +219,28 @@ _TRAILING_DEFAULT_ANNOTATION_RE = re.compile(r" \(default: .*\)$")
 
 
 class PyCodeCommenter:
-    """
-    Main class for generating and patching Python docstrings.
+    """Main class for generating and patching Python docstrings.
+
+    Attributes:
+        code (str): The source, with line endings normalised to LF.
+        parsed_code (Optional[ast.Module]): The parsed tree, or ``None`` if there
+            is no code or it did not parse.
+        file_path (Optional[str]): The file the code was read from, if any.
+        comments (list): The docstrings from the last ``generate_docstrings`` call.
+        tokenized_comments (list): The ``#`` comments found in the source.
+        type_analyzer (TypeAnalyzer): Infers types from the AST.
+        report (GenerationReport): What the latest run did, for the summary.
+        drafting_stopped (Optional[DraftingStopped]): Set once a provider says it
+            can't draft any more this run.
+        comment_docstrings (list): Definitions whose docstring came from the
+            comment above them.
+        _description_provider (Optional[DescriptionProvider]): The opt-in AI
+            drafting provider, or ``None``.
+        _progress (Optional[Any]): Shown a status line while a draft is requested.
+        _budget (Optional[Any]): Caps the AI requests of a whole run.
+        _include_module_docstrings (bool): Whether to write a module docstring
+            for a module that has none.
+        _newline (str): The source's own line ending, restored when patching.
     """
 
     def __init__(
@@ -280,7 +324,17 @@ class PyCodeCommenter:
         return raw_code
 
     def from_string(self, code_string: str) -> "PyCodeCommenter":
-        """Initializes the commenter from a string of code."""
+        """Initialize the commenter from a string of code.
+
+        A syntax error is logged and leaves ``parsed_code`` as ``None`` rather than
+        raising.
+
+        Args:
+            code_string (str): The source text.
+
+        Returns:
+            PyCodeCommenter: This instance, so calls can be chained.
+        """
         self.file_path = None
         self._newline = "\n"
         try:
@@ -311,7 +365,18 @@ class PyCodeCommenter:
             logger.error(f"Error extracting comments: {e}")
 
     def from_file(self, file_path: str) -> "PyCodeCommenter":
-        """Initializes the commenter from a file path."""
+        """Initialize the commenter from a file path.
+
+        The file's line endings are detected and restored when patching. A
+        missing file or a syntax error is logged and leaves ``parsed_code`` as
+        ``None`` rather than raising.
+
+        Args:
+            file_path (str): The Python file to read.
+
+        Returns:
+            PyCodeCommenter: This instance, so calls can be chained.
+        """
         self.file_path = file_path
         self._newline = "\n"
         try:
@@ -332,8 +397,13 @@ class PyCodeCommenter:
         return self
 
     def generate_docstrings(self) -> list:
-        """Iterates over the parsed code to generate docstrings for functions
-        and classes."""
+        """Generate a docstring for every function and class, without patching.
+
+        Returns:
+            list: The existing module docstring (if any) followed by the
+            generated docstring of each function and class, in source order.
+            Empty if the code did not parse.
+        """
         if self.parsed_code is None:
             logger.error("No valid code to parse.")
             return []
@@ -362,9 +432,19 @@ class PyCodeCommenter:
         self.report = GenerationReport(files=1)
 
     def _outcome(self, node: ast.AST, rendered: str, prefix: str) -> str:
-        """Whether a docstring is ``"new"``, ``"updated"`` or ``"unchanged"``
-        compared with the one in the source (a docstring taken from a
-        comment counts as new: the definition had none)."""
+        """Say whether a docstring is new, updated or unchanged.
+
+        Compared with the one in the source. A docstring taken from a comment
+        counts as new: the definition had none.
+
+        Args:
+            node (ast.AST): The function or class.
+            rendered (str): The generated docstring literal, with its prefix.
+            prefix (str): The string prefix (``r`` or empty) of the literal.
+
+        Returns:
+            str: ``"new"``, ``"updated"`` or ``"unchanged"``.
+        """
         original, _ = self._existing_docstring(node)
         if original is None:
             return "new"
@@ -372,7 +452,7 @@ class PyCodeCommenter:
         return "unchanged" if inspect.cleandoc(body) == original else "updated"
 
     def get_patched_code(self) -> str:
-        """Returns the code with generated docstrings inserted or updated.
+        """Return the code with generated docstrings inserted or updated.
 
         Uses libcst to apply edits at the concrete-syntax-tree level rather
         than by line-number arithmetic on the raw source text, so untouched
@@ -381,6 +461,10 @@ class PyCodeCommenter:
         (e.g. ``def foo(): return 1``) are safely converted to a proper
         indented block instead of having the docstring inserted before the
         definition.
+
+        Returns:
+            str: The patched source; the original text if it did not parse or
+            nothing changed.
         """
         if not self.code or not self.parsed_code:
             return self.code
@@ -549,8 +633,20 @@ class PyCodeCommenter:
     def _generate_function_docstring(
         self, func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> str:
-        """Generates a Google-style docstring for a function node, merging
-        existing info."""
+        """Generate a Google-style docstring for a function, merging existing info.
+
+        An existing NumPy or Sphinx docstring keeps its style. If generation
+        fails unexpectedly, the existing docstring is returned unchanged rather
+        than replaced.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+
+        Returns:
+            str: The docstring literal, including its quotes and any string
+            prefix.
+        """
         existing_doc, prefix = None, ""
         try:
             existing_doc, prefix = self._docstring_source(func_node)
@@ -650,9 +746,18 @@ class PyCodeCommenter:
         )
 
     def _withhold_secret(self, source: str, name: str) -> bool:
-        """Whether ``source`` looks like it holds a credential, in which
-        case it is not sent anywhere (and the run summary says so). Only the
-        name is logged, never the text."""
+        """Say whether source must be kept from the AI because it looks like a secret.
+
+        Source that looks like it holds a credential is not sent anywhere, and the
+        run summary says so. Only the name is logged, never the text.
+
+        Args:
+            source (str): The source that would be sent.
+            name (str): The function or class name, for the log message.
+
+        Returns:
+            bool: ``True`` if the source is withheld.
+        """
         if not looks_like_secret(source):
             return False
         logger.warning(f"Not sending {name} to the AI: it looks like it holds a secret")
@@ -660,9 +765,14 @@ class PyCodeCommenter:
         return True
 
     def _may_ask_provider(self) -> bool:
-        """Whether a request may be made now. If not (drafting has stopped,
-        or the run's request budget is spent) the skip is counted for the
-        run summary."""
+        """Say whether a request may be made now.
+
+        If not (drafting has stopped, or the run's request budget is spent) the
+        skip is counted for the run summary.
+
+        Returns:
+            bool: ``True`` if the provider may be asked.
+        """
         if self.drafting_stopped is not None or (
             self._budget is not None and not self._budget.take()
         ):
@@ -746,6 +856,20 @@ class PyCodeCommenter:
         func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         parsed_info: Dict[str, Any],
     ) -> DocPart:
+        """Choose the summary of a function docstring.
+
+        An existing summary is the author's, unless it is identical to the one
+        this tool would generate (its own earlier output).
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            DocPart: The author's summary, a fixed fact for ``__init__``, or a
+            weak summary derived from the function's name.
+        """
         if func_node.name == "__init__":
             # "Initialize the class." is a fixed literal rather than derived
             # from humanize_identifier("__init__") == "init", which reads
@@ -770,6 +894,19 @@ class PyCodeCommenter:
         # A parsed description is the author's real words. Without one the
         # slot stays empty rather than holding a placeholder: a "nothing
         # to add" paragraph under a summary is noise, not honesty.
+        """Choose the description paragraph of a function docstring.
+
+        Only an existing description is used, as the author's real words. Without
+        one the slot stays empty rather than holding a placeholder.
+
+        Args:
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+            summary (DocPart): The chosen summary, which a description that only
+                repeats it is dropped in favour of.
+
+        Returns:
+            Optional[DocPart]: The description, or ``None``.
+        """
         description = parsed_info.get("description")
         if not description:
             return None
@@ -785,6 +922,20 @@ class PyCodeCommenter:
         # get_all_parameters() covers positional-only, positional-or-
         # keyword, *args, keyword-only, and **kwargs params -- the full
         # ast.arguments grammar, not just func_node.args.args.
+        """Build the Args entries, one for each parameter of the function.
+
+        Covers positional-only, positional-or-keyword, ``*args``, keyword-only and
+        ``**kwargs`` parameters. A static type annotation always wins; a type
+        from an existing docstring is used only when inference has nothing.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            list: An ``ArgEntry`` for each parameter except ``self`` and ``cls``.
+        """
         all_params = exclude_self_cls(get_all_parameters(func_node))
         sibling_params = [p.name for p in all_params]
         entries = []
@@ -820,9 +971,19 @@ class PyCodeCommenter:
         func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         parsed_info: Dict[str, Any],
     ) -> int:
-        """How many author-written Args: entries name a parameter the
-        function no longer has (they are dropped, so the run says so). The
-        tool's own earlier entries (guess markers) are not counted."""
+        """Count the author-written Args entries whose parameter no longer exists.
+
+        They are dropped when the docstring is regenerated, so the run says so.
+        The tool's own earlier entries (guess markers) are not counted.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            int: How many entries are dropped.
+        """
         current = {
             p.display_name for p in exclude_self_cls(get_all_parameters(func_node))
         }
@@ -841,6 +1002,24 @@ class PyCodeCommenter:
     ) -> DocPart:
         # The rendered line always ends with " (default: ...)", so the
         # description itself never restates the default.
+        """Choose the description of one argument.
+
+        An existing author description is kept; otherwise the description is
+        generated from the name, type and default, and is a guess marker when
+        there is nothing to go on. The rendered line always ends with the default,
+        so the description itself never restates it.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+            param (Parameter): The parameter.
+            inferred_type (str): The parameter's type.
+            sibling_params (list): The names of all the function's parameters.
+
+        Returns:
+            DocPart: The description with its origin.
+        """
         desc = self._get_parameter_description(
             func_name=func_node.name,
             param_name=param.name,
@@ -912,6 +1091,21 @@ class PyCodeCommenter:
         func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         parsed_info: Dict[str, Any],
     ) -> Optional[ReturnsEntry]:
+        """Build the Returns or Yields entry of a function docstring.
+
+        An existing author description is kept. Otherwise a function that
+        returns nothing gets the fixed ``None.`` form, a boolean function whose
+        single return expression is exact gets a fact, and anything else gets a
+        guess marker. ``__init__`` gets no entry.
+
+        Args:
+            func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The
+                function node.
+            parsed_info (Dict[str, Any]): The existing docstring, parsed.
+
+        Returns:
+            Optional[ReturnsEntry]: The entry, or ``None`` for a constructor.
+        """
         local_types = self._get_local_types(func_node)
         is_generator = self._is_generator(func_node)
         return_type = self._get_return_type(func_node, local_types)
@@ -957,8 +1151,18 @@ class PyCodeCommenter:
 
     @staticmethod
     def _strip_return_type_prefix(description: str, return_type: str) -> str:
-        """Removes a leading "type:" from a parsed return description, so
-        re-rendering it under the current type doesn't repeat the type."""
+        """Remove a leading ``type:`` from a parsed return description.
+
+        That way re-rendering it under the current type doesn't repeat the type.
+
+        Args:
+            description (str): The parsed return description.
+            return_type (str): The function's return type.
+
+        Returns:
+            str: The description without a leading type, or unchanged if the
+            text before the first colon is not a type.
+        """
         if ":" not in description:
             return description
         prefix, rest = description.split(":", 1)
@@ -973,8 +1177,18 @@ class PyCodeCommenter:
         return description
 
     def _generate_class_docstring(self, class_node: ast.ClassDef) -> str:
-        """Generates a Google-style docstring for a class node, merging
-        existing info."""
+        """Generate a Google-style docstring for a class, merging existing info.
+
+        If generation fails unexpectedly, the existing docstring is returned
+        unchanged rather than replaced.
+
+        Args:
+            class_node (ast.ClassDef): The class node.
+
+        Returns:
+            str: The docstring literal, including its quotes and any string
+            prefix.
+        """
         existing_doc, prefix = None, ""
         try:
             existing_doc, prefix = self._docstring_source(class_node)
@@ -1582,7 +1796,24 @@ class PyCodeCommenter:
 
 
 class DocstringVisitor(ast.NodeVisitor):
+    """Walk the tree and generate a docstring for every function and class.
+
+    The results are collected in ``results`` as ``(node, docstring)`` pairs,
+    in source order. A module docstring is generated only when opted into.
+
+    Attributes:
+        commenter (PyCodeCommenter): The commenter that generates the text.
+        results (list): ``(node, docstring)`` pairs found so far.
+        module_docstring (Optional[str]): The generated module docstring, if
+            one is to be added.
+    """
+
     def __init__(self, commenter):
+        """Create the visitor.
+
+        Args:
+            commenter (PyCodeCommenter): The commenter that generates the text.
+        """
         self.commenter = commenter
         self.results = []
         self.module_docstring: Optional[str] = None
@@ -1593,6 +1824,14 @@ class DocstringVisitor(ast.NodeVisitor):
         # never touched at all -- see _generate_module_docstring for why.
         # An empty module (no body at all, e.g. a blank or whitespace-only
         # file) has nothing to describe, so it's left alone too.
+        """Generate a module docstring if opted in and the module has none.
+
+        An existing module docstring is never touched, and an empty module is left
+        alone.
+
+        Args:
+            node (ast.Module): The module node.
+        """
         if (
             self.commenter._include_module_docstrings
             and ast.get_docstring(node) is None
@@ -1602,14 +1841,29 @@ class DocstringVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
+        """Generate a docstring for a function, then visit what is inside it.
+
+        Args:
+            node (ast.FunctionDef): The function node.
+        """
         self.results.append((node, self.commenter._generate_function_docstring(node)))
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node):
+        """Generate a docstring for an async function, then visit what is inside it.
+
+        Args:
+            node (ast.AsyncFunctionDef): The function node.
+        """
         self.results.append((node, self.commenter._generate_function_docstring(node)))
         self.generic_visit(node)
 
     def visit_ClassDef(self, node):
+        """Generate a docstring for a class, then visit what is inside it.
+
+        Args:
+            node (ast.ClassDef): The class node.
+        """
         self.results.append((node, self.commenter._generate_class_docstring(node)))
         self.generic_visit(node)
 
@@ -1629,16 +1883,37 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
     every other node this transformer handles), and there's always at most
     one module docstring, always at the very top of the file, so no
     position lookup is needed to place it.
+
+    Attributes:
+        _edits (Dict[Any, str]): The docstring literal for each definition, by
+            position.
+        _module_docstring (Optional[str]): The module docstring to add, if any.
     """
 
     METADATA_DEPENDENCIES = (PositionProvider,)
 
     def __init__(self, edits: Dict[Any, str], module_docstring: Optional[str] = None):
+        """Create the patcher.
+
+        Args:
+            edits (Dict[Any, str]): The docstring literal for each definition,
+                keyed by the ``(line, column)`` of its ``def`` or ``class``.
+            module_docstring (Optional[str]): A module docstring to insert at the
+                top, if any.
+        """
         self._edits = edits
         self._module_docstring = module_docstring
 
     @staticmethod
     def _is_docstring_stmt(stmt) -> bool:
+        """Say whether a statement is a docstring: a lone string expression.
+
+        Args:
+            stmt (cst.CSTNode): A statement of a block.
+
+        Returns:
+            bool: ``True`` if it is a simple line holding one string.
+        """
         return (
             isinstance(stmt, cst.SimpleStatementLine)
             and len(stmt.body) == 1
@@ -1651,6 +1926,18 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
         # The first line is placed by libcst's own block indentation; only
         # continuation lines need their indentation baked into the string
         # literal's content.
+        """Bake indentation into the continuation lines of a docstring literal.
+
+        The first line is placed by libcst's own block indentation; only the
+        continuation lines need their indentation in the string's content.
+
+        Args:
+            text (str): The docstring literal.
+            spaces (int): The indentation for the continuation lines.
+
+        Returns:
+            str: The literal with each non-blank continuation line indented.
+        """
         lines = text.splitlines()
         if len(lines) <= 1:
             return text
@@ -1660,6 +1947,20 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
         )
 
     def _patch(self, original_node, updated_node):
+        """Replace or insert the docstring of a definition, if it has an edit.
+
+        A one-line definition such as ``def foo(): return 1`` is converted to an
+        indented block so the docstring gets its own line.
+
+        Args:
+            original_node (cst.CSTNode): The definition as parsed, used to find
+                its position.
+            updated_node (cst.CSTNode): The definition as transformed so far.
+
+        Returns:
+            cst.CSTNode: The definition with its docstring set, or unchanged if
+            it has no edit.
+        """
         pos = self.get_metadata(PositionProvider, original_node).start
         docstring = self._edits.get((pos.line, pos.column))
         if docstring is None:
@@ -1697,15 +1998,51 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
         return updated_node.with_changes(body=body.with_changes(body=stmts))
 
     def leave_FunctionDef(self, original_node, updated_node):
+        """Apply the docstring edit for a function.
+
+        Args:
+            original_node (cst.FunctionDef): The function as parsed.
+            updated_node (cst.FunctionDef): The function as transformed so far.
+
+        Returns:
+            cst.FunctionDef: The function with its docstring set.
+        """
         return self._patch(original_node, updated_node)
 
     def leave_AsyncFunctionDef(self, original_node, updated_node):
+        """Apply the docstring edit for an async function.
+
+        Args:
+            original_node (cst.FunctionDef): The function as parsed.
+            updated_node (cst.FunctionDef): The function as transformed so far.
+
+        Returns:
+            cst.FunctionDef: The function with its docstring set.
+        """
         return self._patch(original_node, updated_node)
 
     def leave_ClassDef(self, original_node, updated_node):
+        """Apply the docstring edit for a class.
+
+        Args:
+            original_node (cst.ClassDef): The class as parsed.
+            updated_node (cst.ClassDef): The class as transformed so far.
+
+        Returns:
+            cst.ClassDef: The class with its docstring set.
+        """
         return self._patch(original_node, updated_node)
 
     def leave_Module(self, original_node, updated_node):
+        """Insert the module docstring at the top, if there is one to add.
+
+        Args:
+            original_node (cst.Module): The module as parsed.
+            updated_node (cst.Module): The module as transformed so far.
+
+        Returns:
+            cst.Module: The module with its docstring added, or unchanged.
+        """
         if self._module_docstring is None:
             return updated_node
 

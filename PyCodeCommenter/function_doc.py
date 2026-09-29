@@ -41,18 +41,38 @@ class DocPart:
 
     @classmethod
     def ai_draft(cls, text: str) -> "DocPart":
-        """A part holding AI-drafted text, carrying the permanent marker."""
+        """Make a part holding AI-drafted text, carrying the AI-drafted marker.
+
+        The marker stays until a person accepts the line in ``review``.
+
+        Args:
+            text (str): The drafted text.
+
+        Returns:
+            DocPart: The part, with origin ``Origin.AI``.
+        """
         return cls(f"{text} {AI_DRAFT_MARKER}", Origin.AI)
 
     @property
     def needs_drafting(self) -> bool:
-        """Whether an AI provider may replace this part's text."""
+        """Say whether an AI provider may replace this part's text.
+
+        Returns:
+            bool: ``True`` for a guess or a weak (type-only) part.
+        """
         return self.origin in (Origin.GUESS, Origin.WEAK)
 
 
 @dataclass
 class ArgEntry:
-    """One Args: line."""
+    """One Args: line.
+
+    Attributes:
+        name (str): The name as shown in Args, with ``*`` or ``**`` for variadics.
+        display_type (str): The type shown in parentheses.
+        part (DocPart): The description and where it came from.
+        default (Optional[str]): The default value as written in code, or ``None``.
+    """
 
     name: str
     display_type: str
@@ -63,7 +83,13 @@ class ArgEntry:
 @dataclass
 class ReturnsEntry:
     """The Returns:/Yields: section. ``display_type`` is ``None`` for the
-    bare ``None.`` form used when nothing is returned."""
+    bare ``None.`` form used when nothing is returned.
+
+    Attributes:
+        label (str): ``"Returns"`` or ``"Yields"``.
+        display_type (Optional[str]): The type, or ``None`` for the bare ``None.`` form.
+        part (DocPart): The description and where it came from.
+    """
 
     label: str
     display_type: Optional[str]
@@ -72,7 +98,12 @@ class ReturnsEntry:
 
 @dataclass
 class RaisesEntry:
-    """One Raises: line."""
+    """One Raises: line.
+
+    Attributes:
+        name (str): The exception class name.
+        part (DocPart): When it is raised, and where that text came from.
+    """
 
     name: str
     part: DocPart
@@ -80,7 +111,18 @@ class RaisesEntry:
 
 @dataclass
 class FunctionDoc:
-    """Every part of one function's docstring."""
+    """Every part of one function's docstring.
+
+    Attributes:
+        summary (DocPart): The one-line summary.
+        description (Optional[DocPart]): The description paragraph, if any.
+        args (List[ArgEntry]): One entry per parameter.
+        returns (Optional[ReturnsEntry]): The Returns or Yields entry, if any.
+        raises (List[RaisesEntry]): One entry per exception raised.
+        dropped (int): Author-written Args entries removed because the
+            parameter no longer exists; not rendered, only counted for the run
+            summary.
+    """
 
     summary: DocPart
     description: Optional[DocPart] = None
@@ -92,7 +134,12 @@ class FunctionDoc:
     dropped: int = 0
 
     def parts(self) -> List[DocPart]:
-        """Every part, in document order."""
+        """List every part of the docstring, in document order.
+
+        Returns:
+            List[DocPart]: The summary, description, argument, return and raise
+            parts that are present.
+        """
         found = [self.summary]
         if self.description is not None:
             found.append(self.description)
@@ -130,13 +177,30 @@ def render_function_doc(doc: FunctionDoc) -> str:
 
 
 def needs_closing_period(text: str) -> bool:
-    """Whether an argument description needs a period added. The AI marker
-    closes the sentence; a period after it would be added again on every
-    regeneration."""
+    """Say whether an argument description needs a period added.
+
+    The AI marker closes the sentence; a period after it would be added again
+    on every regeneration.
+
+    Args:
+        text (str): The description text.
+
+    Returns:
+        bool: ``True`` unless the text already ends in ``.``, ``!``, ``?`` or
+        the AI-drafted marker.
+    """
     return not text.endswith((".", "!", "?", AI_DRAFT_MARKER))
 
 
 def _render_arg(arg: ArgEntry) -> str:
+    """Render one Args line, with its default when there is one.
+
+    Args:
+        arg (ArgEntry): The argument to render.
+
+    Returns:
+        str: The indented line, ending in a newline.
+    """
     line = f"    {arg.name} ({arg.display_type}): {arg.part.text}"
     if needs_closing_period(arg.part.text):
         line += "."
@@ -146,6 +210,15 @@ def _render_arg(arg: ArgEntry) -> str:
 
 
 def _render_returns(returns: ReturnsEntry) -> str:
+    """Render the Returns or Yields section.
+
+    Args:
+        returns (ReturnsEntry): The entry to render.
+
+    Returns:
+        str: The section, preceded by a blank line. Without a type it is just
+        the label and the text (the ``None.`` form).
+    """
     if returns.display_type is None:
         return f"\n{returns.label}:\n    {returns.part.text}\n"
     return f"\n{returns.label}:\n    {returns.display_type}: {returns.part.text}\n"
@@ -154,7 +227,14 @@ def _render_returns(returns: ReturnsEntry) -> str:
 @dataclass
 class AttributeEntry:
     """One class attribute. ``display_type`` is ``None`` for an author's
-    entry that declared no type."""
+    entry that declared no type.
+
+    Attributes:
+        name (str): The attribute's name.
+        display_type (Optional[str]): The type, or ``None`` if the author declared none.
+        text (str): The description.
+        origin (str): Where the text came from (see ``Origin``).
+    """
 
     name: str
     display_type: Optional[str]

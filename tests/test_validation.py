@@ -498,3 +498,94 @@ def outer():
     assert not any(
         i.category == "exceptions" for i in outer_issues
     ), f"outer() falsely flagged for raising an exception: {outer_issues}"
+
+
+def test_none_return_hint_needs_no_returns_section():
+    """A function annotated ``-> None`` returns nothing, so no Returns is due."""
+    code = '''\
+def save(path: str) -> None:
+    """Save the file.
+
+    Args:
+        path (str): Where to write.
+    """
+    print(path)
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert not any("return type hint" in issue.message for issue in report.issues)
+
+
+def test_abstract_stub_may_document_returns_for_its_subclasses():
+    """A body that only raises NotImplementedError still documents the contract."""
+    code = '''\
+class Base:
+    """A base class."""
+
+    def compute(self, x: int) -> int:
+        """Compute a value.
+
+        Args:
+            x (int): The input.
+
+        Returns:
+            int: The result; subclasses decide how.
+        """
+        raise NotImplementedError
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert not any(
+        "has Returns section but doesn't return" in issue.message
+        for issue in report.issues
+    )
+
+
+def test_returns_section_on_a_function_that_returns_nothing_is_still_reported():
+    code = '''\
+def compute(x: int) -> int:
+    """Compute a value.
+
+    Args:
+        x (int): The input.
+
+    Returns:
+        int: The result.
+    """
+    print(x)
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert any(
+        "has Returns section but doesn't return" in issue.message
+        for issue in report.issues
+    )
+
+
+def _placeholder_messages(summary):
+    code = f'''\
+def read(path: str) -> str:
+    """{summary}
+
+    Args:
+        path (str): Where to read.
+
+    Returns:
+        str: The text.
+    """
+    return path
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    return [i.message for i in report.issues if i.message.startswith("Placeholder")]
+
+
+def test_prose_containing_a_marker_word_is_not_a_placeholder():
+    assert not _placeholder_messages(
+        "Return a description of the file for a hackathon."
+    )
+
+
+def test_a_marker_word_is_still_a_placeholder():
+    assert _placeholder_messages("TODO: describe the file.")
+    assert _placeholder_messages("Read the file. FIXME later.")
+
+
+def test_description_of_at_line_start_is_still_a_placeholder():
+    assert _placeholder_messages("Description of the function.")

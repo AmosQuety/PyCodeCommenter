@@ -57,16 +57,25 @@ DEFAULT_DIRECTORY_EXCLUDES = [
 
 
 def _path_is_excluded(py_file, patterns):
-    """A path is excluded if one of its directory/file name components
-    exactly equals an exclude pattern, or - for a dot-prefixed pattern like
-    '.egg-info' - a component ends with it (covers the <name>.egg-info
-    convention, where <name> varies per package).
+    """Say whether a path matches an exclude pattern.
+
+    A path is excluded if one of its directory or file name components
+    exactly equals an exclude pattern, or, for a dot-prefixed pattern like
+    ``.egg-info``, a component ends with it (covers the ``<name>.egg-info``
+    convention, where ``<name>`` varies per package).
 
     Exact-component matching, rather than a raw substring check against the
     whole path, avoids excluding legitimate files that merely contain a
-    pattern as a substring - e.g. rebuild_index.py must not be skipped just
-    because it contains "build", and environment_config.py must not be
+    pattern as a substring: ``rebuild_index.py`` must not be skipped just
+    because it contains "build", and ``environment_config.py`` must not be
     skipped just because it contains "env".
+
+    Args:
+        py_file (Path): The file's path, relative to the target directory.
+        patterns (Iterable[str]): The exclude patterns.
+
+    Returns:
+        bool: ``True`` if the file should be skipped.
     """
     parts = py_file.parts
     for pattern in patterns:
@@ -79,15 +88,34 @@ def _path_is_excluded(py_file, patterns):
 
 
 def _is_inside(path, directory):
-    """True if resolved ``path`` is ``directory`` or lies below it."""
+    """Say whether a path is a directory or lies below it.
+
+    Args:
+        path (Path): A resolved path.
+        directory (Path): A resolved directory.
+
+    Returns:
+        bool: ``True`` if ``path`` is ``directory`` or lies below it.
+    """
     return directory == path or directory in path.parents
 
 
 def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
-    """Recursively collect .py files under directory, skipping any path
-    matched by _path_is_excluded() against DEFAULT_DIRECTORY_EXCLUDES plus
-    exclude_patterns, and anything under skip_directory (the output tree
-    of a previous run, so it isn't generated from again).
+    """Recursively collect the ``.py`` files under a directory.
+
+    Skips any path matched by :func:`_path_is_excluded` against
+    ``DEFAULT_DIRECTORY_EXCLUDES`` plus ``exclude_patterns``, and anything
+    under ``skip_directory`` (the output tree of a previous run, so it isn't
+    generated from again).
+
+    Args:
+        directory (str): The directory to search.
+        exclude_patterns (Optional[Iterable[str]]): Patterns to skip in
+            addition to the defaults.
+        skip_directory (Optional[str]): A directory whose files are left out.
+
+    Returns:
+        List[str]: The paths of the files found, sorted.
     """
     patterns = list(DEFAULT_DIRECTORY_EXCLUDES) + list(exclude_patterns or [])
     root = Path(directory)
@@ -103,7 +131,18 @@ def _collect_py_files(directory, exclude_patterns=None, skip_directory=None):
 
 
 def _positive_int(text):
-    """argparse type for a whole number of at least 1."""
+    """Convert an argparse value to a whole number of at least 1.
+
+    Args:
+        text (str): The value as typed.
+
+    Returns:
+        int: The number.
+
+    Raises:
+        argparse.ArgumentTypeError: If ``text`` is not a whole number of at
+            least 1.
+    """
     try:
         value = int(text)
     except ValueError:
@@ -114,8 +153,18 @@ def _positive_int(text):
 
 
 def _strict_validation_failed(args, placeholders, ai_drafts):
-    """Whether --fail-on-todo / --fail-on-ai-draft make this validation
-    fail; says why on stderr, so JSON on stdout stays valid."""
+    """Say whether ``--fail-on-todo`` or ``--fail-on-ai-draft`` fail this run.
+
+    The reason is printed on stderr, so JSON on stdout stays valid.
+
+    Args:
+        args (argparse.Namespace): The parsed arguments.
+        placeholders (int): How many docstrings hold placeholder text.
+        ai_drafts (int): How many docstrings hold unreviewed AI-drafted lines.
+
+    Returns:
+        bool: ``True`` if a strict flag was given and its condition holds.
+    """
     failed = False
     if args.fail_on_todo and placeholders:
         print(
@@ -135,6 +184,15 @@ def _strict_validation_failed(args, placeholders, ai_drafts):
 
 
 def _plural(number, noun):
+    """Format a count with its noun, adding ``s`` unless the count is one.
+
+    Args:
+        number (int): The count.
+        noun (str): The singular noun.
+
+    Returns:
+        str: For example ``1 docstring`` or ``3 docstrings``.
+    """
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
@@ -328,6 +386,14 @@ def _generate(args, description_provider, run_report, progress=None, budget=None
 
 
 def main():
+    """Run the ``pycodecommenter`` command line.
+
+    Reads ``.pycodecommenter.yaml`` for defaults, parses the arguments, and
+    runs the chosen command: ``generate``, ``review``, ``validate`` or
+    ``coverage``. Exits with status 1 when a command's check fails (validation
+    errors, a strict flag, or coverage below ``--fail-below``) or an AI-setup
+    error stops the run.
+    """
     try:
         config = load_config()
     except ConfigError as e:

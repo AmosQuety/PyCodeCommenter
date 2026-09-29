@@ -48,16 +48,16 @@ class ReviewItem:
         kind (str): ``"ai"``, ``"todo"`` or ``"comment"``.
         line (int): Its (first) line, 1-based.
         end_line (int): Its last line (differs only for a comment block).
-        definition (str): The function/class it belongs to (``""`` for the
+        definition (str): The function or class it belongs to (``""`` for the
             module docstring).
         text (str): What to show: the drafted text, the gap's line, or the
             comment text.
-        keep_before (str): For an AI line, everything before the drafted
-            text (indent, opening quotes, entry label) -- kept on edit.
-        keep_after (str): For an AI line, everything after the marker
-            (e.g. a " (default: 3)" note) -- kept on accept and edit.
-        docstring_line (int): First line of the docstring holding the item
-            (0 for a comment, which lies outside it).
+        keep_before (str): For an AI line, everything before the drafted text
+            (indent, opening quotes, entry label); kept on edit.
+        keep_after (str): For an AI line, everything after the marker (for
+            example a ``(default: 3)`` note); kept on accept and edit.
+        docstring_line (int): First line of the docstring holding the item (0
+            for a comment, which lies outside it).
         docstring_end (int): Last line of that docstring.
     """
 
@@ -73,12 +73,24 @@ class ReviewItem:
 
 
 def is_interactive() -> bool:
-    """Whether a person is at the terminal to answer questions."""
+    """Say whether a person is at the terminal to answer questions.
+
+    Returns:
+        bool: ``True`` if standard input is a terminal.
+    """
     return sys.stdin.isatty()
 
 
 def text_problem(text: str) -> Optional[str]:
-    """Why typed text can't go into a docstring, or ``None`` if it can."""
+    """Say why typed text can't go into a docstring.
+
+    Args:
+        text (str): The text a person typed.
+
+    Returns:
+        Optional[str]: A sentence describing the problem (empty text, triple
+        quotes, backslashes), or ``None`` if the text is acceptable.
+    """
     if not text.strip():
         return "The text can't be empty."
     if any(fragment in text for fragment in _FORBIDDEN_IN_TEXT):
@@ -87,14 +99,17 @@ def text_problem(text: str) -> Optional[str]:
 
 
 def find_review_items(source: str) -> List[ReviewItem]:
-    """Everything in a file that needs review, in file order.
+    """Find everything in a file that needs review, in file order.
 
     Args:
         source (str): The file's text.
 
     Returns:
-        List[ReviewItem]: AI-drafted lines, TODO gaps, and comments that
-            the docstring below them now repeats.
+        List[ReviewItem]: AI-drafted lines, gap markers, and comments that
+        the docstring below them now repeats.
+
+    Raises:
+        SyntaxError: If ``source`` does not parse.
     """
     lines = _split_lines(source)
     tree = ast.parse(source)
@@ -117,13 +132,14 @@ def find_review_items(source: str) -> List[ReviewItem]:
 
 
 def apply_review(source: str, decisions: List[Tuple[ReviewItem, tuple]]) -> str:
-    """Applies decisions to a file's text.
+    """Apply decisions to a file's text.
 
     Args:
         source (str): The file's text, as :func:`find_review_items` saw it.
-        decisions (List[Tuple[ReviewItem, tuple]]): Each item with an
-            action: ``("accept", None)``, ``("edit", text)``,
-            ``("fill", text)``, ``("remove", None)`` or ``("skip", None)``.
+        decisions (List[Tuple[ReviewItem, tuple]]): Each item with its
+            ``(action, text)`` decision. The action is ``"accept"``,
+            ``"edit"``, ``"fill"`` or ``"remove"``; ``text`` is the new text
+            for an edit or fill and is otherwise unused.
 
     Returns:
         str: The new text, with the file's own line endings.
@@ -150,7 +166,11 @@ def apply_review(source: str, decisions: List[Tuple[ReviewItem, tuple]]) -> str:
 
 
 def verify_review(original: str, result: str) -> None:
-    """Checks a reviewed file before it's saved.
+    """Check a reviewed file before it's saved.
+
+    Args:
+        original (str): The file's text before the review.
+        result (str): The text the decisions produced.
 
     Raises:
         ReviewError: The result doesn't parse, or its code (anything but
@@ -167,6 +187,18 @@ def verify_review(original: str, result: str) -> None:
 def _docstring_items(
     lines: List[str], literal: ast.Constant, name: str, style: str
 ) -> List[ReviewItem]:
+    """Find the AI-drafted lines and gap markers inside one docstring.
+
+    Args:
+        lines (List[str]): The file's lines.
+        literal (ast.Constant): The docstring's string node.
+        name (str): The function or class the docstring belongs to.
+        style (str): The docstring's style, as ``DocstringParser`` names it.
+
+    Returns:
+        List[ReviewItem]: One item per marked line, each carrying the
+        docstring's first and last line.
+    """
     items = []
     in_section = False
     for number in range(literal.lineno, literal.end_lineno + 1):
@@ -184,7 +216,21 @@ def _docstring_items(
 
 
 def _ai_item(line, number, name, style, first_line, in_section) -> ReviewItem:
-    """Splits an AI-drafted line into what's kept and the drafted text."""
+    """Split an AI-drafted line into what's kept and the drafted text.
+
+    Args:
+        line (str): The docstring line holding the marker.
+        number (int): Its line number, 1-based.
+        name (str): The function or class the docstring belongs to.
+        style (str): The docstring's style.
+        first_line (bool): The line is the docstring's first, so it starts
+            with the opening quotes.
+        in_section (bool): The line is inside an Args, Returns or similar
+            section.
+
+    Returns:
+        ReviewItem: The item, with ``keep_before`` and ``keep_after`` set.
+    """
     at = line.index(AI_DRAFT_MARKER)
     head, after = line[:at].rstrip(" "), line[at + len(AI_DRAFT_MARKER) :]
     before = ""
@@ -198,8 +244,19 @@ def _ai_item(line, number, name, style, first_line, in_section) -> ReviewItem:
 
 
 def _entry_label(head: str, style: str, in_section: bool):
-    """The ``name (type): `` / ``:param x: `` label an entry starts with.
-    NumPy descriptions and prose paragraphs have none."""
+    """Match the label an entry starts with, such as ``x (int): `` or ``:param x: ``.
+
+    NumPy descriptions and prose paragraphs have none.
+
+    Args:
+        head (str): The line's text before the marker.
+        style (str): The docstring's style.
+        in_section (bool): The line is inside a Google-style section.
+
+    Returns:
+        Optional[re.Match]: The match (group 1 is the label), or ``None`` when
+        the line has no label.
+    """
     if style == "sphinx":
         return _SPHINX_LABEL.match(head)
     if style == "google" and in_section:
@@ -208,8 +265,18 @@ def _entry_label(head: str, style: str, in_section: bool):
 
 
 def _repeated_comment(lines: List[str], node: ast.AST, docstring: str) -> list:
-    """The comment block above a definition, if its docstring repeats it --
-    i.e. the docstring was taken from it."""
+    """Find the comment block above a definition that its docstring repeats.
+
+    That is the case when the docstring was taken from the comment.
+
+    Args:
+        lines (List[str]): The file's lines.
+        node (ast.AST): The function or class.
+        docstring (str): Its docstring text.
+
+    Returns:
+        list: A list with one comment item, or an empty list.
+    """
     found = leading_comment_block(lines, node)
     comment = comment_block_text(found[2]) if found else None
     if not comment:
@@ -222,20 +289,57 @@ def _repeated_comment(lines: List[str], node: ast.AST, docstring: str) -> list:
 
 
 def _normalized(text: str) -> str:
+    """Collapse all whitespace to single spaces, for comparing text.
+
+    Args:
+        text (str): Any text.
+
+    Returns:
+        str: The words of ``text`` separated by single spaces.
+    """
     return " ".join(text.split())
 
 
 def _sentence(text: str) -> str:
+    """Collapse whitespace and end the text with sentence punctuation.
+
+    Args:
+        text (str): Text a person typed.
+
+    Returns:
+        str: The text on one line, with a period added unless it already
+        ends in ``.``, ``!`` or ``?``.
+    """
     text = " ".join(text.split())
     return text if text.endswith((".", "!", "?")) else text + "."
 
 
 def _split_lines(source: str) -> List[str]:
+    """Split source into lines, whatever its line endings.
+
+    Args:
+        source (str): The file's text.
+
+    Returns:
+        List[str]: The lines, without line endings.
+    """
     return source.replace("\r\n", "\n").split("\n")
 
 
 def _code_only(source: str) -> str:
-    """The file's code without docstrings (comments aren't in the AST)."""
+    """Dump the file's code without its docstrings, for comparison.
+
+    Comments are not in the AST, so they do not count either.
+
+    Args:
+        source (str): The file's text.
+
+    Returns:
+        str: A dump of the syntax tree with docstrings removed.
+
+    Raises:
+        SyntaxError: If ``source`` does not parse.
+    """
     tree = ast.parse(source)
     for node in ast.walk(tree):
         body = getattr(node, "body", None)

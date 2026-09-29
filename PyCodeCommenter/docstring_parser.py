@@ -17,10 +17,22 @@ logger = logging.getLogger(__name__)
 
 
 class DocstringParser:
-    """
-    Parses existing docstrings in Google, Sphinx, and NumPy styles.
+    """Parses existing docstrings in Google, Sphinx, and NumPy styles.
     Extracts summary, description, parameters (with types), and return
     information.
+
+    Attributes:
+        raw_docstring (str): The docstring text that was parsed.
+        style (str): ``"google"``, ``"numpy"`` or ``"sphinx"``.
+        summary (str): The first paragraph.
+        description (str): Any further prose before the sections.
+        params (Dict[str, str]): Argument descriptions, by name.
+        param_types (Dict[str, str]): Argument types, by name, where declared.
+        returns (str): The Returns or Yields text.
+        raises (Dict[str, str]): Exception descriptions, by exception name.
+        attributes (Dict[str, str]): Attribute descriptions, by name.
+        attribute_types (Dict[str, str]): Attribute types, by name, where declared.
+        methods (str): The body of a ``Methods:`` section, kept verbatim.
     """
 
     # A NumPy-style section header (Parameters/Returns/Raises) immediately
@@ -51,6 +63,15 @@ class DocstringParser:
     _GOOGLE_ENTRY_RE = re.compile(r"^(\s+)([\w.]+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)$")
 
     def __init__(self, docstring: Optional[str] = None):
+        """Parse a docstring, if one is given.
+
+        The results are then available as attributes (``summary``, ``params``,
+        ``returns`` and so on) and through :meth:`get_info`.
+
+        Args:
+            docstring (Optional[str]): The docstring text; nothing is parsed if it
+                is ``None`` or empty.
+        """
         self.raw_docstring = docstring or ""
         # "google", "numpy" or "sphinx": the style an existing docstring is
         # written in, so regeneration can keep it. A docstring with no
@@ -119,7 +140,11 @@ class DocstringParser:
             self._parse_google(remaining_content)
 
     def _parse_sphinx(self, content: str) -> None:
-        """Parses Sphinx style documentation (:param name: desc)."""
+        """Parse Sphinx style documentation (``:param name: desc``).
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         desc_lines = []
         current_param = None
 
@@ -176,7 +201,11 @@ class DocstringParser:
         self.description = " ".join(desc_lines).strip()
 
     def _parse_google(self, content: str) -> None:
-        """Parses Google style documentation (Args:, Returns:, Yields:)."""
+        """Parse Google style documentation (Args:, Returns:, Yields:).
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         # Split by sections, allowing headers to be at the start or after a newline
         sections = re.split(
             r"(?m)^ *(Args|Returns|Yields|Raises|Attributes|Methods):$", content
@@ -252,12 +281,17 @@ class DocstringParser:
             body (str): The body of the Args section.
         """
         current_arg = None
+        entry_indent = None
         for line in body.splitlines():
             # Match "    name (type): desc", "    name: desc", or the
             # "*args"/"**kwargs" star-prefixed form.
             # Improved regex to handle various spacing and optional types more robustly
             match = re.match(r"^\s+(\*{0,2}\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)", line)
-            if match:
+            indent = len(line) - len(line.lstrip())
+            # A line indented deeper than the entries continues the current
+            # entry, even if it looks like "word: text".
+            if match and (entry_indent is None or indent <= entry_indent):
+                entry_indent = indent
                 current_arg = match.group(1)
                 self.params[current_arg] = match.group(3).strip()
                 if match.group(2):
@@ -266,8 +300,13 @@ class DocstringParser:
                 self.params[current_arg] += " " + line.strip()
 
     def _parse_numpy(self, content: str) -> None:
-        """Parses NumPy style documentation (Parameters/Returns/Raises
-        sections underlined with dashes)."""
+        """Parse NumPy style documentation.
+
+        That is Parameters, Returns and Raises sections underlined with dashes.
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         parts = self._NUMPY_HEADER_RE.split(content)
         self.description = parts[0].strip()
 
@@ -359,7 +398,13 @@ class DocstringParser:
         self.returns = f"{header_line}: {desc}".strip() if desc else header_line
 
     def get_info(self) -> Dict[str, Any]:
-        """Returns the parsed information as a dictionary."""
+        """Return the parsed information as a dictionary.
+
+        Returns:
+            Dict[str, Any]: The keys ``summary``, ``description``, ``params``,
+            ``param_types``, ``returns``, ``raises``, ``attributes``,
+            ``attribute_types``, ``methods`` and ``style``.
+        """
         return {
             "summary": self.summary,
             "description": self.description,

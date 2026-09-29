@@ -27,8 +27,10 @@ HOSTED = "hosted"
 
 # Bump if what's sent to the hosted backend, or what it does with it,
 # materially changes. (2: class outlines are sent too, comments included,
-# and code that looks like it holds a secret is left out.)
-CONSENT_NOTICE_VERSION = 2
+# and code that looks like it holds a secret is left out. 3: the notice says
+# Google handles the code under its free-tier terms and may use it to improve
+# its products.)
+CONSENT_NOTICE_VERSION = 3
 
 # Bump if what's sent to a directly-called provider materially changes.
 DIRECT_CONSENT_NOTICE_VERSION = 2
@@ -49,14 +51,15 @@ NOTICE = (
     f"PyCodeCommenter is about to send {_WHAT_IS_SENT}, to a hosted service "
     "(run by the PyCodeCommenter maintainer) and then to Google's Gemini API, "
     "to draft docstrings. "
-    f"{_SECRETS_NOTE} No source code is stored beyond the time it takes to "
-    "process each request.\n"
+    f"{_SECRETS_NOTE} The hosted service does not store your code. It forwards "
+    "it to Google's Gemini API, which handles it under Google's free-tier "
+    "terms; Google may use it to improve its products.\n"
     "Continue? [y/N] "
 )
 
 
 def notice_for(destination: str = HOSTED) -> str:
-    """The consent notice for a destination.
+    """Give the consent notice for a destination.
 
     Args:
         destination (str): ``"hosted"`` or a provider name.
@@ -81,10 +84,21 @@ def notice_for(destination: str = HOSTED) -> str:
 
 
 def _consent_file_path() -> Path:
+    """Locate the consent file in the user's home directory.
+
+    Returns:
+        Path: ``~/.pycodecommenter/consent.json``.
+    """
     return Path.home() / ".pycodecommenter" / "consent.json"
 
 
 def _read() -> dict:
+    """Load the stored consent record.
+
+    Returns:
+        dict: The recorded data, or an empty dict if the file is missing,
+        unreadable, not valid JSON, or not a JSON object.
+    """
     path = _consent_file_path()
     if not path.exists():
         return {}
@@ -96,15 +110,15 @@ def _read() -> dict:
 
 
 def has_given_consent(destination: str = HOSTED) -> bool:
-    """Whether valid, current-version consent is on file for a destination.
+    """Say whether valid, current-version consent is on file for a destination.
 
     Args:
         destination (str): ``"hosted"`` or a provider name.
 
     Returns:
         bool: ``True`` only if the recorded version matches the current
-            notice's. A missing, unreadable, or stale-version file all
-            return ``False`` -- consent is never assumed.
+        notice's. A missing, unreadable, or stale-version file all
+        return ``False``: consent is never assumed.
     """
     data = _read()
     if destination == HOSTED:
@@ -116,8 +130,10 @@ def has_given_consent(destination: str = HOSTED) -> bool:
 
 
 def record_consent(destination: str = HOSTED) -> None:
-    """Records current-version consent for a destination, keeping any
-    consent already recorded for others.
+    """Record current-version consent for a destination.
+
+    Consent already recorded for other destinations is kept. The consent
+    directory is created if needed.
 
     Args:
         destination (str): ``"hosted"`` or a provider name.
@@ -136,18 +152,21 @@ def record_consent(destination: str = HOSTED) -> None:
 
 
 def ensure_consent(assume_yes: bool, destination: str = HOSTED) -> bool:
-    """Ensures consent is on file before any code is sent, prompting
-    interactively if needed.
+    """Make sure consent is on file before any code is sent.
+
+    Asks on stderr, because stdout may be carrying generated code. Only an
+    answer of ``y`` counts; anything else, including an empty answer or no
+    terminal to ask on, is a no.
 
     Args:
         assume_yes (bool): Skip the interactive prompt and record consent
-            immediately -- for non-interactive/CI use via an explicit CLI
-            flag. Still only takes effect if consent isn't already on file.
+            immediately, for non-interactive or CI use via an explicit CLI
+            flag. Only takes effect if consent isn't already on file.
         destination (str): ``"hosted"`` or a provider name.
 
     Returns:
         bool: ``True`` if consent is (now or already) on file. ``False``
-            means the user declined and no code may be sent there.
+        means the user declined and no code may be sent there.
     """
     if has_given_consent(destination):
         return True
@@ -157,7 +176,11 @@ def ensure_consent(assume_yes: bool, destination: str = HOSTED) -> bool:
 
     # stderr: stdout may be carrying generated code (see ai_setup.status).
     print(notice_for(destination), end="", file=sys.stderr)
-    answer = input().strip().lower()
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        # No terminal to ask on (CI, a closed stdin): nobody agreed.
+        return False
     if answer == "y":
         record_consent(destination)
         return True
