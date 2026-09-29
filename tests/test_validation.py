@@ -557,3 +557,35 @@ def compute(x: int) -> int:
         "has Returns section but doesn't return" in issue.message
         for issue in report.issues
     )
+
+
+def _placeholder_messages(summary):
+    code = f'''\
+def read(path: str) -> str:
+    """{summary}
+
+    Args:
+        path (str): Where to read.
+
+    Returns:
+        str: The text.
+    """
+    return path
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    return [i.message for i in report.issues if i.message.startswith("Placeholder")]
+
+
+def test_prose_containing_a_marker_word_is_not_a_placeholder():
+    assert not _placeholder_messages(
+        "Return a description of the file for a hackathon."
+    )
+
+
+def test_a_marker_word_is_still_a_placeholder():
+    assert _placeholder_messages("TODO: describe the file.")
+    assert _placeholder_messages("Read the file. FIXME later.")
+
+
+def test_description_of_at_line_start_is_still_a_placeholder():
+    assert _placeholder_messages("Description of the function.")

@@ -261,6 +261,20 @@ class ValidationReport:
         return md
 
 
+# Placeholder markers. The uppercase ones must be whole words, so prose such
+# as "a hackathon" does not match; "Description of" only counts when a line
+# starts with it, so "a description of the report" does not.
+_PLACEHOLDER_PATTERNS = {
+    "TODO": re.compile(r"\bTODO\b"),
+    "FIXME": re.compile(r"\bFIXME\b"),
+    "XXX": re.compile(r"\bXXX\b"),
+    "HACK": re.compile(r"\bHACK\b"),
+    "Description of": re.compile(r"^\s*Description of\b", re.MULTILINE),
+    "TBD": re.compile(r"\bTBD\b"),
+    "To be determined": re.compile(r"\bto be determined\b", re.IGNORECASE),
+}
+
+
 def _is_abstract_stub(func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> bool:
     """Say whether a function only declares a contract for subclasses to fill in.
 
@@ -816,17 +830,8 @@ class DocstringValidator:
         parser = DocstringParser(docstring)
 
         # Check for placeholder text
-        placeholders = [
-            "TODO",
-            "FIXME",
-            "XXX",
-            "HACK",
-            "Description of",
-            "TBD",
-            "To be determined",
-        ]
-        for placeholder in placeholders:
-            if placeholder.lower() in docstring.lower():
+        for placeholder in _PLACEHOLDER_PATTERNS:
+            if _PLACEHOLDER_PATTERNS[placeholder].search(docstring):
                 issues.append(
                     ValidationIssue(
                         severity=Severity.WARNING,
