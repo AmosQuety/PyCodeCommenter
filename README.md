@@ -251,7 +251,7 @@ pycodecommenter generate app.py --ai-draft --dry-run
 
 ### Providers and models
 
-By default drafts come from PyCodeCommenter's free hosted service: no key needed, with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
+By default drafts come from PyCodeCommenter's free hosted service: no key needed (the service does not store your code, but it forwards it to Google's Gemini API on a free tier, and Google may use content sent on that tier to improve its products; use your own key if that is not acceptable), with a daily limit (25 drafts per caller per day in v2.6.0; the service sets the figure, and each run ends with a line such as `Hosted AI drafts left today: 10 of 25.`, which is the number to trust). The day is a UTC day, so it resets at midnight UTC; the count is kept in the service's memory, so a restart of the service can also reset it. When the limit is reached mid-run you're asked whether to continue with your own key. You can also start with your own key:
 
 | `--ai-provider` | Key read from | Install | Default model |
 |---|---|---|---|

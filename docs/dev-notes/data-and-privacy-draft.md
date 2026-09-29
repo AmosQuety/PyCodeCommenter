@@ -120,14 +120,11 @@ says the service forwards to Google's Gemini API.
   (https://ai.google.dev/gemini-api/terms). So code sent through the hosted
   service is handled by Google under those free-tier terms. If that is not
   acceptable for your code, use your own key or do not use `--ai-draft`.
-- **The notice's storage sentence.** The consent notice says "No source code
-  is stored beyond the time it takes to process each request." The service
-  itself stores nothing (nothing is persisted and source is never logged), but
-  the maintainer cannot vouch for what Google does with free-tier content.
-  The notice should say that the code is forwarded to Google's Gemini API and
-  handled under Google's terms, rather than imply that no copy exists anywhere.
-  [MAINTAINER: reword the notice; `consent.NOTICE` and
-  `CONSENT_NOTICE_VERSION` would change, which makes every user see it again.]
+- **The consent notice.** Since the v2.6.0 notice was found to imply that no
+  copy exists anywhere, it now reads: "The hosted service does not store your
+  code. It forwards it to Google's Gemini API, which handles it under Google's
+  free-tier terms; Google may use it to improve its products."
+  (`consent.NOTICE`, `CONSENT_NOTICE_VERSION` 3.)
 - **No authentication.** Anyone who reads the client's source can call the
   service directly. The limits above bound nuisance, not abuse of a security
   boundary, and the service should not be relied on for anything sensitive.

@@ -134,3 +134,21 @@ def test_consent_given_for_the_older_wider_wording_is_asked_again(
 
     assert consent.has_given_consent("hosted") is False
     assert consent.has_given_consent("gemini") is False
+
+
+def test_hosted_notice_says_google_may_use_the_code_under_free_tier_terms():
+    text = " ".join(consent.notice_for("hosted").split())
+
+    assert "The hosted service does not store your code." in text
+    assert "Google's free-tier terms" in text
+    assert "Google may use it to improve its products" in text
+
+
+def test_consent_given_for_the_earlier_storage_wording_is_asked_again(
+    _isolated_consent_file,
+):
+    directory = _isolated_consent_file / ".pycodecommenter"
+    directory.mkdir()
+    (directory / "consent.json").write_text('{"hosted_ai_consent_version": 2}')
+
+    assert consent.has_given_consent("hosted") is False

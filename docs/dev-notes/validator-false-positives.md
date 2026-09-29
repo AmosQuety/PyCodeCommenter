@@ -61,9 +61,10 @@ docstring coverage. After: 0 / 0 / 0, 100% (also with `--strict`).
 - Regenerating the finished package (`generate --dry-run`) would "update"
   about 210 docstrings (re-joining wrapped lines, adding `Args: None.`
   style boilerplate) but leaves 0 gap markers.
-- `consent.NOTICE` tells users "No source code is stored beyond the time it
-  takes to process each request" about the hosted backend. That is a claim
-  about the service; it has not been verified against the backend.
+- `consent.NOTICE` used to say "No source code is stored beyond the time it
+  takes to process each request" about the hosted backend. The backend code
+  stores nothing, but the code goes on to Google's free-tier Gemini API, so
+  the notice was reworded (see CHANGELOG, `CONSENT_NOTICE_VERSION` 3).
 - mypy (`pip install mypy; mypy PyCodeCommenter`) reports 214 errors: 166 come
   from the `try: from . import x / except: import x` fallback pattern
   (`no-redef`, `import-not-found`), the rest are genuine annotation

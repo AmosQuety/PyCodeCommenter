@@ -20,6 +20,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   continuation text. It now continues the entry above.
 
 ### Changed
+- **The hosted-service consent notice is accurate about Google.** It now says
+  the service does not store your code, forwards it to Google's Gemini API,
+  and that Google handles it under its free-tier terms and may use it to
+  improve its products. The old wording ("No source code is stored beyond the
+  time it takes to process each request") implied no copy existed anywhere.
+  `CONSENT_NOTICE_VERSION` is now 3, so everyone is asked again once.
 - The package's own docstrings are complete: 0 validator findings and 100%
   docstring coverage (also counted with `--strict`). CI now checks
   formatting, lint and the package's own docstring quality on every push.

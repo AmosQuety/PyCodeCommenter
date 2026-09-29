@@ -27,8 +27,10 @@ HOSTED = "hosted"
 
 # Bump if what's sent to the hosted backend, or what it does with it,
 # materially changes. (2: class outlines are sent too, comments included,
-# and code that looks like it holds a secret is left out.)
-CONSENT_NOTICE_VERSION = 2
+# and code that looks like it holds a secret is left out. 3: the notice says
+# Google handles the code under its free-tier terms and may use it to improve
+# its products.)
+CONSENT_NOTICE_VERSION = 3
 
 # Bump if what's sent to a directly-called provider materially changes.
 DIRECT_CONSENT_NOTICE_VERSION = 2
@@ -49,8 +51,9 @@ NOTICE = (
     f"PyCodeCommenter is about to send {_WHAT_IS_SENT}, to a hosted service "
     "(run by the PyCodeCommenter maintainer) and then to Google's Gemini API, "
     "to draft docstrings. "
-    f"{_SECRETS_NOTE} No source code is stored beyond the time it takes to "
-    "process each request.\n"
+    f"{_SECRETS_NOTE} The hosted service does not store your code. It forwards "
+    "it to Google's Gemini API, which handles it under Google's free-tier "
+    "terms; Google may use it to improve its products.\n"
     "Continue? [y/N] "
 )
 
