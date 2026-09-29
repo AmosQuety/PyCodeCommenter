@@ -57,12 +57,20 @@ DEFAULT_COVERAGE_EXCLUDES = [
 
 
 def _path_is_excluded(py_file: Path, patterns) -> bool:
-    """A path is excluded if one of its directory/file name components
-    exactly equals a pattern; a dot-prefixed pattern (e.g. '.egg-info')
-    matches a component it's a suffix of; and an underscore-suffixed
-    pattern (e.g. 'test_', matching pytest's file naming convention)
-    matches a component it's a prefix of. See cli.py's _path_is_excluded
-    for the equivalent used by generate/validate.
+    """Say whether a path matches an exclusion pattern.
+
+    A path component that exactly equals a pattern matches. A dot-prefixed
+    pattern (such as ``.egg-info``) also matches a component it is a suffix
+    of, and an underscore-suffixed pattern (such as ``test_``, pytest's file
+    naming convention) matches a component it is a prefix of. See cli.py's
+    ``_path_is_excluded`` for the equivalent used by generate and validate.
+
+    Args:
+        py_file (Path): The file's path, relative to the analysed directory.
+        patterns (Iterable[str]): The exclusion patterns.
+
+    Returns:
+        bool: ``True`` if the file should be skipped.
     """
     parts = py_file.parts
     for pattern in patterns:
@@ -78,7 +86,15 @@ def _path_is_excluded(py_file: Path, patterns) -> bool:
 
 @dataclass
 class FileCoverage:
-    """Coverage statistics for a single file."""
+    """Coverage statistics for a single file.
+
+    Attributes:
+        path (str): The file's path.
+        total_functions (int): Functions and methods found.
+        documented_functions (int): Those with a docstring.
+        total_classes (int): Classes found.
+        documented_classes (int): Those with a docstring.
+    """
 
     path: str
     total_functions: int = 0
@@ -88,6 +104,12 @@ class FileCoverage:
 
     @property
     def coverage_percentage(self) -> float:
+        """Get the share of functions and classes that are documented.
+
+        Returns:
+            float: A percentage from 0 to 100; 0.0 for a file with no functions
+            or classes.
+        """
         total = self.total_functions + self.total_classes
         documented = self.documented_functions + self.documented_classes
         return (documented / total * 100) if total > 0 else 0.0
@@ -95,13 +117,25 @@ class FileCoverage:
 
 @dataclass
 class ProjectCoverage:
-    """Coverage statistics for entire project."""
+    """Coverage statistics for a whole project.
+
+    Attributes:
+        files (Dict[str, FileCoverage]): Each analysed file's coverage, by
+            path.
+        strict (bool): Whether placeholder and unreviewed AI text was
+            excluded from the count.
+    """
 
     files: Dict[str, FileCoverage] = field(default_factory=dict)
     strict: bool = False
 
     @property
     def total_coverage(self) -> float:
+        """Get the share of documented functions and classes across all files.
+
+        Returns:
+            float: A percentage from 0 to 100; 0.0 if there are none.
+        """
         total_items = sum(
             f.total_functions + f.total_classes for f in self.files.values()
         )
@@ -111,7 +145,7 @@ class ProjectCoverage:
         return (documented / total_items * 100) if total_items > 0 else 0.0
 
     def print_report(self):
-        """Print coverage report to console."""
+        """Print the coverage report to standard output."""
         print("\n" + "=" * 80)
         print("DOCUMENTATION COVERAGE REPORT" + (" (STRICT)" if self.strict else ""))
         if self.strict:
@@ -129,7 +163,13 @@ class ProjectCoverage:
         print("=" * 80)
 
     def to_json(self) -> dict:
-        """Export as JSON."""
+        """Export the coverage as a JSON-serialisable dict.
+
+        Returns:
+            dict: The total, and per file the percentage and the
+            ``documented/total`` counts of functions and classes. Has
+            ``"strict": True`` when strict counting was used.
+        """
         exported = {
             "total_coverage": self.total_coverage,
             "files": {
@@ -153,7 +193,7 @@ def shields_badge_dict(percentage: float, label: str = "docs coverage") -> dict:
 
     Args:
         percentage (float): Coverage percentage, 0-100.
-        label (str): Badge label text.
+        label (str): Badge label text. (default: 'docs coverage')
 
     Returns:
         dict: A shields.io endpoint-badge schema dict.
@@ -181,19 +221,38 @@ STRICT_NOTE = (
 
 
 class CoverageAnalyzer:
-    """Analyzes documentation coverage for files or projects.
+    """Analyze documentation coverage for files or projects.
 
     By default a function or class counts as documented if it has a
     non-empty docstring: a presence metric. With ``strict=True`` a docstring
     that still holds a ``TODO(pycodecommenter)`` placeholder or an
     unreviewed AI-drafted line does not count, so a project of generated
     stubs does not read as 100%.
+
+    Attributes:
+        strict (bool): Whether placeholder and unreviewed AI text is
+            excluded from the count.
     """
 
     def __init__(self, strict: bool = False):
+        """Choose how documented is counted.
+
+        Args:
+            strict (bool): Do not count docstrings that still hold a placeholder
+                or an unreviewed AI-drafted line.
+        """
         self.strict = strict
 
     def _is_documented(self, node: ast.AST) -> bool:
+        """Say whether a function or class counts as documented.
+
+        Args:
+            node (ast.AST): A function or class definition.
+
+        Returns:
+            bool: ``True`` if it has a non-empty docstring (and, in strict mode,
+            no placeholder or unreviewed AI-drafted marker).
+        """
         docstring = ast.get_docstring(node)
         if not docstring:
             return False
@@ -202,7 +261,19 @@ class CoverageAnalyzer:
         return True
 
     def analyze_file(self, file_path: str) -> FileCoverage:
-        """Analyze a single Python file."""
+        """Analyze a single Python file.
+
+        Args:
+            file_path (str): Path to the file.
+
+        Returns:
+            FileCoverage: The counts of documented and total functions and
+            classes, including nested and async ones.
+
+        Raises:
+            SyntaxError: If the file does not parse.
+            OSError: If the file can't be read.
+        """
         with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
@@ -224,7 +295,19 @@ class CoverageAnalyzer:
     def analyze_directory(
         self, directory: str, exclude_patterns: List[str] = None
     ) -> ProjectCoverage:
-        """Analyze all Python files in a directory."""
+        """Analyze all Python files in a directory.
+
+        Files that can't be read or parsed are logged and left out. Only the part
+        of a path inside ``directory`` is matched against the exclusions.
+
+        Args:
+            directory (str): Path to the directory.
+            exclude_patterns (List[str]): Patterns to skip in addition to
+                ``DEFAULT_COVERAGE_EXCLUDES``.
+
+        Returns:
+            ProjectCoverage: The coverage of every analysed file.
+        """
         patterns = list(DEFAULT_COVERAGE_EXCLUDES) + list(exclude_patterns or [])
         project = ProjectCoverage(strict=self.strict)
 
