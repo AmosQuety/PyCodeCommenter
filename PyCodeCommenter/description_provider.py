@@ -320,6 +320,8 @@ class SwitchOnStop(DescriptionProvider):
             continue with, or ``None`` to stop.
         stopped (Optional[DraftingStopped]): Why drafting ended for the run,
             once it has.
+        _active (DescriptionProvider): The provider drafting now.
+        _switched (bool): Whether the hand-over has already happened.
     """
 
     def __init__(

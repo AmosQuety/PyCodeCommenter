@@ -21,6 +21,10 @@ class Progress:
         provider_label (Callable[[], str]): Names the provider doing the
             drafting right now; a callable because the run can switch
             providers part way through.
+        _stream (TextIO): Where the line is written.
+        _columns (Callable[[], int]): Gives the terminal width.
+        _file (str): The file the status lines are about.
+        _shown_width (int): The width of the line now showing; 0 if none.
     """
 
     def __init__(

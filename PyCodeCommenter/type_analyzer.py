@@ -41,10 +41,12 @@ _STR_RETURNING_STR_METHODS = frozenset(
 
 
 class TypeAnalyzer:
-    """
-    Analyzes Python AST nodes to infer types for variables, arguments, and
+    """Analyzes Python AST nodes to infer types for variables, arguments, and
     return values. Supports modern Python features like PEP 604 (|) and
     PEP 585 (generics).
+
+    Attributes:
+        local_types (Dict[str, str]): Inferred types of variables, by name.
     """
 
     def __init__(self, local_types: Optional[Dict[str, str]] = None):

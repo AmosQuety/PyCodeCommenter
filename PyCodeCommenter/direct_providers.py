@@ -221,6 +221,7 @@ class DirectProvider(DescriptionProvider):
             be waited out for a rate limit, so the wait can be shown. Set by
             whoever runs the provider (see ``ai_setup``).
         model (Optional[str]): The model every request uses.
+        _client (Any): The SDK client requests go through.
     """
 
     label = "AI provider"

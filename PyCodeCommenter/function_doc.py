@@ -65,7 +65,14 @@ class DocPart:
 
 @dataclass
 class ArgEntry:
-    """One Args: line."""
+    """One Args: line.
+
+    Attributes:
+        name (str): The name as shown in Args, with ``*`` or ``**`` for variadics.
+        display_type (str): The type shown in parentheses.
+        part (DocPart): The description and where it came from.
+        default (Optional[str]): The default value as written in code, or ``None``.
+    """
 
     name: str
     display_type: str
@@ -76,7 +83,13 @@ class ArgEntry:
 @dataclass
 class ReturnsEntry:
     """The Returns:/Yields: section. ``display_type`` is ``None`` for the
-    bare ``None.`` form used when nothing is returned."""
+    bare ``None.`` form used when nothing is returned.
+
+    Attributes:
+        label (str): ``"Returns"`` or ``"Yields"``.
+        display_type (Optional[str]): The type, or ``None`` for the bare ``None.`` form.
+        part (DocPart): The description and where it came from.
+    """
 
     label: str
     display_type: Optional[str]
@@ -85,7 +98,12 @@ class ReturnsEntry:
 
 @dataclass
 class RaisesEntry:
-    """One Raises: line."""
+    """One Raises: line.
+
+    Attributes:
+        name (str): The exception class name.
+        part (DocPart): When it is raised, and where that text came from.
+    """
 
     name: str
     part: DocPart
@@ -93,7 +111,18 @@ class RaisesEntry:
 
 @dataclass
 class FunctionDoc:
-    """Every part of one function's docstring."""
+    """Every part of one function's docstring.
+
+    Attributes:
+        summary (DocPart): The one-line summary.
+        description (Optional[DocPart]): The description paragraph, if any.
+        args (List[ArgEntry]): One entry per parameter.
+        returns (Optional[ReturnsEntry]): The Returns or Yields entry, if any.
+        raises (List[RaisesEntry]): One entry per exception raised.
+        dropped (int): Author-written Args entries removed because the
+            parameter no longer exists; not rendered, only counted for the run
+            summary.
+    """
 
     summary: DocPart
     description: Optional[DocPart] = None
@@ -198,7 +227,14 @@ def _render_returns(returns: ReturnsEntry) -> str:
 @dataclass
 class AttributeEntry:
     """One class attribute. ``display_type`` is ``None`` for an author's
-    entry that declared no type."""
+    entry that declared no type.
+
+    Attributes:
+        name (str): The attribute's name.
+        display_type (Optional[str]): The type, or ``None`` if the author declared none.
+        text (str): The description.
+        origin (str): Where the text came from (see ``Origin``).
+    """
 
     name: str
     display_type: Optional[str]

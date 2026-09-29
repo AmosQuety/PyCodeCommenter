@@ -392,7 +392,14 @@ def _is_abstract_stub(func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -
 
 
 class DocstringValidator:
-    """Main validator class for checking documentation quality."""
+    """Main validator class for checking documentation quality.
+
+    Attributes:
+        code (Optional[str]): The source being validated.
+        file_path (Optional[str]): The file it was read from, if any.
+        parsed_code (Optional[ast.Module]): The parsed tree, or ``None`` if the
+            source could not be read or parsed.
+    """
 
     def __init__(
         self, code_string: Optional[str] = None, file_path: Optional[str] = None

@@ -219,8 +219,28 @@ _TRAILING_DEFAULT_ANNOTATION_RE = re.compile(r" \(default: .*\)$")
 
 
 class PyCodeCommenter:
-    """
-    Main class for generating and patching Python docstrings.
+    """Main class for generating and patching Python docstrings.
+
+    Attributes:
+        code (str): The source, with line endings normalised to LF.
+        parsed_code (Optional[ast.Module]): The parsed tree, or ``None`` if there
+            is no code or it did not parse.
+        file_path (Optional[str]): The file the code was read from, if any.
+        comments (list): The docstrings from the last ``generate_docstrings`` call.
+        tokenized_comments (list): The ``#`` comments found in the source.
+        type_analyzer (TypeAnalyzer): Infers types from the AST.
+        report (GenerationReport): What the latest run did, for the summary.
+        drafting_stopped (Optional[DraftingStopped]): Set once a provider says it
+            can't draft any more this run.
+        comment_docstrings (list): Definitions whose docstring came from the
+            comment above them.
+        _description_provider (Optional[DescriptionProvider]): The opt-in AI
+            drafting provider, or ``None``.
+        _progress (Optional[Any]): Shown a status line while a draft is requested.
+        _budget (Optional[Any]): Caps the AI requests of a whole run.
+        _include_module_docstrings (bool): Whether to write a module docstring
+            for a module that has none.
+        _newline (str): The source's own line ending, restored when patching.
     """
 
     def __init__(
@@ -1863,6 +1883,11 @@ class _DocstringCSTPatcher(cst.CSTTransformer):
     every other node this transformer handles), and there's always at most
     one module docstring, always at the very top of the file, so no
     position lookup is needed to place it.
+
+    Attributes:
+        _edits (Dict[Any, str]): The docstring literal for each definition, by
+            position.
+        _module_docstring (Optional[str]): The module docstring to add, if any.
     """
 
     METADATA_DEPENDENCIES = (PositionProvider,)

@@ -17,10 +17,22 @@ logger = logging.getLogger(__name__)
 
 
 class DocstringParser:
-    """
-    Parses existing docstrings in Google, Sphinx, and NumPy styles.
+    """Parses existing docstrings in Google, Sphinx, and NumPy styles.
     Extracts summary, description, parameters (with types), and return
     information.
+
+    Attributes:
+        raw_docstring (str): The docstring text that was parsed.
+        style (str): ``"google"``, ``"numpy"`` or ``"sphinx"``.
+        summary (str): The first paragraph.
+        description (str): Any further prose before the sections.
+        params (Dict[str, str]): Argument descriptions, by name.
+        param_types (Dict[str, str]): Argument types, by name, where declared.
+        returns (str): The Returns or Yields text.
+        raises (Dict[str, str]): Exception descriptions, by exception name.
+        attributes (Dict[str, str]): Attribute descriptions, by name.
+        attribute_types (Dict[str, str]): Attribute types, by name, where declared.
+        methods (str): The body of a ``Methods:`` section, kept verbatim.
     """
 
     # A NumPy-style section header (Parameters/Returns/Raises) immediately

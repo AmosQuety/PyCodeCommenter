@@ -79,6 +79,10 @@ class RemoteDescriptionProvider(DescriptionProvider):
             last reported by the backend; ``None`` until it has said.
         drafts_limit (Optional[int]): The caller's daily allowance in total, as
             last reported by the backend.
+        _on_wait (Optional[Callable[[float], None]]): Told the seconds about to be
+            waited out for a rate limit.
+        _class_endpoint_missing (bool): Set when the backend has no class endpoint,
+            so classes are not asked about again.
     """
 
     # The backend's per-minute rate limit asks callers to wait; a longer
