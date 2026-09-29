@@ -51,6 +51,15 @@ class DocstringParser:
     _GOOGLE_ENTRY_RE = re.compile(r"^(\s+)([\w.]+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)$")
 
     def __init__(self, docstring: Optional[str] = None):
+        """Parse a docstring, if one is given.
+
+        The results are then available as attributes (``summary``, ``params``,
+        ``returns`` and so on) and through :meth:`get_info`.
+
+        Args:
+            docstring (Optional[str]): The docstring text; nothing is parsed if it
+                is ``None`` or empty.
+        """
         self.raw_docstring = docstring or ""
         # "google", "numpy" or "sphinx": the style an existing docstring is
         # written in, so regeneration can keep it. A docstring with no
@@ -119,7 +128,11 @@ class DocstringParser:
             self._parse_google(remaining_content)
 
     def _parse_sphinx(self, content: str) -> None:
-        """Parses Sphinx style documentation (:param name: desc)."""
+        """Parse Sphinx style documentation (``:param name: desc``).
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         desc_lines = []
         current_param = None
 
@@ -176,7 +189,11 @@ class DocstringParser:
         self.description = " ".join(desc_lines).strip()
 
     def _parse_google(self, content: str) -> None:
-        """Parses Google style documentation (Args:, Returns:, Yields:)."""
+        """Parse Google style documentation (Args:, Returns:, Yields:).
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         # Split by sections, allowing headers to be at the start or after a newline
         sections = re.split(
             r"(?m)^ *(Args|Returns|Yields|Raises|Attributes|Methods):$", content
@@ -266,8 +283,13 @@ class DocstringParser:
                 self.params[current_arg] += " " + line.strip()
 
     def _parse_numpy(self, content: str) -> None:
-        """Parses NumPy style documentation (Parameters/Returns/Raises
-        sections underlined with dashes)."""
+        """Parse NumPy style documentation.
+
+        That is Parameters, Returns and Raises sections underlined with dashes.
+
+        Args:
+            content (str): The docstring text after the summary.
+        """
         parts = self._NUMPY_HEADER_RE.split(content)
         self.description = parts[0].strip()
 
@@ -359,7 +381,13 @@ class DocstringParser:
         self.returns = f"{header_line}: {desc}".strip() if desc else header_line
 
     def get_info(self) -> Dict[str, Any]:
-        """Returns the parsed information as a dictionary."""
+        """Return the parsed information as a dictionary.
+
+        Returns:
+            Dict[str, Any]: The keys ``summary``, ``description``, ``params``,
+            ``param_types``, ``returns``, ``raises``, ``attributes``,
+            ``attribute_types``, ``methods`` and ``style``.
+        """
         return {
             "summary": self.summary,
             "description": self.description,
