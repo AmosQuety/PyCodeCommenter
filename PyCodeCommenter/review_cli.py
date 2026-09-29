@@ -31,11 +31,19 @@ _LABELS = {AI: "AI-drafted", TODO: "gap", COMMENT: "repeated comment"}
 
 
 class QuitReview(Exception):
-    """The user asked to stop; decisions made so far are still saved."""
+    """The user asked to stop; decisions made so far are still saved.
+
+    The decisions made before quitting travel in ``args[0]``.
+    """
 
 
 def run_review(files: List[str], list_only: bool) -> None:
-    """Reviews files interactively, or lists what needs review.
+    """Review files interactively, or list what needs review.
+
+    Files with nothing to review are skipped. Without a terminal, or with
+    ``list_only``, the items are printed and no file is changed. Otherwise each
+    file is saved (if anything changed) before the next one is asked about, so
+    quitting keeps the decisions already made.
 
     Args:
         files (List[str]): The Python files to review.
@@ -64,6 +72,11 @@ def run_review(files: List[str], list_only: bool) -> None:
 
 
 def _list(found) -> None:
+    """Print one line per review item and a summary count.
+
+    Args:
+        found: ``(path, source, items)`` tuples for the files that have items.
+    """
     counts = {AI: 0, TODO: 0, COMMENT: 0}
     for path, _, items in found:
         for item in items:
@@ -85,12 +98,23 @@ def _list(found) -> None:
 def _ask_about(
     path: str, source: str, items: List[ReviewItem]
 ) -> List[Tuple[ReviewItem, tuple]]:
-    """Asks about each item; raises QuitReview (carrying the decisions so
-    far) if the user quits.
+    """Ask what to do about each item in one file.
 
     For a function with several AI-drafted lines the whole docstring is
     shown first and one answer can accept all of that function's AI lines
     (only those: gaps and comments are still asked one by one).
+
+    Args:
+        path (str): Path of the file, used in the prompts.
+        source (str): The file's text.
+        items (List[ReviewItem]): The file's review items, in source order.
+
+    Returns:
+        List[Tuple[ReviewItem, tuple]]: Each answered item with its
+        ``(action, text)`` decision.
+
+    Raises:
+        QuitReview: If the user quits; carries the decisions made so far.
     """
     print(f"\n{path}: {_plural(len(items), 'item')} to review")
     lines = source.replace("\r\n", "\n").split("\n")
@@ -119,8 +143,17 @@ def _ask_about(
 
 
 def _ai_items_waiting(items, index: int, decided: Set[int]) -> List[int]:
-    """Indexes of the undecided AI lines of ``items[index]``'s docstring,
-    from that item on. Empty unless the item is itself an AI line."""
+    """Find the undecided AI lines of one item's docstring, from that item on.
+
+    Args:
+        items: The file's review items.
+        index (int): Position of the item being asked about.
+        decided (Set[int]): Positions already accepted together.
+
+    Returns:
+        List[int]: Positions of the undecided AI lines sharing the item's
+        docstring. Empty unless the item is itself an AI line.
+    """
     item = items[index]
     if item.kind != AI:
         return []
@@ -134,12 +167,28 @@ def _ai_items_waiting(items, index: int, decided: Set[int]) -> List[int]:
 
 
 def _show_docstring(lines: List[str], item: ReviewItem) -> None:
+    """Print the docstring an item belongs to, so the user sees the context.
+
+    Args:
+        lines (List[str]): The file's lines.
+        item (ReviewItem): An item inside the docstring to show.
+    """
     print(f"\nThe docstring of {item.definition or 'the module'}():")
     for line in lines[item.docstring_line - 1 : item.docstring_end]:
         print(f"  | {line}")
 
 
 def _choose(kind: str, waiting_in_function: int = 0) -> str:
+    """Ask until the user gives a valid answer for this kind of item.
+
+    Args:
+        kind (str): The item kind: AI, gap or repeated comment.
+        waiting_in_function (int): How many undecided AI lines the function's
+            docstring has. When more than one, a capital ``A`` accepts them all.
+
+    Returns:
+        str: The action: accept, accept_all, edit, fill, remove, skip or quit.
+    """
     prompt, choices = _PROMPTS[kind]
     if waiting_in_function > 1:
         prompt = (
@@ -158,6 +207,11 @@ def _choose(kind: str, waiting_in_function: int = 0) -> str:
 
 
 def _ask_text() -> str:
+    """Ask for replacement text until it passes the safety check.
+
+    Returns:
+        str: Text that ``review.text_problem`` finds no fault with.
+    """
     while True:
         text = _ask("New text: ")
         problem = review.text_problem(text)
@@ -167,6 +221,17 @@ def _ask_text() -> str:
 
 
 def _save(path: str, source: str, decisions) -> None:
+    """Apply the decisions to a file, if the result passes the safety check.
+
+    The file is written only when at least one decision changes something and
+    ``review.verify_review`` confirms that only docstrings and comments
+    differ. Otherwise the file is left as it was and the reason is printed.
+
+    Args:
+        path (str): The file to write.
+        source (str): The file's original text.
+        decisions: ``(item, (action, text))`` pairs; skips are ignored.
+    """
     changes = [d for d in decisions if d[1][0] != "skip"]
     if not changes:
         return
@@ -182,6 +247,14 @@ def _save(path: str, source: str, decisions) -> None:
 
 
 def _tally(changes) -> str:
+    """Summarise the decisions, for example ``2 accepted, 1 edited``.
+
+    Args:
+        changes: ``(item, (action, text))`` pairs, none of them skips.
+
+    Returns:
+        str: Counts per action, in the order the actions first appear.
+    """
     names = {
         "accept": "accepted",
         "edit": "edited",
@@ -195,20 +268,53 @@ def _tally(changes) -> str:
 
 
 def _where(item: ReviewItem) -> str:
+    """Name the function an item is in, for use in a prompt.
+
+    Args:
+        item (ReviewItem): The item.
+
+    Returns:
+        str: ``in name(): ``, or an empty string for a module-level item.
+    """
     return f"in {item.definition}(): " if item.definition else ""
 
 
 def _ask(prompt: str) -> str:
+    """Show a prompt and read one line from the user.
+
+    Args:
+        prompt (str): The text to show, without a trailing newline.
+
+    Returns:
+        str: The answer with surrounding whitespace removed.
+    """
     print(prompt, end="")
     return input().strip()
 
 
 def _read(path: str) -> str:
+    """Read a file as UTF-8 without translating line endings.
+
+    Args:
+        path (str): The file to read.
+
+    Returns:
+        str: The file's text, exactly as stored.
+    """
     with open(path, encoding="utf-8", newline="") as f:
         return f.read()
 
 
 def _plural(n: int, noun: str) -> str:
+    """Format a count with its noun, adding ``s`` unless the count is one.
+
+    Args:
+        n (int): The count.
+        noun (str): The singular noun.
+
+    Returns:
+        str: For example ``1 gap`` or ``3 gaps``.
+    """
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
