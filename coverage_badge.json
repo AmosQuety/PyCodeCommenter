@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "docs coverage",
-  "message": "78%",
-  "color": "green"
+  "message": "100%",
+  "color": "brightgreen"
 }
