@@ -5,7 +5,7 @@ for the pyOpenSci submission. Each entry says whether the finding was a real
 documentation gap or a fault in the tool, and what was done about it.
 
 Baseline (v2.6.0 + branch work): 239 errors, 190 warnings, 99 infos, 70.2%
-docstring coverage.
+docstring coverage. After: 0 / 0 / 0, 100% (also with `--strict`).
 
 ## Validator false positives (fixed)
 
@@ -45,3 +45,26 @@ docstring coverage.
   ValueError)` comes before `except UnicodeDecodeError`, and
   `UnicodeDecodeError` is a subclass of `ValueError`, so the encoding branch
   is unreachable and encoding failures are logged as "Error parsing".
+
+## Other observations (no change made)
+
+- A file with no functions or classes (for example `__init__.py`) reports
+  `0.0%` coverage, and `coverage <that file> --fail-below N` would fail on
+  it. Nothing to document is arguably 100% or "not applicable"; the project
+  total is unaffected because it is weighted by item count.
+- `preflight` accepts `y` or `yes`, while `consent.ensure_consent` accepts
+  only `y`.
+- `ai_setup.py` falls back with `except ImportError` where the other modules
+  use `except (ImportError, ValueError)`.
+- `scripts/compare_generation.py` reports 2 files "not idempotent" on
+  `PyCodeCommenter/` both before and after these changes.
+- Regenerating the finished package (`generate --dry-run`) would "update"
+  about 210 docstrings (re-joining wrapped lines, adding `Args: None.`
+  style boilerplate) but leaves 0 gap markers.
+- `consent.NOTICE` tells users "No source code is stored beyond the time it
+  takes to process each request" about the hosted backend. That is a claim
+  about the service; it has not been verified against the backend.
+- mypy (`pip install mypy; mypy PyCodeCommenter`) reports 214 errors: 166 come
+  from the `try: from . import x / except: import x` fallback pattern
+  (`no-redef`, `import-not-found`), the rest are genuine annotation
+  problems (implicit Optional defaults, a few wrong types).
