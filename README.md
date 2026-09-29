@@ -246,7 +246,7 @@ pycodecommenter generate app.py --ai-draft --dry-run
 - **Only the gaps.** Your own docstring text and facts read off the code (types, raise conditions) are never replaced; the model only fills parts that would otherwise be a TODO or say nothing beyond the type. That covers functions (summary, arguments, return, exceptions) and classes (summary and `Attributes:`).
 - **Every drafted line is labelled** `(AI-drafted, unreviewed)`. The label stays until a person accepts the line in `pycodecommenter review` (`review --list` shows what is waiting), and `pycodecommenter validate` reports those lines until then.
 - **Review first.** `--dry-run` and `--output-dir` show the result without touching your files; writing with `--inplace` also requires `--accept-ai-drafts`.
-- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets.
+- **Consent first.** Before any code is sent anywhere, you're asked once per destination (`--yes-send-code-to-ai` for CI). What is sent is the source of each function with gaps and an outline of each such class, comments included; anything that looks like a key, password or token is left out, but check your comments hold no secrets. See [Data and Privacy](https://amosquety.github.io/PyCodeCommenter/data-and-privacy/).
 - **Know the cost first.** For a directory, the tool counts the requests it would make (`32 files, 121 functions and classes have gaps to draft`) and asks before sending; `--max-drafts N` caps the whole run.
 
 ### Providers and models
@@ -484,6 +484,7 @@ Full documentation: **[https://amosquety.github.io/PyCodeCommenter/](https://amo
 - [CLI Reference](https://amosquety.github.io/PyCodeCommenter/cli-reference/)
 - [Python API](https://amosquety.github.io/PyCodeCommenter/python-api/)
 - [Recipes & CI](https://amosquety.github.io/PyCodeCommenter/recipes/)
+- [Data and Privacy](https://amosquety.github.io/PyCodeCommenter/data-and-privacy/)
 - [FAQ](https://amosquety.github.io/PyCodeCommenter/faq/)
 
 ---

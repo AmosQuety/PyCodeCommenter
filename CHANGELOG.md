@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **A Data and Privacy page** in the docs (`docs/data-and-privacy.md`): what
+  `--ai-draft` sends, what the secret check leaves out, how consent works,
+  where the hosted service and each provider send code, and where to report a
+  problem. Linked from the README and the FAQ.
+
+### Upgrade notes
+- **Everyone is asked for hosted-AI consent again once.** The consent notice
+  now says the hosted service forwards code to Google's Gemini API on a free
+  tier, where Google may use it to improve its products, so
+  `CONSENT_NOTICE_VERSION` is 3. CI jobs that use `--ai-draft` without
+  `--yes-send-code-to-ai` will stop at the prompt until someone agrees.
+
 ### Fixed
 - **The validator no longer asks for a `Returns:` section on a `-> None`
   function**, and allows one on an abstract method whose body only raises

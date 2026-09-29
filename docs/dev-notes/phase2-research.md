@@ -66,7 +66,7 @@ The parts I could not check: OpenAI's agreements (403), the hosted service's
 own terms and upstream provider, and the terms of any OpenAI-compatible
 endpoint a user chooses.
 
-The draft page is `data-and-privacy-draft.md` in this folder.
+The page written from this research is `docs/data-and-privacy.md` (on the docs site).
 
 ## A6. Does main match the 2.6.0 release on PyPI?
 
