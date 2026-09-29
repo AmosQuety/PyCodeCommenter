@@ -29,6 +29,7 @@ classifiers = [
     "Topic :: Utilities",
     "Environment :: Console",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 keywords = [
     "docstring",
@@ -79,6 +80,9 @@ Changelog = "https://github.com/AmosQuety/PyCodeCommenter/blob/main/CHANGELOG.md
 
 [tool.setuptools]
 packages = ["PyCodeCommenter"]
+
+[tool.setuptools.package-data]
+PyCodeCommenter = ["py.typed"]
 
 [project.scripts]
 pycodecommenter = "PyCodeCommenter.cli:main"
