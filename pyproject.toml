@@ -88,9 +88,10 @@ PyCodeCommenter = ["py.typed"]
 pycodecommenter = "PyCodeCommenter.cli:main"
 
 [tool.pytest.ini_options]
-# Tests live in tests/; the package's docstring examples run as doctests.
-testpaths = ["tests", "PyCodeCommenter"]
-addopts = "--doctest-modules"
+# Tests live in tests/; the package's docstring examples and the runnable
+# examples in docs/python-api.md run as doctests.
+testpaths = ["tests", "PyCodeCommenter", "docs/python-api.md"]
+addopts = "--doctest-modules --doctest-glob=*.md"
 pythonpath = ["."]
 
 [tool.black]
