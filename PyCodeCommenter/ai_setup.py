@@ -46,19 +46,32 @@ AI_PROVIDER_CHOICES = [HOSTED] + list(PROVIDERS)
 
 
 class AISetupError(Exception):
-    """AI drafting can't start as configured; the message says why and how
-    to fix it."""
+    """AI drafting can't start as configured.
+
+    The message says why and how to fix it.
+    """
 
 
 def status(*args, **kwargs) -> None:
-    """Prints a status message or prompt to stderr. Stdout may be carrying
-    the patched code (``generate`` with no output flag), and a prompt there
-    would be invisible once redirected, leaving the run waiting silently."""
+    """Print a status message or prompt to stderr.
+
+    Stdout may be carrying the patched code (``generate`` with no output
+    flag), and a prompt there would be invisible once redirected, leaving the
+    run waiting silently.
+
+    Args:
+        *args: Passed to :func:`print`.
+        **kwargs: Passed to :func:`print` (``file`` is always stderr).
+    """
     print(*args, file=sys.stderr, **kwargs)
 
 
 def is_interactive() -> bool:
-    """Whether a person is at the terminal to answer questions."""
+    """Say whether a person is at the terminal to answer questions.
+
+    Returns:
+        bool: ``True`` if standard input is a terminal.
+    """
     return sys.stdin.isatty()
 
 
@@ -70,7 +83,7 @@ def build_ai_provider(
     assume_consent: bool = False,
     progress: Optional[Progress] = None,
 ) -> SwitchOnStop:
-    """Builds the provider for a run and tells the user which one it is.
+    """Build the provider for a run and tell the user which one it is.
 
     With the hosted service, running out of free drafts mid-run offers to
     continue with the user's own key (interactive runs only).
@@ -117,14 +130,16 @@ def build_ai_provider(
 def preflight(
     targets: List[str], limit: Optional[int], ask: bool, include_module_docstrings: bool
 ) -> bool:
-    """Says how many requests an AI run over a directory would make, and
-    (when asked to) whether to go ahead. Nothing is sent to find out.
+    """Say how many requests an AI run would make, and whether to go ahead.
+
+    Nothing is sent to find out. When ``ask`` is set the user is asked for a
+    yes; nothing is printed if there is nothing to draft.
 
     Args:
         targets (List[str]): The files the run would process.
         limit (Optional[int]): ``--max-drafts``, if given.
-        ask (bool): Ask for a yes before going on (an interactive run
-            that has not passed the consent flag).
+        ask (bool): Ask for a yes before going on (an interactive run that
+            has not passed the consent flag).
         include_module_docstrings (bool): As for the real run.
 
     Returns:
@@ -157,8 +172,15 @@ def preflight(
 
 
 def provider_label(provider: SwitchOnStop) -> str:
-    """A short name for the provider drafting right now, for the status
-    line: ``hosted``, or the vendor and model."""
+    """Name the provider drafting right now, for the status line.
+
+    Args:
+        provider (SwitchOnStop): The run's provider.
+
+    Returns:
+        str: ``hosted``, or the vendor and model, for example
+        ``Gemini, gemini-2.5-flash``.
+    """
     active = provider.active
     if isinstance(active, RemoteDescriptionProvider):
         return "hosted"
@@ -168,17 +190,45 @@ def provider_label(provider: SwitchOnStop) -> str:
 
 
 def _with_progress(provider: SwitchOnStop, progress: Optional[Progress]):
+    """Let the status line ask the provider for its current name.
+
+    Args:
+        provider (SwitchOnStop): The run's provider.
+        progress (Optional[Progress]): The status line, if there is one.
+
+    Returns:
+        SwitchOnStop: ``provider``, unchanged.
+    """
     if progress is not None:
         progress.provider_label = lambda: provider_label(provider)
     return provider
 
 
 def _clearing(progress: Optional[Progress], on_stop):
-    """Wraps a hand-off so the status line is gone before it prompts."""
+    """Wrap a hand-off so the status line is gone before it prompts.
+
+    Args:
+        progress (Optional[Progress]): The status line, if there is one.
+        on_stop (Callable[[DraftingStopped], Optional[DescriptionProvider]]):
+            The hand-off to run once the line is cleared.
+
+    Returns:
+        Callable[[DraftingStopped], Optional[DescriptionProvider]]:
+        ``on_stop`` itself when there is no status line, otherwise a
+        function that clears the line and then calls ``on_stop``.
+    """
     if progress is None:
         return on_stop
 
     def clear_then_ask(stopped: DraftingStopped):
+        """Clear the status line, then run the hand-off.
+
+        Args:
+            stopped (DraftingStopped): Why drafting stopped.
+
+        Returns:
+            Optional[DescriptionProvider]: Whatever the hand-off returns.
+        """
         progress.clear()
         return on_stop(stopped)
 
@@ -191,7 +241,10 @@ def direct_provider(
     base_url: Optional[str],
     assume_consent: bool = False,
 ) -> DescriptionProvider:
-    """Builds a provider that uses the user's own key.
+    """Build a provider that uses the user's own key.
+
+    The SDK is checked first, then consent, then the key, so a missing SDK
+    does not surface only after the user has done the other two.
 
     Args:
         provider_name (str): A key of ``PROVIDERS``.
@@ -224,17 +277,18 @@ def direct_provider(
 
 
 def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
-    """Asks whether to continue with the user's own key after the hosted
-    service stops, and builds that provider if so. If the chosen provider
-    can't be used (its SDK is missing, consent is declined, there is no
-    key), says why and asks again, until one works or the user skips.
+    """Offer to continue with the user's own key after the hosted service stops.
+
+    Asks which provider and builds it. If the chosen provider can't be used
+    (its SDK is missing, consent is declined, there is no key), says why and
+    asks again, until one works or the user skips.
 
     Args:
         stopped (DraftingStopped): Why the hosted service stopped.
 
     Returns:
         Optional[DescriptionProvider]: The replacement, or ``None`` to stop
-            drafting (the remaining gaps stay as TODO markers).
+        drafting (the remaining gaps stay as gap markers).
     """
     status(f"\n{stopped.message}")
     while True:
@@ -256,7 +310,20 @@ def offer_own_key(stopped: DraftingStopped) -> Optional[DescriptionProvider]:
 
 
 def _direct_provider_from_answers(choice: str) -> DescriptionProvider:
-    """Asks for what the chosen provider still needs and builds it."""
+    """Ask for what the chosen provider still needs and build it.
+
+    Asks for a model when the provider has no default, and for an endpoint
+    for ``openai-compatible``.
+
+    Args:
+        choice (str): A key of ``PROVIDERS``.
+
+    Returns:
+        DescriptionProvider: The provider.
+
+    Raises:
+        AISetupError: If the provider can't be used as configured.
+    """
     model = None
     if PROVIDERS[choice].default_model is None:
         model = _ask("Model name: ") or None
@@ -267,8 +334,10 @@ def _direct_provider_from_answers(choice: str) -> DescriptionProvider:
 
 
 def report_ai_outcome(provider: SwitchOnStop) -> None:
-    """Tells the user how drafting ended: the hosted allowance left, or why
-    drafting stopped and how to carry on.
+    """Tell the user how drafting ended.
+
+    Says either why drafting stopped and how to carry on, or how much of the
+    hosted allowance is left.
 
     Args:
         provider (SwitchOnStop): The run's provider.
@@ -295,6 +364,15 @@ def report_ai_outcome(provider: SwitchOnStop) -> None:
 
 
 def _require_sdk(provider_name: str) -> None:
+    """Check that the provider's SDK is installed.
+
+    Args:
+        provider_name (str): A key of ``PROVIDERS``.
+
+    Raises:
+        AISetupError: If the SDK is missing; the message has the install
+            command.
+    """
     if not sdk_installed(provider_name):
         raise AISetupError(
             f"The {PROVIDERS[provider_name].label} provider needs its SDK, "
@@ -305,6 +383,15 @@ def _require_sdk(provider_name: str) -> None:
 
 
 def _require_consent(destination: str, assume_consent: bool) -> None:
+    """Check that the user has agreed to send code to a destination.
+
+    Args:
+        destination (str): ``"hosted"`` or a provider name.
+        assume_consent (bool): Record consent without asking (CI use).
+
+    Raises:
+        AISetupError: If consent was declined.
+    """
     if not ensure_consent(assume_yes=assume_consent, destination=destination):
         raise AISetupError(
             "AI drafting needs your consent to send source code. " "No code was sent."
@@ -312,7 +399,21 @@ def _require_consent(destination: str, assume_consent: bool) -> None:
 
 
 def _api_key_for(provider_name: str) -> str:
-    """The provider's key from its environment variable, or asked for."""
+    """Get the provider's key from its environment variable, or ask for it.
+
+    The key is only asked for when running interactively, with the input
+    hidden.
+
+    Args:
+        provider_name (str): A key of ``PROVIDERS``.
+
+    Returns:
+        str: The API key.
+
+    Raises:
+        AISetupError: If there is no key in the environment and none was
+            entered.
+    """
     spec = PROVIDERS[provider_name]
     key = os.environ.get(spec.env_var, "").strip()
     if key:
@@ -327,11 +428,27 @@ def _api_key_for(provider_name: str) -> str:
 
 
 def _ask(question: str) -> str:
+    """Show a question on stderr and read one line.
+
+    Args:
+        question (str): The prompt to show.
+
+    Returns:
+        str: The answer with surrounding whitespace removed.
+    """
     status(question, end="")
     return input().strip()
 
 
 def _no_replacement(stopped: DraftingStopped) -> None:
+    """Decline to replace a provider that stopped.
+
+    Args:
+        stopped (DraftingStopped): Why drafting stopped (unused).
+
+    Returns:
+        None: There is no replacement provider.
+    """
     return None
 
 
