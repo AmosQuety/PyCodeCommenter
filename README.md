@@ -264,6 +264,8 @@ By default drafts come from PyCodeCommenter's free hosted service: no key needed
 
 If the provider's SDK isn't installed, PyCodeCommenter says so before it asks for consent or a key, and prints the exact command to install it into the Python you are running (it never runs pip itself). During a run, if you choose your own key after the hosted limit and that provider can't be used, you are asked again until one works or you type `skip`.
 
+**How each provider has been tested.** The automated tests run every provider against fake SDK clients and make no network calls, so they check what PyCodeCommenter sends and how it handles replies and errors, not what a vendor's service accepts today. Live runs so far: the hosted service and Gemini have been used end to end, and Anthropic was run with `claude-haiku-4-5-20251001` (its current default, `claude-sonnet-5-5`, has not been run live). OpenAI and DeepSeek have not been run against real keys; their request shapes and default models follow each vendor's documentation as of September 2026. If a request is rejected, that function keeps its `TODO(pycodecommenter)` marker (or, for a bad key or a spent quota, drafting stops for the run) and no code is changed. Please [open an issue](https://github.com/AmosQuety/PyCodeCommenter/issues) if a provider or model does not work for you.
+
 **The default model is only a default.** Pass `--ai-model` to use any model your key can access, for example a more capable one:
 
 ```bash
