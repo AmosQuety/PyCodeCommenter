@@ -96,12 +96,20 @@ class Parameter(NamedTuple):
 
     @property
     def name(self) -> str:
+        """The parameter's bare name, without any ``*`` prefix.
+
+        Returns:
+            str: The identifier as written in the signature.
+        """
         return self.arg.arg
 
     @property
     def display_name(self) -> str:
-        """Name as it should appear in (and be matched against) a docstring
-        Args section."""
+        """Give the name as it should appear in (and be matched against) Args.
+
+        Returns:
+            str: The name, with ``*`` for ``*args`` and ``**`` for ``**kwargs``.
+        """
         if self.kind == "vararg":
             return f"*{self.arg.arg}"
         if self.kind == "kwarg":
