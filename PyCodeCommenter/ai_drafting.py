@@ -57,7 +57,7 @@ _REPLACEABLE = (Origin.GUESS, Origin.WEAK)
 
 
 def slots_for(doc: FunctionDoc) -> DraftSlots:
-    """The gaps in a function's docstring.
+    """Find the gaps in a function's docstring.
 
     A description is only requested for a docstring being written from
     scratch (its summary is derived from the name): an author who wrote a
@@ -80,7 +80,7 @@ def slots_for(doc: FunctionDoc) -> DraftSlots:
 
 
 def known_text(doc: FunctionDoc) -> KnownText:
-    """The settled text a provider should stay consistent with.
+    """Collect the settled text a provider should stay consistent with.
 
     Args:
         doc (FunctionDoc): The function's docstring parts.
@@ -102,7 +102,7 @@ def known_text(doc: FunctionDoc) -> KnownText:
 
 
 def apply_draft(doc: FunctionDoc, draft: DocstringDraft, slots: DraftSlots) -> int:
-    """Writes a provider's answer into the requested gaps, labelling each.
+    """Write a provider's answer into the requested gaps, labelling each.
 
     Unrequested parts, unknown names, and values that fail
     :func:`clean_slot_text` are ignored, leaving that gap as it was.
@@ -136,6 +136,17 @@ def apply_draft(doc: FunctionDoc, draft: DocstringDraft, slots: DraftSlots) -> i
 
 
 def _fill(doc: FunctionDoc, attribute: str, text: Optional[str]) -> int:
+    """Replace one part of a docstring with drafted text.
+
+    Args:
+        doc (FunctionDoc): The docstring parts, updated in place.
+        attribute (str): The name of the part, for example ``"summary"``.
+        text (Optional[str]): The cleaned draft, or ``None`` to leave the
+            part as it is.
+
+    Returns:
+        int: 1 if the part was replaced, otherwise 0.
+    """
     if not text:
         return 0
     setattr(doc, attribute, DocPart.ai_draft(text))
@@ -143,9 +154,10 @@ def _fill(doc: FunctionDoc, attribute: str, text: Optional[str]) -> int:
 
 
 def unfilled_parts(doc: FunctionDoc, slots: DraftSlots) -> int:
-    """How many requested parts an answer left unfilled. The optional
-    description is not counted: a model answering ``null`` for it is
-    normal, not a gap.
+    """Count the requested parts an answer left unfilled.
+
+    The optional description is not counted: a model answering ``null`` for
+    it is normal, not a gap.
 
     Args:
         doc (FunctionDoc): The docstring parts, after the draft was applied.
@@ -165,7 +177,17 @@ def unfilled_parts(doc: FunctionDoc, slots: DraftSlots) -> int:
 
 
 def unfilled_class_parts(doc: ClassDoc, slots: ClassSlots) -> int:
-    """:func:`unfilled_parts` for a class docstring."""
+    """Count the requested parts of a class docstring left unfilled.
+
+    The class counterpart of :func:`unfilled_parts`.
+
+    Args:
+        doc (ClassDoc): The docstring parts, after the draft was applied.
+        slots (ClassSlots): What was requested.
+
+    Returns:
+        int: The number of requested parts still not AI-drafted.
+    """
     left = int(slots.summary and doc.summary_origin != Origin.AI)
     left += sum(
         a.origin != Origin.AI for a in doc.attributes if a.name in slots.attributes
@@ -174,16 +196,36 @@ def unfilled_class_parts(doc: ClassDoc, slots: ClassSlots) -> int:
 
 
 def _answer_for(drafted: dict, name: str) -> Any:
-    """The reply's entry for ``name``. A model may drop the stars from
-    ``*args``/``**kwargs``, so an exact key wins and the unstarred name is
-    the fallback."""
+    """Look up a reply's entry for one name.
+
+    A model may drop the stars from ``*args`` or ``**kwargs``, so an exact key
+    wins and the unstarred name is the fallback.
+
+    Args:
+        drafted (dict): The reply's entries by name.
+        name (str): The parameter or exception name.
+
+    Returns:
+        Any: The entry, or ``None`` if there is none.
+    """
     if name in drafted:
         return drafted[name]
     return drafted.get(name.lstrip("*")) if name.startswith("*") else None
 
 
 def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
-    """Fills Args:/Raises: entries by name, for requested names only."""
+    """Fill Args or Raises entries by name, for requested names only.
+
+    Args:
+        entries (list): The docstring's entries; each one's ``part`` is
+            replaced when a usable answer exists.
+        requested (tuple): The names that were asked for.
+        drafted (Any): The reply's entries by name; anything but a dict
+            fills nothing.
+
+    Returns:
+        int: How many entries were filled.
+    """
     if not isinstance(drafted, dict):
         return 0
     filled = 0
@@ -200,6 +242,16 @@ def _fill_named(entries: list, requested: tuple, drafted: Any) -> int:
 
 
 def _same_text(a: str, b: str) -> bool:
+    """Compare two sentences, ignoring case and a final period.
+
+    Args:
+        a (str): One sentence.
+        b (str): The other sentence.
+
+    Returns:
+        bool: ``True`` if they are the same apart from case and trailing
+        periods.
+    """
     return a.lower().rstrip(".") == b.lower().rstrip(".")
 
 
@@ -212,7 +264,7 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
 
     Args:
         value (Any): The raw value from the provider.
-        max_chars (int): The longest acceptable text.
+        max_chars (int): The longest acceptable text. (default: MAX_SLOT_CHARS)
 
     Returns:
         Optional[str]: The cleaned sentence, or ``None`` to decline.
@@ -230,8 +282,10 @@ def clean_slot_text(value: Any, max_chars: int = MAX_SLOT_CHARS) -> Optional[str
 
 
 def class_slots_for(doc: ClassDoc) -> ClassSlots:
-    """The gaps in a class docstring: a summary that is only "<Name> class."
-    and every attribute whose text is a TODO or says nothing beyond its type.
+    """Find the gaps in a class docstring.
+
+    A gap is a summary that is only ``<Name> class.`` and every attribute
+    whose text is a gap marker or says nothing beyond its type.
 
     Args:
         doc (ClassDoc): The class's docstring parts.
@@ -259,7 +313,8 @@ def class_known_text(doc: ClassDoc) -> Dict[str, str]:
 
 
 def apply_class_draft(doc: ClassDoc, draft: ClassDraft, slots: ClassSlots) -> int:
-    """Writes a provider's answer into the requested gaps, labelling each.
+    """Write a provider's answer into a class docstring's gaps, labelling each.
+
     Unrequested parts, unknown names and values that fail
     :func:`clean_slot_text` are ignored, leaving that gap as it was.
 
@@ -300,7 +355,7 @@ def apply_class_draft(doc: ClassDoc, draft: ClassDraft, slots: ClassSlots) -> in
 
 
 def build_prompt(context: FunctionContext, known: KnownText, slots: DraftSlots) -> str:
-    """Builds the drafting prompt for one function.
+    """Build the drafting prompt for one function.
 
     Args:
         context (FunctionContext): The function's AST-derived facts,
@@ -349,9 +404,11 @@ def build_prompt(context: FunctionContext, known: KnownText, slots: DraftSlots) 
 def build_class_prompt(
     context: ClassContext, known: Dict[str, str], slots: ClassSlots
 ) -> str:
-    """Builds the drafting prompt for one class. The reply uses the same
-    JSON shape as a function's (``summary`` and ``params``), with each
-    attribute under ``params``, so one schema and parser serve both.
+    """Build the drafting prompt for one class.
+
+    The reply uses the same JSON shape as a function's (``summary`` and
+    ``params``), with each attribute under ``params``, so one schema and
+    parser serve both.
 
     Args:
         context (ClassContext): The class's facts and source outline.
@@ -395,6 +452,14 @@ def build_class_prompt(
 
 
 def _known_attribute_lines(known: Dict[str, str]) -> str:
+    """Phrase the settled attribute text for the prompt.
+
+    Args:
+        known (Dict[str, str]): Attribute text already settled, by name.
+
+    Returns:
+        str: A bulleted list, or a line saying nothing is documented yet.
+    """
     if not known:
         return "Already documented: nothing."
     lines = [f"- attribute `{name}`: {text}" for name, text in known.items()]
@@ -402,6 +467,15 @@ def _known_attribute_lines(known: Dict[str, str]) -> str:
 
 
 def _known_lines(known: KnownText) -> str:
+    """Phrase the settled function text for the prompt.
+
+    Args:
+        known (KnownText): Text already settled.
+
+    Returns:
+        str: A bulleted list of parameters, return and exceptions, or a line
+        saying nothing is documented yet.
+    """
     lines = [f"- param `{n}`: {t}" for n, t in known.params.items()]
     if known.returns:
         lines.append(f"- returns: {known.returns}")
@@ -412,6 +486,15 @@ def _known_lines(known: KnownText) -> str:
 
 
 def _requested_text(slots: DraftSlots) -> str:
+    """Name the requested parts for the prompt.
+
+    Args:
+        slots (DraftSlots): The parts to draft.
+
+    Returns:
+        str: The parts separated by semicolons, for example
+        ``summary; params x, y``.
+    """
     parts = [name for name in ("summary", "description") if getattr(slots, name)]
     if slots.params:
         parts.append("params " + ", ".join(slots.params))
@@ -423,8 +506,10 @@ def _requested_text(slots: DraftSlots) -> str:
 
 
 def json_schema(slots: DraftSlots) -> dict:
-    """A strict JSON Schema for the reply, covering exactly the requested
-    parts: every key required, no extra keys, each value a string or null.
+    """Build a strict JSON Schema for the reply, covering only the requested parts.
+
+    Every key is required, no extra keys are allowed, and each value is a
+    string or null.
 
     Args:
         slots (DraftSlots): The parts to draft.
@@ -436,9 +521,11 @@ def json_schema(slots: DraftSlots) -> dict:
 
 
 def json_schema_with_length_caps(slots: DraftSlots) -> dict:
-    """:func:`json_schema` plus ``maxLength`` on every string, for providers
-    that support it. Observed on Gemini: without a cap, a model in JSON mode
-    can ramble in one field until the output budget cuts the reply off.
+    """Build :func:`json_schema` with ``maxLength`` on every string.
+
+    For providers that support it. Observed on Gemini: without a cap, a model
+    in JSON mode can ramble in one field until the output budget cuts the
+    reply off.
 
     Args:
         slots (DraftSlots): The parts to draft.
@@ -450,10 +537,37 @@ def json_schema_with_length_caps(slots: DraftSlots) -> dict:
 
 
 def _schema(slots: DraftSlots, string_type) -> dict:
+    """Build the reply schema, with the string type left to the caller.
+
+    Args:
+        slots (DraftSlots): The parts to draft.
+        string_type (Callable[[int], dict]): Given a length limit, returns the
+            schema of a string value.
+
+    Returns:
+        dict: The schema.
+    """
+
     def text(max_chars: int) -> dict:
+        """Describe a value that is a string of limited length, or null.
+
+        Args:
+            max_chars (int): The length limit for the string.
+
+        Returns:
+            dict: The schema.
+        """
         return {"anyOf": [string_type(max_chars), {"type": "null"}]}
 
     def named(names: tuple) -> dict:
+        """Describe an object with one such value for each name.
+
+        Args:
+            names (tuple): The required keys.
+
+        Returns:
+            dict: The schema.
+        """
         return {
             "type": "object",
             "properties": {name: text(MAX_SLOT_CHARS) for name in names},
@@ -481,16 +595,18 @@ def _schema(slots: DraftSlots, string_type) -> dict:
 
 
 def parse_reply(raw: str) -> DocstringDraft:
-    """Parses a provider's JSON reply into a draft, tolerating a surrounding
-    Markdown code fence. Anything malformed yields an empty draft.
+    """Parse a provider's JSON reply into a draft.
+
+    A surrounding Markdown code fence is tolerated. Anything malformed yields
+    an empty draft.
 
     Args:
         raw (str): The provider's reply text.
 
     Returns:
         DocstringDraft: The draft; values are checked again before writing.
-            ``failed`` is set when the reply was not a JSON object; an
-            empty reply (a refusal) is a decline, not a failure.
+        ``failed`` is set when the reply was not a JSON object; an empty
+        reply (a refusal) is a decline, not a failure.
     """
     text = (raw or "").strip()
     if not text:
@@ -526,10 +642,27 @@ def draft_from_payload(payload: Dict[str, Any]) -> DocstringDraft:
 
 
 def _str_or_none(value: Any) -> Optional[str]:
+    """Keep a value only if it is a string.
+
+    Args:
+        value (Any): Any parsed JSON value.
+
+    Returns:
+        Optional[str]: The value if it is a string, otherwise ``None``.
+    """
     return value if isinstance(value, str) else None
 
 
 def _str_map(value: Any) -> Dict[str, str]:
+    """Keep only the string-to-string entries of a parsed JSON object.
+
+    Args:
+        value (Any): Any parsed JSON value.
+
+    Returns:
+        Dict[str, str]: The entries whose key and value are strings; empty
+        if ``value`` is not an object.
+    """
     if not isinstance(value, dict):
         return {}
     return {k: v for k, v in value.items() if isinstance(k, str) and isinstance(v, str)}
