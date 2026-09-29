@@ -106,35 +106,37 @@ says the service forwards to Google's Gemini API.
   the drafted text or the IP address. Failures from Google are logged with
   the function name, the model and the first 200 characters of Google's own
   error message. (Read from the backend code at commit `4456dc2`.)
-  [PLACEHOLDER: what the hosting platform (Render) itself keeps: its own
-  request and application logs, their retention, and the region. The code
-  cannot show this; it is Render's account settings and terms.]
+  The service runs on Render's free plan, whose own platform logs are kept
+  only temporarily. [MAINTAINER: this is the maintainer's understanding, not
+  something the code shows.]
 - **Where the code goes next.** The service sends the request, including the
   function source, to the Google Gemini API
   (`generativelanguage.googleapis.com`) using the maintainer's API keys, with
   the model chosen automatically (currently `gemini-flash-latest` or
   `gemini-2.5-flash`). Requests do not carry your address or any other
-  identifier of you. [PLACEHOLDER: confirm the keys are on Google's free tier.
-  The backend README describes measuring "a free project" and says the free
-  tier is $0. Under Google's Gemini API terms, content sent on the free tier
-  may be used to improve Google's products, and paid-tier content is not
-  (https://ai.google.dev/gemini-api/terms). If the keys are free-tier, this
-  page and the consent notice should say so; the notice currently says only
-  that the code goes "to Google's Gemini API".]
+  identifier of you. The keys are on Google's **free tier** (maintainer's
+  statement). Under Google's Gemini API terms, content sent on the free tier
+  may be used to improve Google's products, while paid-tier content is not
+  (https://ai.google.dev/gemini-api/terms). So code sent through the hosted
+  service is handled by Google under those free-tier terms. If that is not
+  acceptable for your code, use your own key or do not use `--ai-draft`.
 - **The notice's storage sentence.** The consent notice says "No source code
-  is stored beyond the time it takes to process each request." That matches
-  the service's own code (nothing is persisted, and source is never logged).
-  It does not cover Render's platform logs or Google's handling above, so as
-  written it can mislead. [PLACEHOLDER: decide the wording.]
+  is stored beyond the time it takes to process each request." The service
+  itself stores nothing (nothing is persisted and source is never logged), but
+  the maintainer cannot vouch for what Google does with free-tier content.
+  The notice should say that the code is forwarded to Google's Gemini API and
+  handled under Google's terms, rather than imply that no copy exists anywhere.
+  [MAINTAINER: reword the notice; `consent.NOTICE` and
+  `CONSENT_NOTICE_VERSION` would change, which makes every user see it again.]
 - **No authentication.** Anyone who reads the client's source can call the
   service directly. The limits above bound nuisance, not abuse of a security
   boundary, and the service should not be relied on for anything sensitive.
 - **Cold starts.** The service runs on Render's free plan, which sleeps when
   idle; the first request after a sleep can take tens of seconds.
 - **Who runs it.** The service is a separate public repository,
-  `AmosQuety/PyCodeCommenter-Backend`, deployed on Render by the maintainer.
-  [PLACEHOLDER: maintenance commitment, and what happens to the hosted option
-  if it is switched off (the client already falls back to your own key).]
+  `AmosQuety/PyCodeCommenter-Backend`, deployed on Render by the maintainer,
+  who maintains both it and PyCodeCommenter. If the hosted option is ever
+  switched off, the client already offers to continue with the user's own key.
 
 ### Your own key
 
@@ -168,5 +170,5 @@ requests on a machine you control.
 
 ## Reporting a problem
 
-[PLACEHOLDER: contact for privacy or security reports; the repository's
-issue tracker is public and should not be used for anything sensitive.]
+Send privacy or security reports to amosnabasa4@gmail.com. The repository's
+issue tracker is public and should not be used for anything sensitive.
