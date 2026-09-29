@@ -48,7 +48,7 @@ class CommentDocstring:
 def leading_comment_block(
     lines: List[str], node: ast.AST
 ) -> Optional[Tuple[int, int, List[str]]]:
-    """The comment block directly above a definition, if it has one.
+    """Find the comment block directly above a definition, if it has one.
 
     The block must end on the line right above the definition (or its
     first decorator), be indented like it, and stand on its own: the line
@@ -62,7 +62,7 @@ def leading_comment_block(
 
     Returns:
         Optional[Tuple[int, int, List[str]]]: The block's first and last
-            line numbers (1-based) and its lines, or ``None``.
+        line numbers (1-based) and its stripped lines, or ``None``.
     """
     decorators = getattr(node, "decorator_list", [])
     start = min([d.lineno for d in decorators] + [node.lineno])
@@ -80,9 +80,11 @@ def leading_comment_block(
 
 
 def comment_block_text(lines: List[str]) -> Optional[str]:
-    """Docstring text from comment lines: the first sentence as the summary,
-    the rest as the description, with blank ``#`` lines as paragraph breaks.
-    A banner (any separator line) yields nothing.
+    """Turn comment lines into docstring text.
+
+    The first sentence becomes the summary and the rest the description, with
+    blank ``#`` lines as paragraph breaks. A banner (any separator line)
+    yields nothing. Notes, tool directives and commented-out code are skipped.
 
     Args:
         lines (List[str]): The comment lines, each starting with ``#``.
@@ -109,17 +111,44 @@ def comment_block_text(lines: List[str]) -> Optional[str]:
 
 
 def _is_comment_at(line: str, column: int) -> bool:
+    """Say whether a line is a comment indented to exactly this column.
+
+    Args:
+        line (str): One source line.
+        column (int): The definition's indent, in characters.
+
+    Returns:
+        bool: ``True`` for a ``#`` comment at that indent.
+    """
     stripped = line.lstrip()
     return stripped.startswith("#") and len(line) - len(stripped) == column
 
 
 def _is_non_description(text: str) -> bool:
+    """Say whether a comment line is not prose about the code.
+
+    Args:
+        text (str): The comment text without its ``#``.
+
+    Returns:
+        bool: ``True`` for a tool directive, a note (such as a to-do) or
+        commented-out code.
+    """
     return bool(_DIRECTIVE.match(text) or _NOTE.match(text) or _looks_like_code(text))
 
 
 def _looks_like_code(text: str) -> bool:
-    """Whether a comment line is commented-out code: it parses as Python and
-    is more than a lone word or literal (``# Deprecated`` is prose)."""
+    """Say whether a comment line is commented-out code.
+
+    It is when it parses as Python and is more than a lone word or literal
+    (``# Deprecated`` is prose).
+
+    Args:
+        text (str): The comment text without its ``#``.
+
+    Returns:
+        bool: ``True`` if it looks like code.
+    """
     try:
         tree = ast.parse(text)
     except SyntaxError:
