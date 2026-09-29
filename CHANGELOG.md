@@ -16,7 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   now says the hosted service forwards code to Google's Gemini API on a free
   tier, where Google may use it to improve its products, so
   `CONSENT_NOTICE_VERSION` is 3. CI jobs that use `--ai-draft` without
-  `--yes-send-code-to-ai` will stop at the prompt until someone agrees.
+  `--yes-send-code-to-ai` will fail until someone agrees or the flag is added.
 
 ### Fixed
 - **The validator no longer asks for a `Returns:` section on a `-> None`
