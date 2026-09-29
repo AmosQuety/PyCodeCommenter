@@ -101,7 +101,7 @@ class ProviderSpec:
 # did not choose a model.
 PROVIDERS = {
     "gemini": ProviderSpec("Gemini", "GEMINI_API_KEY", "gemini-3.8-flash", "gemini"),
-    "openai": ProviderSpec("OpenAI", "OPENAI_API_KEY", "gpt-6-astra", "openai"),
+    "openai": ProviderSpec("OpenAI", "OPENAI_API_KEY", "gpt-6-luna", "openai"),
     "anthropic": ProviderSpec(
         "Anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-5-5", "anthropic"
     ),
@@ -503,13 +503,20 @@ class AnthropicProvider(DirectProvider):
 
 
 class OpenAIProvider(DirectProvider):
-    """OpenAI, through the official ``openai`` SDK's Responses API."""
+    """OpenAI, through the official ``openai`` SDK's Responses API.
+
+    GPT-6 models are asked for low reasoning effort: they default to medium,
+    and reasoning tokens are billed as output and count against the output
+    limit, which a one-sentence docstring does not need.
+    """
 
     provider_name = "openai"
 
     label = "OpenAI"
     env_var = "OPENAI_API_KEY"
     extra = "openai"
+
+    _REASONING_MODELS = ("gpt-6",)
 
     def _create_client(self, api_key: str) -> Any:
         """Create an ``openai.OpenAI`` client.
@@ -539,6 +546,9 @@ class OpenAIProvider(DirectProvider):
         Returns:
             str: The reply text, or an empty string if there is none.
         """
+        extra: dict = {}
+        if self.model.startswith(self._REASONING_MODELS):
+            extra["reasoning"] = {"effort": "low"}
         response = self._client.responses.create(
             model=self.model,
             input=prompt,
@@ -551,6 +561,7 @@ class OpenAIProvider(DirectProvider):
                     "schema": json_schema(slots),
                 }
             },
+            **extra,
         )
         return response.output_text or ""
 

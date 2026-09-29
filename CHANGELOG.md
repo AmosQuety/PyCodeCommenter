@@ -48,7 +48,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   SDK's retries) the request moves on to `gemini-3.5-flash-lite` and then
   `gemini-2.5-flash`, and stays on the one that worked for the rest of the
   run. A Gemini model you choose with `--ai-model` is never replaced. Nothing
-  changes for the OpenAI, DeepSeek or OpenAI-compatible defaults.
+  changes for the DeepSeek or OpenAI-compatible defaults.
+- **OpenAI now defaults to `gpt-6-luna`** (about $0.1 / $0.5 per million
+  input / output tokens) instead of the flagship `gpt-6-astra` ($10 / $50), and
+  GPT-6 models are asked for low reasoning effort, since their default is
+  medium and reasoning tokens are billed as output. A one-sentence docstring
+  does not need the flagship.
 - **The hosted-service consent notice is accurate about Google.** It now says
   the service does not store your code, forwards it to Google's Gemini API,
   and that Google handles it under its free-tier terms and may use it to

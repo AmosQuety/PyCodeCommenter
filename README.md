@@ -257,7 +257,7 @@ By default drafts come from PyCodeCommenter's free hosted service: no key needed
 |---|---|---|---|
 | `hosted` (default) | — | included | chosen by the service |
 | `gemini` | `GEMINI_API_KEY` | `pip install "pycodecommenter[gemini]"` | `gemini-3.8-flash`, then `gemini-3.5-flash-lite`, then `gemini-2.5-flash` if the earlier ones are unavailable to your key |
-| `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-astra` |
+| `openai` | `OPENAI_API_KEY` | `pip install "pycodecommenter[openai]"` | `gpt-6-luna` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `pip install "pycodecommenter[anthropic]"` | `claude-sonnet-5-5` |
 | `deepseek` | `DEEPSEEK_API_KEY` | `pip install "pycodecommenter[openai]"` | `deepseek-flash` |
 | `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | `pip install "pycodecommenter[openai]"` | none: pass `--ai-model` and `--ai-base-url` |
@@ -296,7 +296,7 @@ $env:ANTHROPIC_API_KEY = "your-key"
 
 ### What it costs
 
-Each function that still has gaps is one request to the provider, so a run over a large project makes many requests. With your own key the requests are billed by the provider. Bigger models cost more per request. The Anthropic default, `claude-sonnet-5-5`, is a mid-priced model asked for low effort, which is enough for one-sentence docstrings; a smaller one such as `claude-haiku-4-5-20251001` costs less, and a larger one such as `claude-opus-5-5` costs more, both chosen with `--ai-model`. Check your provider's price list before a large run. Try `--dry-run` on one file first.
+Each function that still has gaps is one request to the provider, so a run over a large project makes many requests. With your own key the requests are billed by the provider. Bigger models cost more per request. The Anthropic default, `claude-sonnet-5-5`, is a mid-priced model asked for low effort, which is enough for one-sentence docstrings; a smaller one such as `claude-haiku-4-5-20251001` costs less, and a larger one such as `claude-opus-5-5` costs more, both chosen with `--ai-model`. The OpenAI default, `gpt-6-luna`, is that family's cheapest model and is asked for low reasoning effort. Check your provider's price list before a large run. Try `--dry-run` on one file first.
 
 ---
 

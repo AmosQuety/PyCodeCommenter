@@ -203,6 +203,39 @@ def test_openai_uses_strict_json_schema_on_the_responses_api():
     assert draft.returns == "The shortened text."
 
 
+def test_openai_default_is_the_cheapest_gpt_6_model_at_low_reasoning_effort():
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(output_text=json.dumps(REPLY))
+
+    fake = SimpleNamespace(responses=SimpleNamespace(create=create))
+    provider = make_provider("openai", api_key="k", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    [call] = calls
+    assert PROVIDERS["openai"].default_model == "gpt-6-luna"
+    assert call["model"] == "gpt-6-luna"
+    assert call["reasoning"] == {"effort": "low"}
+
+
+def test_openai_models_that_are_not_gpt_6_get_no_reasoning_option():
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(output_text=json.dumps(REPLY))
+
+    fake = SimpleNamespace(responses=SimpleNamespace(create=create))
+    provider = OpenAIProvider(api_key="k", model="gpt-4o-mini", client=fake)
+
+    provider.draft_docstring(CONTEXT, KNOWN, SLOTS)
+
+    assert "reasoning" not in calls[0]
+
+
 def test_openai_compatible_uses_json_object_mode_on_chat_completions():
     calls = []
 
