@@ -78,6 +78,14 @@ def _has_raises_section(docstring: str) -> bool:
 
 
 class Severity(Enum):
+    """How serious a validation finding is.
+
+    Attributes:
+        ERROR: Must fix (missing required documentation).
+        WARNING: Should fix (inconsistencies).
+        INFO: Nice to have (style issues).
+    """
+
     ERROR = "error"  # Must fix (missing required docs)
     WARNING = "warning"  # Should fix (inconsistencies)
     INFO = "info"  # Nice to have (style issues)
@@ -85,7 +93,17 @@ class Severity(Enum):
 
 @dataclass
 class ValidationIssue:
-    """Represents a single documentation issue."""
+    """One documentation issue found in the code.
+
+    Attributes:
+        severity (Severity): How serious it is.
+        category (str): The check that found it: ``"signature"``,
+            ``"types"``, ``"exceptions"``, ``"returns"``, ``"format"``,
+            ``"quality"`` or ``"ai_draft"``.
+        location (str): Where it is, as ``"file.py:line:function_name"``.
+        message (str): What is wrong.
+        suggestion (Optional[str]): How to fix it.
+    """
 
     severity: Severity
     category: str  # "signature", "types", "exceptions", "format", "quality"
@@ -94,12 +112,28 @@ class ValidationIssue:
     suggestion: Optional[str] = None  # How to fix it
 
     def __str__(self):
+        """Format the issue as one line, for example ``[ERROR] file.py:3:f: message``.
+
+        Returns:
+            str: The severity, location and message.
+        """
         return f"[{self.severity.value.upper()}] {self.location}: {self.message}"
 
 
 @dataclass
 class ValidationStats:
-    """Statistics from validation run."""
+    """Statistics from one validation run.
+
+    Attributes:
+        total_functions (int): Functions and methods checked.
+        total_classes (int): Classes checked.
+        documented_functions (int): Functions with a docstring.
+        documented_classes (int): Classes with a docstring.
+        total_issues (int): All issues found.
+        errors (int): Issues of severity ``ERROR``.
+        warnings (int): Issues of severity ``WARNING``.
+        info (int): Issues of severity ``INFO``.
+    """
 
     total_functions: int = 0
     total_classes: int = 0
@@ -112,30 +146,55 @@ class ValidationStats:
 
     @property
     def infos(self) -> int:
-        """Deprecated alias for ``info``, kept for backward compatibility."""
+        """Get ``info``; a deprecated alias kept for backward compatibility.
+
+        Returns:
+            int: The number of ``INFO`` issues.
+        """
         return self.info
 
     @infos.setter
     def infos(self, value: int) -> None:
+        """Set ``info``; the deprecated alias's setter.
+
+        Args:
+            value (int): The new number of ``INFO`` issues.
+        """
         self.info = value
 
     @property
     def coverage_percentage(self) -> float:
+        """Get the share of functions and classes that have a docstring.
+
+        Returns:
+            float: A percentage from 0 to 100; 0.0 if there are none.
+        """
         total = self.total_functions + self.total_classes
         documented = self.documented_functions + self.documented_classes
         return (documented / total * 100) if total > 0 else 0.0
 
 
 class ValidationReport:
-    """Container for validation results with reporting capabilities."""
+    """Container for validation results, with reporting.
+
+    Attributes:
+        issues (List[ValidationIssue]): Every issue found, in the order found.
+        stats (ValidationStats): The counts.
+        file_path (Optional[str]): The file that was validated.
+    """
 
     def __init__(self):
+        """Start an empty report."""
         self.issues: List[ValidationIssue] = []
         self.stats = ValidationStats()
         self.file_path: Optional[str] = None
 
     def add_issue(self, issue: ValidationIssue):
-        """Add an issue and update stats."""
+        """Add an issue and update the counts.
+
+        Args:
+            issue (ValidationIssue): The issue to record.
+        """
         self.issues.append(issue)
         self.stats.total_issues += 1
         if issue.severity == Severity.ERROR:
@@ -146,19 +205,29 @@ class ValidationReport:
             self.stats.info += 1
 
     def count_placeholders(self) -> int:
-        """How many docstrings hold placeholder text (``TODO`` and the
-        like), including this tool's own ``TODO(pycodecommenter)`` marker."""
+        """Count the docstrings that hold placeholder text.
+
+        That means a leftover note such as a to-do or fix-me, including this
+        tool's own gap marker.
+
+        Returns:
+            int: The number of placeholder issues.
+        """
         return sum(
             issue.category == "quality" and issue.message.startswith("Placeholder text")
             for issue in self.issues
         )
 
     def count_ai_drafts(self) -> int:
-        """How many docstrings still hold unreviewed AI-drafted lines."""
+        """Count the docstrings that still hold unreviewed AI-drafted lines.
+
+        Returns:
+            int: The number of ``ai_draft`` issues.
+        """
         return sum(issue.category == "ai_draft" for issue in self.issues)
 
     def print_summary(self):
-        """Print human-readable summary to console."""
+        """Print a human-readable summary to the console."""
         print("\n" + "=" * 60)
         print("VALIDATION REPORT")
         print("=" * 60)
@@ -207,7 +276,14 @@ class ValidationReport:
         """
 
         def _parse_line(location: str) -> int:
-            """Extract line number from 'file:line:func' location string."""
+            """Extract the line number from a ``file:line:func`` location string.
+
+            Args:
+                location (str): The issue's location.
+
+            Returns:
+                int: The line number, or 0 if the location has none.
+            """
             parts = location.split(":")
             # location format: "<file>:<line>:<func>"
             # The file part may contain a drive letter on Windows (e.g. C:),
@@ -238,7 +314,11 @@ class ValidationReport:
         }
 
     def to_markdown(self) -> str:
-        """Generate markdown report."""
+        """Generate a Markdown report.
+
+        Returns:
+            str: A summary followed by one section per issue.
+        """
         md = "# Validation Report\n\n"
         md += f"**File:** {self.file_path or 'N/A'}\n\n"
         md += "## Summary\n\n"
@@ -341,7 +421,12 @@ class DocstringValidator:
             logger.error(f"Syntax error in code: {e}")
 
     def validate_all(self) -> ValidationReport:
-        """Run all validation checks and return comprehensive report."""
+        """Run all validation checks and return a comprehensive report.
+
+        Returns:
+            ValidationReport: The issues found and the counts. Empty if the code
+            could not be read or parsed.
+        """
         report = ValidationReport()
         report.file_path = self.file_path
 
