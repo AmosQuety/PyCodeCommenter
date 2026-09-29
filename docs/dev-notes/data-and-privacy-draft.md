@@ -90,17 +90,51 @@ Requests go over HTTPS to `https://pycodecommenter-backend.onrender.com`
 (override with `PYCODECOMMENTER_AI_BACKEND_URL`). The consent notice in v2.6.0
 says the service forwards to Google's Gemini API.
 
-- Limit: a daily allowance per caller, reported in response headers.
-  [PLACEHOLDER: how a caller is identified (IP address? something else?).]
-- Storage: [PLACEHOLDER: what the service stores or logs (request bodies?
-  metadata? IP addresses?), for how long, where it is hosted, who can read it.]
-- The current consent notice states "No source code is stored beyond the time
-  it takes to process each request." [PLACEHOLDER: confirm this is true of the
-  service and of any logs, or reword it.]
-- Model provider behind it: [PLACEHOLDER: which model provider(s) and under
-  which account tier, since a provider's free tier and paid tier treat data
-  differently (see below).]
-- Who runs it and how it is maintained: [PLACEHOLDER].
+- **Who is a "caller".** The service identifies a caller by the IP address of
+  the request, taken from the `X-Forwarded-For` entry added by Render's load
+  balancer. There is no account, key or login. Nothing on the wire identifies
+  you beyond that address.
+- **Limits.** 25 drafts per caller per UTC day, a shared cap of 200 a day, and
+  5 requests a minute per address (the values in the service's `render.yaml`).
+  The counters are held in the service's memory only, so they reset at UTC
+  midnight and whenever the service restarts or redeploys.
+- **What the service keeps.** The service code has no database, no files and
+  no cache of requests. It handles each request in memory and forwards it. It
+  logs, per draft, only: the function or class **name**, the outcome
+  (success, decline or failed), the latency, and a count of how many
+  addresses the proxies put in `X-Forwarded-For`. It does not log the source,
+  the drafted text or the IP address. Failures from Google are logged with
+  the function name, the model and the first 200 characters of Google's own
+  error message. (Read from the backend code at commit `4456dc2`.)
+  [PLACEHOLDER: what the hosting platform (Render) itself keeps: its own
+  request and application logs, their retention, and the region. The code
+  cannot show this; it is Render's account settings and terms.]
+- **Where the code goes next.** The service sends the request, including the
+  function source, to the Google Gemini API
+  (`generativelanguage.googleapis.com`) using the maintainer's API keys, with
+  the model chosen automatically (currently `gemini-flash-latest` or
+  `gemini-2.5-flash`). Requests do not carry your address or any other
+  identifier of you. [PLACEHOLDER: confirm the keys are on Google's free tier.
+  The backend README describes measuring "a free project" and says the free
+  tier is $0. Under Google's Gemini API terms, content sent on the free tier
+  may be used to improve Google's products, and paid-tier content is not
+  (https://ai.google.dev/gemini-api/terms). If the keys are free-tier, this
+  page and the consent notice should say so; the notice currently says only
+  that the code goes "to Google's Gemini API".]
+- **The notice's storage sentence.** The consent notice says "No source code
+  is stored beyond the time it takes to process each request." That matches
+  the service's own code (nothing is persisted, and source is never logged).
+  It does not cover Render's platform logs or Google's handling above, so as
+  written it can mislead. [PLACEHOLDER: decide the wording.]
+- **No authentication.** Anyone who reads the client's source can call the
+  service directly. The limits above bound nuisance, not abuse of a security
+  boundary, and the service should not be relied on for anything sensitive.
+- **Cold starts.** The service runs on Render's free plan, which sleeps when
+  idle; the first request after a sleep can take tens of seconds.
+- **Who runs it.** The service is a separate public repository,
+  `AmosQuety/PyCodeCommenter-Backend`, deployed on Render by the maintainer.
+  [PLACEHOLDER: maintenance commitment, and what happens to the hosted option
+  if it is switched off (the client already falls back to your own key).]
 
 ### Your own key
 
