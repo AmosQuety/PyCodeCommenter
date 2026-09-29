@@ -513,3 +513,47 @@ def save(path: str) -> None:
 '''
     report = DocstringValidator(code_string=code).validate_all()
     assert not any("return type hint" in issue.message for issue in report.issues)
+
+
+def test_abstract_stub_may_document_returns_for_its_subclasses():
+    """A body that only raises NotImplementedError still documents the contract."""
+    code = '''\
+class Base:
+    """A base class."""
+
+    def compute(self, x: int) -> int:
+        """Compute a value.
+
+        Args:
+            x (int): The input.
+
+        Returns:
+            int: The result; subclasses decide how.
+        """
+        raise NotImplementedError
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert not any(
+        "has Returns section but doesn't return" in issue.message
+        for issue in report.issues
+    )
+
+
+def test_returns_section_on_a_function_that_returns_nothing_is_still_reported():
+    code = '''\
+def compute(x: int) -> int:
+    """Compute a value.
+
+    Args:
+        x (int): The input.
+
+    Returns:
+        int: The result.
+    """
+    print(x)
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert any(
+        "has Returns section but doesn't return" in issue.message
+        for issue in report.issues
+    )

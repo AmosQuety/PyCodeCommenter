@@ -261,6 +261,42 @@ class ValidationReport:
         return md
 
 
+def _is_abstract_stub(func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> bool:
+    """Say whether a function only declares a contract for subclasses to fill in.
+
+    Its body is (after any docstring) just ``raise NotImplementedError`` or
+    ``...``. Such a function legitimately documents a Returns section for
+    the implementations, although it returns nothing itself.
+
+    Args:
+        func_node (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function.
+
+    Returns:
+        bool: ``True`` for an abstract stub.
+    """
+    body = func_node.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    if len(body) != 1:
+        return False
+    statement = body[0]
+    if isinstance(statement, ast.Raise) and statement.exc is not None:
+        raised = statement.exc
+        if isinstance(raised, ast.Call):
+            raised = raised.func
+        return isinstance(raised, ast.Name) and raised.id == "NotImplementedError"
+    return (
+        isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Constant)
+        and statement.value.value is Ellipsis
+    )
+
+
 class DocstringValidator:
     """Main validator class for checking documentation quality."""
 
@@ -676,6 +712,7 @@ class DocstringValidator:
             not has_output_value
             and documents_output_value
             and func_node.name != "__init__"
+            and not _is_abstract_stub(func_node)
         ):
             issues.append(
                 ValidationIssue(
