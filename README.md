@@ -1,5 +1,6 @@
 # PyCodeCommenter — Python Docstring Generator & Validator
 
+[![Tests](https://github.com/AmosQuety/PyCodeCommenter/actions/workflows/tests.yml/badge.svg)](https://github.com/AmosQuety/PyCodeCommenter/actions/workflows/tests.yml)
 [![PyPI version](https://badge.fury.io/py/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
 [![Documentation](https://img.shields.io/badge/docs-amosquety.github.io%2FPyCodeCommenter-blue)](https://amosquety.github.io/PyCodeCommenter/)
 [![Python Support](https://img.shields.io/pypi/pyversions/pycodecommenter.svg)](https://pypi.org/project/pycodecommenter/)
