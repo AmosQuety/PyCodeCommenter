@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-29
+
 ### Added
 - **A Data and Privacy page** in the docs (`docs/data-and-privacy.md`): what
   `--ai-draft` sends, what the secret check leaves out, how consent works,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycodecommenter"
-version = "2.6.0"
+version = "2.6.1"
 
 description = "Write, validate and measure Python docstrings from your code's AST: deterministic by default, with optional, labelled AI drafting."
 readme = "README.md"
