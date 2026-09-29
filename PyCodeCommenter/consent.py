@@ -155,7 +155,8 @@ def ensure_consent(assume_yes: bool, destination: str = HOSTED) -> bool:
     """Make sure consent is on file before any code is sent.
 
     Asks on stderr, because stdout may be carrying generated code. Only an
-    answer of ``y`` counts; anything else, including an empty answer, is a no.
+    answer of ``y`` counts; anything else, including an empty answer or no
+    terminal to ask on, is a no.
 
     Args:
         assume_yes (bool): Skip the interactive prompt and record consent
@@ -175,7 +176,11 @@ def ensure_consent(assume_yes: bool, destination: str = HOSTED) -> bool:
 
     # stderr: stdout may be carrying generated code (see ai_setup.status).
     print(notice_for(destination), end="", file=sys.stderr)
-    answer = input().strip().lower()
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        # No terminal to ask on (CI, a closed stdin): nobody agreed.
+        return False
     if answer == "y":
         record_consent(destination)
         return True

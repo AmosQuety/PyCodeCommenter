@@ -19,6 +19,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `--yes-send-code-to-ai` will fail until someone agrees or the flag is added.
 
 ### Fixed
+- **`--ai-draft` without a terminal no longer crashes at the consent prompt.**
+  With no consent on file and nothing to read an answer from (CI, closed
+  standard input) it raised `EOFError`; it now stops cleanly with "AI drafting
+  needs your consent" and says to run in a terminal or pass
+  `--yes-send-code-to-ai`.
 - **The validator no longer asks for a `Returns:` section on a `-> None`
   function**, and allows one on an abstract method whose body only raises
   `NotImplementedError` (or is `...`).

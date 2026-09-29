@@ -394,7 +394,9 @@ def _require_consent(destination: str, assume_consent: bool) -> None:
     """
     if not ensure_consent(assume_yes=assume_consent, destination=destination):
         raise AISetupError(
-            "AI drafting needs your consent to send source code. " "No code was sent."
+            "AI drafting needs your consent to send source code. No code was "
+            "sent. Run it in a terminal to be asked, or pass "
+            "--yes-send-code-to-ai if sending this code is already permitted."
         )
 
 

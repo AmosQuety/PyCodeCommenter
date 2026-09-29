@@ -152,3 +152,13 @@ def test_consent_given_for_the_earlier_storage_wording_is_asked_again(
     (directory / "consent.json").write_text('{"hosted_ai_consent_version": 2}')
 
     assert consent.has_given_consent("hosted") is False
+
+
+def test_ensure_consent_without_a_terminal_declines_instead_of_crashing(monkeypatch):
+    def no_terminal():
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", no_terminal)
+
+    assert consent.ensure_consent(assume_yes=False) is False
+    assert consent.has_given_consent() is False
