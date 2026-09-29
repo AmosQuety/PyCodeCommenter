@@ -498,3 +498,18 @@ def outer():
     assert not any(
         i.category == "exceptions" for i in outer_issues
     ), f"outer() falsely flagged for raising an exception: {outer_issues}"
+
+
+def test_none_return_hint_needs_no_returns_section():
+    """A function annotated ``-> None`` returns nothing, so no Returns is due."""
+    code = '''\
+def save(path: str) -> None:
+    """Save the file.
+
+    Args:
+        path (str): Where to write.
+    """
+    print(path)
+'''
+    report = DocstringValidator(code_string=code).validate_all()
+    assert not any("return type hint" in issue.message for issue in report.issues)

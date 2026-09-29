@@ -521,7 +521,8 @@ class DocstringValidator:
                 if hasattr(ast, "unparse")
                 else str(func_node.returns)
             )
-            if not parser.returns:
+            # A `-> None` function returns nothing worth documenting.
+            if not parser.returns and return_type_hint != "None":
                 issues.append(
                     ValidationIssue(
                         severity=Severity.WARNING,
