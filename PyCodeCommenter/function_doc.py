@@ -41,12 +41,25 @@ class DocPart:
 
     @classmethod
     def ai_draft(cls, text: str) -> "DocPart":
-        """A part holding AI-drafted text, carrying the permanent marker."""
+        """Make a part holding AI-drafted text, carrying the AI-drafted marker.
+
+        The marker stays until a person accepts the line in ``review``.
+
+        Args:
+            text (str): The drafted text.
+
+        Returns:
+            DocPart: The part, with origin ``Origin.AI``.
+        """
         return cls(f"{text} {AI_DRAFT_MARKER}", Origin.AI)
 
     @property
     def needs_drafting(self) -> bool:
-        """Whether an AI provider may replace this part's text."""
+        """Say whether an AI provider may replace this part's text.
+
+        Returns:
+            bool: ``True`` for a guess or a weak (type-only) part.
+        """
         return self.origin in (Origin.GUESS, Origin.WEAK)
 
 
@@ -92,7 +105,12 @@ class FunctionDoc:
     dropped: int = 0
 
     def parts(self) -> List[DocPart]:
-        """Every part, in document order."""
+        """List every part of the docstring, in document order.
+
+        Returns:
+            List[DocPart]: The summary, description, argument, return and raise
+            parts that are present.
+        """
         found = [self.summary]
         if self.description is not None:
             found.append(self.description)
@@ -130,13 +148,30 @@ def render_function_doc(doc: FunctionDoc) -> str:
 
 
 def needs_closing_period(text: str) -> bool:
-    """Whether an argument description needs a period added. The AI marker
-    closes the sentence; a period after it would be added again on every
-    regeneration."""
+    """Say whether an argument description needs a period added.
+
+    The AI marker closes the sentence; a period after it would be added again
+    on every regeneration.
+
+    Args:
+        text (str): The description text.
+
+    Returns:
+        bool: ``True`` unless the text already ends in ``.``, ``!``, ``?`` or
+        the AI-drafted marker.
+    """
     return not text.endswith((".", "!", "?", AI_DRAFT_MARKER))
 
 
 def _render_arg(arg: ArgEntry) -> str:
+    """Render one Args line, with its default when there is one.
+
+    Args:
+        arg (ArgEntry): The argument to render.
+
+    Returns:
+        str: The indented line, ending in a newline.
+    """
     line = f"    {arg.name} ({arg.display_type}): {arg.part.text}"
     if needs_closing_period(arg.part.text):
         line += "."
@@ -146,6 +181,15 @@ def _render_arg(arg: ArgEntry) -> str:
 
 
 def _render_returns(returns: ReturnsEntry) -> str:
+    """Render the Returns or Yields section.
+
+    Args:
+        returns (ReturnsEntry): The entry to render.
+
+    Returns:
+        str: The section, preceded by a blank line. Without a type it is just
+        the label and the text (the ``None.`` form).
+    """
     if returns.display_type is None:
         return f"\n{returns.label}:\n    {returns.part.text}\n"
     return f"\n{returns.label}:\n    {returns.display_type}: {returns.part.text}\n"
