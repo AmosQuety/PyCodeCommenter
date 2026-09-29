@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The validator no longer asks for a `Returns:` section on a `-> None`
+  function**, and allows one on an abstract method whose body only raises
+  `NotImplementedError` (or is `...`).
+- **Placeholder detection matches whole marker words.** `TODO`, `FIXME`,
+  `XXX`, `HACK` and `TBD` are matched as whole uppercase words, and
+  `Description of` only at the start of a line, so ordinary prose (such as
+  "a description of the file") is no longer reported as a placeholder.
+- **A wrapped `Args:` description is no longer split into a phantom entry.**
+  A deeper-indented continuation line shaped like `word: text` was read as a
+  new parameter; the validator then reported it as documented but missing
+  from the signature, and regenerating a docstring dropped the author's
+  continuation text. It now continues the entry above.
+
+### Changed
+- The package's own docstrings are complete: 0 validator findings and 100%
+  docstring coverage (also counted with `--strict`). CI now checks
+  formatting, lint and the package's own docstring quality on every push.
+- The package ships a `py.typed` marker.
+
 ## [2.6.0] - 2026-09-27
 
 The tool now states everything the code proves, keeps everything the author
@@ -13,8 +33,8 @@ wrote, and makes what's left easy to finish: optional AI drafting of the gaps
 of every run. Requires Python 3.10+.
 
 Also includes follow-up work from a dogfooding audit run against the tool's own codebase
-(`Another_Test_PyCodeCommenter/Feedback/AUDIT_REPORT.md`) — every numbered
-finding in that audit is now closed; see `docs/dev-notes/audit-remediation-log.md` for the full history.
+— every numbered finding in that audit is now closed; see
+`docs/dev-notes/audit-remediation-log.md` for the full history.
 
 ### Changed
 - **README and docs show real output.** The README opens with a real
