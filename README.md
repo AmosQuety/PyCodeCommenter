@@ -127,6 +127,24 @@ pycodecommenter validate app.py
 pycodecommenter coverage ./src
 ```
 
+### Installing the development version
+
+To work on PyCodeCommenter itself, or to try the unreleased code on `main`
+(Python 3.10 or newer):
+
+```bash
+git clone https://github.com/AmosQuety/PyCodeCommenter.git
+cd PyCodeCommenter
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+pytest
+```
+
+`pytest` runs the test suite and the package's doctests; none of it needs a
+network connection or an AI SDK. Before sending a change, also run `black .`
+and `flake8`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow
+(also on the [documentation site](https://amosquety.github.io/PyCodeCommenter/contributing/)).
+
 ---
 
 ## Why PyCodeCommenter?
