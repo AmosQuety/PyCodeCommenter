@@ -269,12 +269,17 @@ class DocstringParser:
             body (str): The body of the Args section.
         """
         current_arg = None
+        entry_indent = None
         for line in body.splitlines():
             # Match "    name (type): desc", "    name: desc", or the
             # "*args"/"**kwargs" star-prefixed form.
             # Improved regex to handle various spacing and optional types more robustly
             match = re.match(r"^\s+(\*{0,2}\w+)\s*(?:\(([^)]+)\))?\s*:\s*(.*)", line)
-            if match:
+            indent = len(line) - len(line.lstrip())
+            # A line indented deeper than the entries continues the current
+            # entry, even if it looks like "word: text".
+            if match and (entry_indent is None or indent <= entry_indent):
+                entry_indent = indent
                 current_arg = match.group(1)
                 self.params[current_arg] = match.group(3).strip()
                 if match.group(2):

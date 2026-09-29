@@ -319,3 +319,23 @@ def test_mixed_methods_section_keeps_only_author_entries(commenter):
         "            onto the current canvas.\n"
     ) in docstring
     assert "close()" not in docstring
+
+
+def test_a_wrapped_argument_description_is_not_taken_for_a_removed_argument():
+    """A continuation line shaped like "word: text" must not drop author text."""
+    source = '''\
+def apply(source: str, decisions: list) -> str:
+    """Apply decisions.
+
+    Args:
+        source (str): The text.
+        decisions (list): Each item with an
+            action: accept, edit or skip.
+
+    Returns:
+        str: The new text.
+    """
+    return source
+'''
+    patched = PyCodeCommenter().from_string(source).get_patched_code()
+    assert "action: accept, edit or skip." in patched

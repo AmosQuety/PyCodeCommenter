@@ -155,3 +155,19 @@ Returns the path to the config file if found, otherwise None.
     info = DocstringParser(doc).get_info()
     assert info["params"] == {}
     assert "Returns the path" in info["description"]
+
+
+def test_google_arg_continuation_that_looks_like_an_entry_stays_in_the_entry():
+    """A deeper-indented "word: text" line continues the argument above it."""
+    doc = """Apply decisions.
+
+Args:
+    source (str): The text.
+    decisions (list): Each item with an
+        action: accept, edit or skip.
+"""
+    parser = DocstringParser(doc)
+    assert list(parser.params) == ["source", "decisions"]
+    assert (
+        parser.params["decisions"] == "Each item with an action: accept, edit or skip."
+    )
