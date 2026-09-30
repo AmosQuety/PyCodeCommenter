@@ -15,7 +15,9 @@ authors:
     given-names: Nabasa
     alias: Amos Quety
     email: amosnabasa4@gmail.com
+    orcid: https://orcid.org/0009-0008-8825-4713
     website: https://nabasa-amos.netlify.app
+doi: 10.5281/zenodo.23042983
 version: 2.6.1
 date-released: "2026-09-29"
 license: MIT
