@@ -73,8 +73,7 @@ wrote, and makes what's left easy to finish: optional AI drafting of the gaps
 of every run. Requires Python 3.10+.
 
 Also includes follow-up work from a dogfooding audit run against the tool's own codebase
-— every numbered finding in that audit is now closed; see
-`docs/dev-notes/audit-remediation-log.md` for the full history.
+— every numbered finding in that audit is now closed.
 
 ### Changed
 - **README and docs show real output.** The README opens with a real
@@ -588,7 +587,7 @@ Also includes follow-up work from a dogfooding audit run against the tool's own 
 
 ## [2.3.0] - 2026-08-22
 
-Follow-up work from an internal engineering audit (`docs/dev-notes/vulnerabilities.md`),
+Follow-up work from an internal engineering audit,
 plus a documentation-fidelity pass (Phase 6) found during pre-release review.
 
 ### Breaking Changes

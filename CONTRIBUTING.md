@@ -73,10 +73,7 @@ python scripts/compare_generation.py /tmp/before . path/to/some/python/files
 - Python 3.10+ syntax is fine.
 - The generator only states what the code proves; anything else stays a
   `TODO` marker or, with `--ai-draft`, a labelled draft. Please keep it that
-  way: see `docs/dev-notes/docstring-prose-quality.md` for why.
-
-Maintainers: the current state of work and the decisions behind it are in
-[`docs/dev-notes/`](https://github.com/AmosQuety/PyCodeCommenter/blob/main/docs/dev-notes/README.md).
+  way.
 
 ## Questions
 

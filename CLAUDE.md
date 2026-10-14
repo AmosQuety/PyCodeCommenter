@@ -21,7 +21,8 @@ directory `PyCodeCommenter/`, one level deep (not nested further). All
 commands below assume you're in this top-level directory unless noted.
 
 For the current state of work in progress, decisions already made, and
-where to begin, read `docs/dev-notes/v2.6.0-handoff.md` first.
+where to begin, read `v2.6.0-handoff.md` in the maintainer's private notes
+repository (`AmosQuety/PyCodeCommenter-notes`) first, if you have access.
 
 ## Commands
 
@@ -242,7 +243,7 @@ deliberately, never just to make a test pass.
 `tests/fixtures/` holds sample source files used as generator input (not
 collected as tests). `scripts/compare_generation.py` compares two versions
 of the generator over a corpus; run it before and after any generator
-change (see `docs/dev-notes/v2.6.0-handoff.md`).
+change (see `v2.6.0-handoff.md` in the maintainer's notes).
 
 ### Versioning
 
