@@ -61,7 +61,7 @@ def test_large_file(commenter):
 
 def test_multiline_signature_docstring_placement(commenter):
     """Regression test for the 'multi-line signature corruption' item in
-    docs/dev-notes/vulnerabilities.md (Question 2, first CRITICAL issue).
+    the internal engineering audit (Question 2, first CRITICAL issue).
 
     The audit claims get_patched_code() inserts the docstring using
     node.body[0].lineno, and that for a multi-line signature this lands
@@ -107,7 +107,7 @@ def test_multiline_signature_docstring_placement(commenter):
 
 def test_multi_function_no_line_shift_corruption(commenter):
     """Regression test for the 'line-shift insertion bug' item in
-    docs/dev-notes/vulnerabilities.md (Question 2, second CRITICAL issue).
+    the internal engineering audit (Question 2, second CRITICAL issue).
 
     The audit claims that when get_patched_code() applies multiple
     insertions/replacements to the same file, line-number arithmetic on
