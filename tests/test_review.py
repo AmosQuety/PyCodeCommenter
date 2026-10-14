@@ -140,7 +140,7 @@ def test_every_decision_together_leaves_valid_code_with_the_same_logic():
         ("accept", None),
         ("fill", "Always"),
     ]
-    result = apply_review(SOURCE, list(zip(items, decisions)))
+    result = apply_review(SOURCE, list(zip(items, decisions, strict=True)))
 
     assert MARK not in result and TODO not in result
     compile(result, "m.py", "exec")

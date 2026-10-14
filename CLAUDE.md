@@ -54,8 +54,9 @@ release).
 
 Formatting / linting (per CONTRIBUTING.md, use before submitting changes):
 ```bash
-black .
-flake8
+ruff format .
+ruff check .
+mypy        # needs the AI SDKs: pip install -e ".[dev,ai]"
 ```
 
 Run the CLI locally without installing:

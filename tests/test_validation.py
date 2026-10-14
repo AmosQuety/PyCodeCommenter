@@ -268,9 +268,9 @@ class MyClass:
         for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert (
-        len(return_warnings) > 0
-    ), "Expected a return-doc warning on the @property getter"
+    assert len(return_warnings) > 0, (
+        "Expected a return-doc warning on the @property getter"
+    )
 
 
 def test_property_setter_skips_return_check():
@@ -292,9 +292,9 @@ class MyClass:
         for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert (
-        len(return_warnings) == 0
-    ), f"@property setter must not trigger a return warning, got: {return_warnings}"
+    assert len(return_warnings) == 0, (
+        f"@property setter must not trigger a return warning, got: {return_warnings}"
+    )
 
 
 def test_property_deleter_skips_return_check():
@@ -312,9 +312,9 @@ class MyClass:
         for i in report.issues
         if i.category == "returns" and i.severity == Severity.WARNING
     ]
-    assert (
-        len(return_warnings) == 0
-    ), f"@property deleter must not trigger a return warning, got: {return_warnings}"
+    assert len(return_warnings) == 0, (
+        f"@property deleter must not trigger a return warning, got: {return_warnings}"
+    )
 
 
 def test_classmethod_cls_not_flagged():
@@ -335,9 +335,9 @@ class MyClass:
 """
     report = DocstringValidator(code_string=code).validate_all()
     cls_issues = [i for i in report.issues if "'cls'" in i.message]
-    assert (
-        len(cls_issues) == 0
-    ), f"cls should not be flagged as missing/extra, got: {cls_issues}"
+    assert len(cls_issues) == 0, (
+        f"cls should not be flagged as missing/extra, got: {cls_issues}"
+    )
 
 
 def test_staticmethod_first_arg_not_stripped():
@@ -364,9 +364,9 @@ class MyClass:
         for i in report.issues
         if i.category == "signature" and i.severity == Severity.ERROR
     ]
-    assert (
-        len(sig_errors) == 0
-    ), f"@staticmethod should not produce signature errors, got: {sig_errors}"
+    assert len(sig_errors) == 0, (
+        f"@staticmethod should not produce signature errors, got: {sig_errors}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -398,9 +398,9 @@ def fetch(url):
         for i in report.issues
         if i.category == "exceptions" and i.severity == Severity.WARNING
     ]
-    assert (
-        len(raises_warnings) == 0
-    ), f"Sphinx ':raises:' should suppress the warning, got: {raises_warnings}"
+    assert len(raises_warnings) == 0, (
+        f"Sphinx ':raises:' should suppress the warning, got: {raises_warnings}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -451,9 +451,9 @@ def divide(a, b):
             "INFO",
         }, f"severity must be uppercase, got: {issue['severity']}"
         # line must be an integer
-        assert isinstance(
-            issue["line"], int
-        ), f"'line' must be int, got {type(issue['line'])}: {issue['line']}"
+        assert isinstance(issue["line"], int), (
+            f"'line' must be int, got {type(issue['line'])}: {issue['line']}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -478,9 +478,9 @@ def outer():
 '''
     report = DocstringValidator(code_string=code).validate_all()
     outer_issues = [i for i in report.issues if ":outer" in i.location]
-    assert not any(
-        i.category == "returns" for i in outer_issues
-    ), f"outer() falsely flagged for returning a value: {outer_issues}"
+    assert not any(i.category == "returns" for i in outer_issues), (
+        f"outer() falsely flagged for returning a value: {outer_issues}"
+    )
 
 
 def test_nested_function_raise_not_attributed_to_outer():
@@ -495,9 +495,9 @@ def outer():
 '''
     report = DocstringValidator(code_string=code).validate_all()
     outer_issues = [i for i in report.issues if ":outer" in i.location]
-    assert not any(
-        i.category == "exceptions" for i in outer_issues
-    ), f"outer() falsely flagged for raising an exception: {outer_issues}"
+    assert not any(i.category == "exceptions" for i in outer_issues), (
+        f"outer() falsely flagged for raising an exception: {outer_issues}"
+    )
 
 
 def test_none_return_hint_needs_no_returns_section():

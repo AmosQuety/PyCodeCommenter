@@ -11,7 +11,7 @@ preferred over plausible-sounding text.
 import ast
 import builtins
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 try:
     from .param_utils import FunctionNode, walk_own_scope
@@ -46,7 +46,7 @@ def raise_sites(func_node: FunctionNode) -> Dict[str, List[ast.Raise]]:
     ]
     sites: Dict[str, List[ast.Raise]] = {}
     for node in sorted(raises, key=lambda n: (n.lineno, n.col_offset)):
-        name = _raised_class_name(node.exc)
+        name = _raised_class_name(cast(ast.expr, node.exc))
         if name is not None:
             sites.setdefault(name, []).append(node)
     return sites
@@ -112,9 +112,10 @@ def describe_raise_condition(
     """
     parents = _parent_map(func_node)
     conditions = [_site_condition(func_node, node, parents) for node in raise_nodes]
-    if not conditions or None in conditions:
+    known = [c for c in conditions if c is not None]
+    if not conditions or len(known) != len(conditions):
         return None
-    unique = list(dict.fromkeys(conditions))
+    unique = list(dict.fromkeys(known))
     if len(unique) > 1 and "Always" in unique:
         return None
     first, *rest = unique
@@ -142,7 +143,7 @@ def describe_bool_return(func_node: FunctionNode) -> Optional[str]:
     ]
     if len(returns) != 1 or isinstance(returns[0].value, ast.Constant):
         return None
-    returned = _without_bool_wrapper(returns[0].value)
+    returned = _without_bool_wrapper(cast(ast.expr, returns[0].value))
     if isinstance(returned, ast.Constant):
         return None
     expression = _short_source(returned)
@@ -229,7 +230,8 @@ def _caught_names(type_node: Optional[ast.expr]) -> Optional[List[str]]:
         return None
     nodes = type_node.elts if isinstance(type_node, ast.Tuple) else [type_node]
     names = [_short_name(node) for node in nodes]
-    return None if None in names else names
+    known = [name for name in names if name is not None]
+    return None if len(known) != len(names) else known
 
 
 def _short_name(node: ast.expr) -> Optional[str]:

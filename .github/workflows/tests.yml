@@ -34,7 +34,7 @@ jobs:
         run: pytest
 
   lint-and-docs:
-    name: style and documentation quality
+    name: style, types and documentation quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -45,14 +45,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install package and dev dependencies
-        run: pip install -e ".[dev]"
+      # The AI SDKs are installed so mypy checks the provider code
+      # against their real types.
+      - name: Install package, dev dependencies and AI SDKs
+        run: pip install -e ".[dev,ai]"
 
       - name: Check formatting
-        run: black --check .
+        run: ruff format --check .
 
       - name: Lint
-        run: flake8
+        run: ruff check .
+
+      - name: Type check
+        run: mypy
 
       # The package documents itself with its own tool: no validation
       # errors, no leftover TODO(pycodecommenter) gaps, and (strictly

@@ -143,8 +143,8 @@ pytest
 ```
 
 `pytest` runs the test suite and the package's doctests; none of it needs a
-network connection or an AI SDK. Before sending a change, also run `black .`
-and `flake8`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow
+network connection or an AI SDK. Before sending a change, also run
+`ruff format .`, `ruff check .` and `mypy`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow
 (also on the [documentation site](https://amosquety.github.io/PyCodeCommenter/contributing/)).
 
 ---

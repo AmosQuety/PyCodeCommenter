@@ -12,7 +12,7 @@ isn't used at all: it labels a section of the file, not one function.
 import ast
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 # Tool directives and file markers, not prose.
 _DIRECTIVE = re.compile(
@@ -46,7 +46,7 @@ class CommentDocstring:
 
 
 def leading_comment_block(
-    lines: List[str], node: ast.AST
+    lines: List[str], node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]
 ) -> Optional[Tuple[int, int, List[str]]]:
     """Find the comment block directly above a definition, if it has one.
 
@@ -58,7 +58,8 @@ def leading_comment_block(
 
     Args:
         lines (List[str]): The source, one entry per line.
-        node (ast.AST): A function or class definition.
+        node (Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]): A function or
+            class definition.
 
     Returns:
         Optional[Tuple[int, int, List[str]]]: The block's first and last

@@ -144,13 +144,15 @@ def get_all_parameters(func_node: FunctionNode) -> List[Parameter]:
     positional = [*func_node.args.posonlyargs, *func_node.args.args]
     defaults = func_node.args.defaults
     padded_defaults = [None] * (len(positional) - len(defaults)) + list(defaults)
-    for arg, default in zip(positional, padded_defaults):
+    for arg, default in zip(positional, padded_defaults, strict=True):
         params.append(Parameter(arg, "positional", default))
 
     if func_node.args.vararg:
         params.append(Parameter(func_node.args.vararg, "vararg", None))
 
-    for arg, default in zip(func_node.args.kwonlyargs, func_node.args.kw_defaults):
+    for arg, default in zip(
+        func_node.args.kwonlyargs, func_node.args.kw_defaults, strict=True
+    ):
         params.append(Parameter(arg, "kwonly", default))
 
     if func_node.args.kwarg:

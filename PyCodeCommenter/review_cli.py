@@ -50,8 +50,10 @@ def run_review(files: List[str], list_only: bool) -> None:
         list_only (bool): List items without asking anything (also the
             behaviour when there is no terminal).
     """
-    found = [(path, _read(path)) for path in files]
-    found = [(path, source, review.find_review_items(source)) for path, source in found]
+    sources = [(path, _read(path)) for path in files]
+    found = [
+        (path, source, review.find_review_items(source)) for path, source in sources
+    ]
     found = [entry for entry in found if entry[2]]
     if not found:
         where = ", ".join(files) if len(files) < 4 else f"{len(files)} files"

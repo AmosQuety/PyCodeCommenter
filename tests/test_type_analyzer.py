@@ -1,7 +1,7 @@
-import logging
-import pytest
 import ast
+import logging
 
+import pytest
 
 from PyCodeCommenter.type_analyzer import TypeAnalyzer
 

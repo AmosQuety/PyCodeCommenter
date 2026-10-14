@@ -8,7 +8,7 @@ So the outline keeps those, and reduces every other method to its signature.
 
 import ast
 import copy
-from typing import List
+from typing import List, Union
 
 # A generous cap: a class this large is summarised by its shape anyway.
 MAX_OUTLINE_CHARS = 6000
@@ -63,11 +63,14 @@ def _outline_item(item: ast.stmt, code: str) -> str:
     return ""
 
 
-def _signature_only(function: ast.stmt) -> str:
+def _signature_only(
+    function: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+) -> str:
     """Show a function's decorators and signature with its body elided.
 
     Args:
-        function (ast.stmt): The function definition.
+        function (Union[ast.FunctionDef, ast.AsyncFunctionDef]): The function
+            definition.
 
     Returns:
         str: The definition with ``...`` as its body, indented one level.

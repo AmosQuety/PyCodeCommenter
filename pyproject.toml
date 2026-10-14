@@ -60,8 +60,8 @@ dependencies = ["ruamel.yaml>=0.17", "libcst>=1.1"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "black>=26.0",
-    "flake8>=7.0",
+    "ruff>=0.17",
+    "mypy>=2.0",
     "pre-commit>=3.5",
 ]
 # SDKs for --ai-draft with your own key (--ai-provider). Lower bounds are
@@ -94,6 +94,38 @@ testpaths = ["tests", "PyCodeCommenter", "docs/python-api.md"]
 addopts = "--doctest-modules --doctest-glob=*.md"
 pythonpath = ["."]
 
-[tool.black]
-# Explicit, so formatting doesn't depend on which Python runs Black.
-target-version = ["py310", "py311", "py312", "py313"]
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = ["scratch"]
+
+[tool.ruff.lint]
+# pycodestyle errors and warnings, Pyflakes, import sorting and bugbear.
+select = ["E", "W", "F", "I", "B"]
+
+[tool.ruff.format]
+# The Python examples in the docs run as doctests; leave them as written.
+exclude = ["*.md"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["PyCodeCommenter"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Each module imports its siblings relative-first with an absolute fallback
+# (so it also runs as a standalone script). mypy reads the fallback branch as
+# a second definition of every imported name, so that check is off.
+disable_error_code = ["no-redef"]
+
+[[tool.mypy.overrides]]
+# The absolute-import fallback names (see above); the relative import is the
+# one mypy checks.
+module = [
+    "ai_drafting", "ai_setup", "class_outline", "code_facts", "comment_docs",
+    "commenter", "consent", "coverage", "description_provider",
+    "direct_providers", "doc_styles", "docstring_parser", "draft_limits",
+    "function_doc", "inference", "param_utils", "progress", "remote_provider",
+    "review", "run_report", "secret_scan", "type_analyzer", "validator",
+]
+ignore_missing_imports = true
+follow_imports = "skip"

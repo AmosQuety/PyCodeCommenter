@@ -14,20 +14,20 @@ Classes:
 """
 
 import ast
-import re
 import logging
-from typing import List, Optional, Any, Union
+import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, List, Optional, Union
 
 try:
     from .docstring_parser import DocstringParser
-    from .param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
     from .inference import AI_DRAFT_MARKER
+    from .param_utils import exclude_self_cls, get_all_parameters, walk_own_scope
 except (ImportError, ValueError):
     from docstring_parser import DocstringParser
-    from param_utils import get_all_parameters, exclude_self_cls, walk_own_scope
     from inference import AI_DRAFT_MARKER
+    from param_utils import exclude_self_cls, get_all_parameters, walk_own_scope
 
 logger = logging.getLogger(__name__)
 
