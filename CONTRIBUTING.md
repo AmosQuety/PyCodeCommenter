@@ -37,8 +37,9 @@ To work on the bring-your-own-key AI providers, also install their SDKs:
 
 ```bash
 pytest            # the test suite (tests/) and the package's doctests
-black .           # formatting
-flake8            # linting
+ruff format .     # formatting
+ruff check .      # linting
+mypy              # type checking (install the SDKs first: pip install -e ".[dev,ai]")
 ```
 
 The tests never make network calls: AI providers are tested against fake
@@ -63,12 +64,12 @@ python scripts/compare_generation.py /tmp/before . path/to/some/python/files
 2. Write a test that fails without your change, then make it pass.
 3. Keep the change focused; update `README.md`, `docs/` and the
    `[Unreleased]` section of `CHANGELOG.md` if users will notice it.
-4. Make sure `pytest`, `black --check .` and `flake8` pass.
+4. Make sure `pytest`, `ruff format --check .`, `ruff check .` and `mypy` pass.
 5. Open the pull request with a clear description of what changed and why.
 
 ## Code style
 
-- [Black](https://github.com/psf/black) formatting, [flake8](https://flake8.pycqa.org/) linting.
+- [Ruff](https://docs.astral.sh/ruff/) formatting and linting, [mypy](https://mypy-lang.org/) type checking.
 - Google-style docstrings (the style the tool itself writes).
 - Python 3.10+ syntax is fine.
 - The generator only states what the code proves; anything else stays a

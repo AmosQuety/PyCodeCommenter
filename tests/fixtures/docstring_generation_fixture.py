@@ -13,8 +13,8 @@ Usage:
     ).get_patched_code()
 """
 
-from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
 
 
 # ---------------------------------------------------------------------------

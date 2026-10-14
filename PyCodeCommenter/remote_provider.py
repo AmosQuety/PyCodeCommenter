@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
 import time
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from typing import Any, Callable, Dict, Optional
 
 try:
+    from .ai_drafting import draft_from_payload
     from .description_provider import (
         ClassContext,
         ClassDraft,
@@ -41,8 +42,8 @@ try:
         FunctionContext,
         KnownText,
     )
-    from .ai_drafting import draft_from_payload
 except (ImportError, ValueError):
+    from ai_drafting import draft_from_payload
     from description_provider import (
         ClassContext,
         ClassDraft,
@@ -54,7 +55,6 @@ except (ImportError, ValueError):
         FunctionContext,
         KnownText,
     )
-    from ai_drafting import draft_from_payload
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +255,8 @@ class RemoteDescriptionProvider(DescriptionProvider):
                 error = _error_body(e)
                 if error.get("error") != "rate_limited":
                     self._stop(error)
-                    raise self._stopped
+                    assert self._stopped is not None
+                    raise self._stopped from e
                 if attempt == 0:
                     wait = _bounded_wait(e, self.MAX_RATE_LIMIT_WAIT_S)
                     if self._on_wait is not None:
@@ -365,8 +366,7 @@ class RemoteDescriptionProvider(DescriptionProvider):
                 )
             else:
                 logger.warning(
-                    f"Hosted AI backend returned HTTP {e.code} for "
-                    f"{context.name}: {e}"
+                    f"Hosted AI backend returned HTTP {e.code} for {context.name}: {e}"
                 )
             return None
         except Exception as e:
@@ -535,8 +535,8 @@ def _bounded_wait(error: urllib.error.HTTPError, cap: float) -> float:
         float: The requested seconds, clamped to ``[1, cap]``; 1 if the header
         is missing or malformed.
     """
-    headers = error.headers or {}
-    requested = _int_or_none(headers.get("Retry-After")) or 1
+    retry_after = error.headers.get("Retry-After") if error.headers else None
+    requested = _int_or_none(retry_after) or 1
     return max(1, min(requested, cap))
 
 

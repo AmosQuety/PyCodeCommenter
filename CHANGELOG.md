@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Development tooling:** Ruff replaces Black and flake8 for formatting and
+  linting (adding import sorting and bugbear checks), and mypy now
+  type-checks the package in CI. Type errors it found were fixed; behaviour
+  is unchanged.
+
 ## [2.6.1] - 2026-09-29
 
 ### Added

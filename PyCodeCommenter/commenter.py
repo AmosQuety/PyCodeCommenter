@@ -13,37 +13,17 @@ Classes:
 
 import ast
 import inspect
-import re
-import tokenize
 import io
 import logging
+import re
+import tokenize
 from pathlib import Path
-from typing import Union, Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
+
 import libcst as cst
 from libcst.metadata import PositionProvider
 
 try:
-    from .inference import (
-        infer_description,
-        has_name_signal,
-        humanize_identifier,
-        GUESS_MARKER,
-    )
-    from .type_analyzer import TypeAnalyzer
-    from .docstring_parser import DocstringParser
-    from .param_utils import (
-        get_all_parameters,
-        exclude_self_cls,
-        walk_own_scope,
-        walk_skipping_nested_classes,
-    )
-    from .description_provider import (
-        ClassContext,
-        DescriptionProvider,
-        DraftingStopped,
-        FunctionContext,
-        ParameterFact,
-    )
     from .ai_drafting import (
         apply_class_draft,
         apply_draft,
@@ -55,17 +35,25 @@ try:
         unfilled_parts,
     )
     from .class_outline import outline_source
-    from .secret_scan import looks_like_secret
-    from .comment_docs import (
-        CommentDocstring,
-        comment_block_text,
-        leading_comment_block,
-    )
     from .code_facts import (
         describe_bool_return,
         describe_raise_condition,
         raise_sites,
     )
+    from .comment_docs import (
+        CommentDocstring,
+        comment_block_text,
+        leading_comment_block,
+    )
+    from .description_provider import (
+        ClassContext,
+        DescriptionProvider,
+        DraftingStopped,
+        FunctionContext,
+        ParameterFact,
+    )
+    from .doc_styles import render_class, render_function
+    from .docstring_parser import DocstringParser
     from .function_doc import (
         ArgEntry,
         AttributeEntry,
@@ -76,30 +64,22 @@ try:
         RaisesEntry,
         ReturnsEntry,
     )
-    from .doc_styles import render_class, render_function
-    from .run_report import GenerationReport
-except (ImportError, ValueError):
-    from inference import (
-        infer_description,
+    from .inference import (
+        GUESS_MARKER,
         has_name_signal,
         humanize_identifier,
-        GUESS_MARKER,
+        infer_description,
     )
-    from type_analyzer import TypeAnalyzer
-    from docstring_parser import DocstringParser
-    from param_utils import (
-        get_all_parameters,
+    from .param_utils import (
         exclude_self_cls,
+        get_all_parameters,
         walk_own_scope,
         walk_skipping_nested_classes,
     )
-    from description_provider import (
-        ClassContext,
-        DescriptionProvider,
-        DraftingStopped,
-        FunctionContext,
-        ParameterFact,
-    )
+    from .run_report import GenerationReport
+    from .secret_scan import looks_like_secret
+    from .type_analyzer import TypeAnalyzer
+except (ImportError, ValueError):
     from ai_drafting import (
         apply_class_draft,
         apply_draft,
@@ -111,9 +91,17 @@ except (ImportError, ValueError):
         unfilled_parts,
     )
     from class_outline import outline_source
-    from secret_scan import looks_like_secret
-    from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
     from code_facts import describe_bool_return, describe_raise_condition, raise_sites
+    from comment_docs import CommentDocstring, comment_block_text, leading_comment_block
+    from description_provider import (
+        ClassContext,
+        DescriptionProvider,
+        DraftingStopped,
+        FunctionContext,
+        ParameterFact,
+    )
+    from doc_styles import render_class, render_function
+    from docstring_parser import DocstringParser
     from function_doc import (
         ArgEntry,
         AttributeEntry,
@@ -124,11 +112,27 @@ except (ImportError, ValueError):
         RaisesEntry,
         ReturnsEntry,
     )
-    from doc_styles import render_class, render_function
+    from inference import (
+        GUESS_MARKER,
+        has_name_signal,
+        humanize_identifier,
+        infer_description,
+    )
+    from param_utils import (
+        exclude_self_cls,
+        get_all_parameters,
+        walk_own_scope,
+        walk_skipping_nested_classes,
+    )
     from run_report import GenerationReport
+    from secret_scan import looks_like_secret
+    from type_analyzer import TypeAnalyzer
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# The nodes a docstring belongs to: function and class definitions.
+Definition = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]
 
 # One whole string literal: optional prefix, matching quotes, and a body
 # that doesn't itself contain the closing quotes (which would mean implicit
@@ -192,7 +196,9 @@ def _is_carried_forward(text: Optional[str]) -> bool:
     Returns:
         bool: ``True`` for non-empty text without the guess marker.
     """
-    return bool(text) and GUESS_MARKER not in text
+    if not text:
+        return False
+    return GUESS_MARKER not in text
 
 
 def _is_same_sentence(text: str, other: str) -> bool:
@@ -279,11 +285,11 @@ class PyCodeCommenter:
                 ``None`` means no cap.
         """
         self.code = ""
-        self.parsed_code = None
-        self.comments = []
-        self.tokenized_comments = []
+        self.parsed_code: Optional[ast.Module] = None
+        self.comments: List[str] = []
+        self.tokenized_comments: List[Dict[str, Any]] = []
         self.type_analyzer = TypeAnalyzer()
-        self.file_path = None
+        self.file_path: Optional[str] = None
         self._description_provider = description_provider
         self._progress = progress
         self._budget = budget
@@ -341,7 +347,7 @@ class PyCodeCommenter:
             if code_string is None or code_string.strip() == "":
                 logger.warning("No code provided. Proceeding with an empty string.")
                 self.code = ""
-                self.parsed_code = ast.Module(body=[])
+                self.parsed_code = ast.Module(body=[], type_ignores=[])
             else:
                 self.code = self._normalize_newlines(code_string)
                 self.parsed_code = ast.parse(self.code)
@@ -356,7 +362,7 @@ class PyCodeCommenter:
         try:
             self.tokenized_comments = []
             tokens = tokenize.generate_tokens(io.StringIO(self.code).readline)
-            for tok_type, tok_string, start, end, line in tokens:
+            for tok_type, tok_string, start, _end, _line in tokens:
                 if tok_type == tokenize.COMMENT:
                     self.tokenized_comments.append(
                         {"text": tok_string, "line": start[0], "column": start[1]}
@@ -420,7 +426,7 @@ class PyCodeCommenter:
         visitor.visit(self.parsed_code)
         self.report.from_comments = len(self.comment_docstrings)
 
-        for node, doc in visitor.results:
+        for _node, doc in visitor.results:
             self.comments.append(doc)
 
         return self.comments
@@ -431,14 +437,19 @@ class PyCodeCommenter:
         self.comment_docstrings = []
         self.report = GenerationReport(files=1)
 
-    def _outcome(self, node: ast.AST, rendered: str, prefix: str) -> str:
+    def _outcome(
+        self,
+        node: Definition,
+        rendered: str,
+        prefix: str,
+    ) -> str:
         """Say whether a docstring is new, updated or unchanged.
 
         Compared with the one in the source. A docstring taken from a comment
         counts as new: the definition had none.
 
         Args:
-            node (ast.AST): The function or class.
+            node (Definition): The function or class.
             rendered (str): The generated docstring literal, with its prefix.
             prefix (str): The string prefix (``r`` or empty) of the literal.
 
@@ -574,14 +585,14 @@ class PyCodeCommenter:
             logger.error(f"Error generating module docstring: {e}")
             return '"""Error generating docstring."""'
 
-    def _docstring_source(self, node: ast.AST) -> "tuple[Optional[str], str]":
+    def _docstring_source(self, node: Definition) -> "tuple[Optional[str], str]":
         """The author's text for a definition's docstring: its existing
         docstring, or failing that the comment block written directly above
         it (see ``comment_docs``), which is recorded in
         ``comment_docstrings``.
 
         Args:
-            node (ast.AST): A function or class node.
+            node (Definition): A function or class node.
 
         Returns:
             tuple[Optional[str], str]: The text (``None`` if the author wrote
@@ -592,14 +603,17 @@ class PyCodeCommenter:
             return existing
         found = leading_comment_block(self.code.split("\n"), node)
         text = comment_block_text(found[2]) if found else None
-        if text is None:
+        if found is None or text is None:
             return None, ""
         used = CommentDocstring(node.name, found[0], found[1])
         if used not in self.comment_docstrings:
             self.comment_docstrings.append(used)
         return text, ""
 
-    def _existing_docstring(self, node: ast.AST) -> "tuple[Optional[str], str]":
+    def _existing_docstring(
+        self,
+        node: Union[Definition, ast.Module],
+    ) -> "tuple[Optional[str], str]":
         """A node's docstring as written in the source, and its prefix.
 
         ``ast.get_docstring`` returns the string's *value*, with escape
@@ -611,7 +625,8 @@ class PyCodeCommenter:
         meaning escapes.
 
         Args:
-            node (ast.AST): A function, class, or module node.
+            node (Union[Definition, ast.Module]): A function, class, or module
+                node.
 
         Returns:
             tuple[Optional[str], str]: The cleaned docstring text (``None``
@@ -623,7 +638,10 @@ class PyCodeCommenter:
         value = ast.get_docstring(node)
         if value is None:
             return None, ""
-        literal = ast.get_source_segment(self.code, node.body[0].value)
+        first = node.body[0]
+        # ast.get_docstring found one, so the first statement is the string.
+        assert isinstance(first, ast.Expr)
+        literal = ast.get_source_segment(self.code, first.value)
         match = _DOCSTRING_LITERAL_RE.match(literal or "")
         if match is None or '"""' in match.group("body"):
             return value, ""
@@ -1031,7 +1049,9 @@ class PyCodeCommenter:
             (
                 Origin.GUESS
                 if desc == GUESS_MARKER
-                else Origin.FACT if has_name_signal(param.name) else Origin.WEAK
+                else Origin.FACT
+                if has_name_signal(param.name)
+                else Origin.WEAK
             ),
         )
 
@@ -1271,7 +1291,9 @@ class PyCodeCommenter:
             origin = (
                 Origin.GUESS
                 if generated == GUESS_MARKER
-                else Origin.FACT if has_name_signal(attr) else Origin.WEAK
+                else Origin.FACT
+                if has_name_signal(attr)
+                else Origin.WEAK
             )
             entries.append(AttributeEntry(attr, display_type, generated, origin))
         entries.extend(
@@ -1300,7 +1322,7 @@ class PyCodeCommenter:
         if not lines:
             return ""
         base = min(len(line) - len(line.lstrip()) for line in lines)
-        entries = []
+        entries: List[List[str]] = []
         for line in lines:
             indent = len(line) - len(line.lstrip())
             if indent == base or not entries:
@@ -1318,18 +1340,19 @@ class PyCodeCommenter:
         self,
         func_name: str,
         param_name: str,
-        inferred_type: str = None,
-        default_value: str = None,
-        sibling_params: list = None,
+        inferred_type: Optional[str] = None,
+        default_value: Optional[str] = None,
+        sibling_params: Optional[list] = None,
     ) -> str:
         """Retrieve a description for a parameter via rule‑based inference.
 
         Args:
             func_name (str): Name of the function containing the parameter.
             param_name (str): Parameter name.
-            inferred_type (str, optional): Inferred type hint for the parameter.
-            default_value (str, optional): String representation of the default value.
-            sibling_params (list, optional): List of other parameter names in
+            inferred_type (Optional[str]): Inferred type hint for the parameter.
+            default_value (Optional[str]): String representation of the default
+                value.
+            sibling_params (Optional[list]): List of other parameter names in
                 the same function.
 
         Returns:
@@ -1586,6 +1609,7 @@ class PyCodeCommenter:
         if func_node.returns:
             return self.type_analyzer.get_annotation_type(func_node.returns)
 
+        value_nodes: List[Union[ast.Yield, ast.YieldFrom, ast.Return]]
         if self._is_generator(func_node):
             value_nodes = [
                 node
@@ -1655,7 +1679,7 @@ class PyCodeCommenter:
         entries = []
         for exc_name, nodes in raise_sites(func_node).items():
             _, author_desc = by_short_name.pop(exc_name, (None, None))
-            if _is_carried_forward(author_desc):
+            if author_desc is not None and _is_carried_forward(author_desc):
                 part = DocPart(author_desc, Origin.AUTHOR)
             else:
                 condition = describe_raise_condition(func_node, nodes)
@@ -1725,7 +1749,7 @@ class PyCodeCommenter:
         Returns:
             Dict[str, str]: Mapping of variable names to their inferred types.
         """
-        local_types = {}
+        local_types: Dict[str, str] = {}
         for stmt in func_node.body:
             if isinstance(stmt, ast.Assign):
                 for target in stmt.targets:

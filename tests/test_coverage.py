@@ -1,7 +1,7 @@
-import os
 import logging
-import pytest
+import os
 
+import pytest
 
 from PyCodeCommenter.coverage import CoverageAnalyzer
 

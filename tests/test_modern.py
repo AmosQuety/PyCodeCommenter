@@ -1,7 +1,6 @@
-import sys
 import ast
+import sys
 import traceback
-
 
 from PyCodeCommenter.commenter import PyCodeCommenter
 

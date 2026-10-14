@@ -4,20 +4,20 @@ monkeypatched, the same discipline the Gemini client's own tests follow in
 the separate pycodecommenter-ai-backend repo.
 """
 
-import json
 import io
+import json
+import urllib.error
 from email.message import Message
+
+import pytest
 
 from PyCodeCommenter.description_provider import (
     DraftingStopped,
     DraftSlots,
+    FunctionContext,
     KnownText,
+    ParameterFact,
 )
-import urllib.error
-
-import pytest
-
-from PyCodeCommenter.description_provider import FunctionContext, ParameterFact
 from PyCodeCommenter.remote_provider import RemoteDescriptionProvider
 
 

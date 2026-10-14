@@ -11,11 +11,9 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: detect-private-key
-  - repo: https://github.com/psf/black
-    rev: 26.5.1
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
     hooks:
-      - id: black
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.3.0
-    hooks:
-      - id: flake8
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

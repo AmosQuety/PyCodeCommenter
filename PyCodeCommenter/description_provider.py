@@ -237,7 +237,7 @@ class DraftingStopped(Exception):
         self.message = message
 
 
-class DescriptionProvider(ABC):
+class DescriptionProvider(ABC):  # noqa: B024 - every method has a default
     """A source of drafted docstring text.
 
     The generator calls :meth:`draft_docstring` once per function that has

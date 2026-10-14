@@ -1,6 +1,6 @@
 import logging
-import pytest
 
+import pytest
 
 from PyCodeCommenter.commenter import PyCodeCommenter
 from PyCodeCommenter.coverage import CoverageAnalyzer

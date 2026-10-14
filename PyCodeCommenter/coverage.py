@@ -14,11 +14,11 @@ Classes:
 # coverage.py
 
 import ast
-import os
 import logging
-from pathlib import Path
-from typing import Dict, List
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 try:
     from .inference import AI_DRAFT_MARKER, GUESS_MARKER
@@ -243,11 +243,14 @@ class CoverageAnalyzer:
         """
         self.strict = strict
 
-    def _is_documented(self, node: ast.AST) -> bool:
+    def _is_documented(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]
+    ) -> bool:
         """Say whether a function or class counts as documented.
 
         Args:
-            node (ast.AST): A function or class definition.
+            node (Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]): A
+                function or class definition.
 
         Returns:
             bool: ``True`` if it has a non-empty docstring (and, in strict mode,
@@ -293,7 +296,7 @@ class CoverageAnalyzer:
         return coverage
 
     def analyze_directory(
-        self, directory: str, exclude_patterns: List[str] = None
+        self, directory: str, exclude_patterns: Optional[List[str]] = None
     ) -> ProjectCoverage:
         """Analyze all Python files in a directory.
 
@@ -302,7 +305,7 @@ class CoverageAnalyzer:
 
         Args:
             directory (str): Path to the directory.
-            exclude_patterns (List[str]): Patterns to skip in addition to
+            exclude_patterns (Optional[List[str]]): Patterns to skip in addition to
                 ``DEFAULT_COVERAGE_EXCLUDES``.
 
         Returns:

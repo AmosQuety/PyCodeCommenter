@@ -9,9 +9,9 @@ Classes:
     DocstringParser: Main parser class for extracting docstring information
 """
 
-import re
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +265,11 @@ class DocstringParser:
                 descriptions[current] = match.group(4).strip()
                 if match.group(3):
                     types[current] = match.group(3).strip()
-            elif current is not None and indent > entry_indent:
+            elif (
+                current is not None
+                and entry_indent is not None
+                and indent > entry_indent
+            ):
                 descriptions[current] = (
                     f"{descriptions[current]} {line.strip()}".strip()
                 )

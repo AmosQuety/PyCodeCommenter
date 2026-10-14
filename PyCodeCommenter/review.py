@@ -12,7 +12,7 @@ import ast
 import re
 import sys
 from dataclasses import dataclass, replace
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 try:
     from .comment_docs import comment_block_text, leading_comment_block
@@ -123,10 +123,13 @@ def find_review_items(source: str) -> List[ReviewItem]:
         if docstring is None:
             continue
         name = getattr(node, "name", "")
-        literal = node.body[0].value
+        first = node.body[0]
+        # ast.get_docstring found one, so the first statement is the string.
+        assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+        literal = first.value
         style = DocstringParser(docstring).get_info()["style"]
         items += _docstring_items(lines, literal, name, style)
-        if name:
+        if not isinstance(node, ast.Module):
             items += _repeated_comment(lines, node, docstring)
     return sorted(items, key=lambda item: item.line)
 
@@ -154,8 +157,11 @@ def apply_review(source: str, decisions: List[Tuple[ReviewItem, tuple]]) -> str:
         elif action == "edit":
             lines[index] = item.keep_before + _sentence(text) + item.keep_after
         elif action == "fill":
+            # sub() calls the lambda right away, so it sees this loop's text.
             lines[index] = _GUESS_PHRASE.sub(
-                lambda _: _sentence(text), lines[index], count=1
+                lambda _: _sentence(text),  # noqa: B023
+                lines[index],
+                count=1,
             )
         elif action == "remove":
             removals.append(item)
@@ -201,7 +207,8 @@ def _docstring_items(
     """
     items = []
     in_section = False
-    for number in range(literal.lineno, literal.end_lineno + 1):
+    end = literal.end_lineno or literal.lineno
+    for number in range(literal.lineno, end + 1):
         line = lines[number - 1]
         in_section = in_section or bool(_GOOGLE_SECTION.match(line))
         if AI_DRAFT_MARKER in line:
@@ -210,7 +217,7 @@ def _docstring_items(
         elif GUESS_MARKER in line:
             items.append(ReviewItem(TODO, number, number, name, line.strip()))
     return [
-        replace(item, docstring_line=literal.lineno, docstring_end=literal.end_lineno)
+        replace(item, docstring_line=literal.lineno, docstring_end=end)
         for item in items
     ]
 
@@ -264,14 +271,19 @@ def _entry_label(head: str, style: str, in_section: bool):
     return None
 
 
-def _repeated_comment(lines: List[str], node: ast.AST, docstring: str) -> list:
+def _repeated_comment(
+    lines: List[str],
+    node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef],
+    docstring: str,
+) -> list:
     """Find the comment block above a definition that its docstring repeats.
 
     That is the case when the docstring was taken from the comment.
 
     Args:
         lines (List[str]): The file's lines.
-        node (ast.AST): The function or class.
+        node (Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]): The
+            function or class.
         docstring (str): Its docstring text.
 
     Returns:
@@ -279,7 +291,7 @@ def _repeated_comment(lines: List[str], node: ast.AST, docstring: str) -> list:
     """
     found = leading_comment_block(lines, node)
     comment = comment_block_text(found[2]) if found else None
-    if not comment:
+    if found is None or not comment:
         return []
     info = DocstringParser(docstring).get_info()
     written = " ".join(p for p in (info["summary"], info["description"]) if p)

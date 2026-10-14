@@ -260,7 +260,7 @@ class DirectProvider(DescriptionProvider):
             ProviderUnavailable: If the SDK isn't installed and no ``client``
                 was given.
         """
-        self.model = model or PROVIDERS[self.provider_name].default_model
+        self.model: str = model or PROVIDERS[self.provider_name].default_model or ""
         self._client = client if client is not None else self._create_client(api_key)
 
     def draft_docstring(
@@ -465,7 +465,7 @@ class AnthropicProvider(DirectProvider):
         try:
             import anthropic
         except ImportError:
-            raise self._missing_sdk()
+            raise self._missing_sdk() from None
         return anthropic.Anthropic(api_key=api_key)
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
@@ -533,7 +533,7 @@ class OpenAIProvider(DirectProvider):
         try:
             import openai
         except ImportError:
-            raise self._missing_sdk()
+            raise self._missing_sdk() from None
         return openai.OpenAI(api_key=api_key)
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
@@ -624,7 +624,7 @@ class OpenAICompatibleProvider(DirectProvider):
         try:
             import openai
         except ImportError:
-            raise self._missing_sdk()
+            raise self._missing_sdk() from None
         return openai.OpenAI(api_key=api_key, base_url=self._base_url)
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
@@ -700,12 +700,19 @@ class GeminiProvider(DirectProvider):
         try:
             from google import genai
         except ImportError:
-            raise self._missing_sdk()
+            raise self._missing_sdk() from None
         # Unlike the OpenAI and Anthropic SDKs, google-genai doesn't retry
         # transient errors by default; Gemini models are often briefly
         # overloaded (HTTP 503).
-        retry = {"attempts": 3, "http_status_codes": [500, 502, 503, 504]}
-        return genai.Client(api_key=api_key, http_options={"retry_options": retry})
+        return genai.Client(
+            api_key=api_key,
+            http_options={
+                "retry_options": {
+                    "attempts": 3,
+                    "http_status_codes": [500, 502, 503, 504],
+                }
+            },
+        )
 
     def _complete(self, prompt: str, slots: DraftSlots) -> str:
         """Ask for a JSON reply, moving to a fallback model if need be.
@@ -792,6 +799,8 @@ def _retry_after_seconds(error: Exception) -> int:
     """
     headers = getattr(getattr(error, "response", None), "headers", None) or {}
     raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is None:
+        return _DEFAULT_RATE_LIMIT_WAIT_S
     try:
         seconds = int(raw)
     except (TypeError, ValueError):

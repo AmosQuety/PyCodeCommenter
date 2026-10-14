@@ -1,7 +1,7 @@
 import ast
-import pytest
 import logging
 
+import pytest
 
 from PyCodeCommenter import PyCodeCommenter
 
@@ -1184,6 +1184,7 @@ def test_function_generation_failure_preserves_existing_docstring(commenter):
     _generate_function_docstring must fall back to the original docstring,
     not the destructive '\"\"\"Error generating docstring.\"\"\"' placeholder."""
     from unittest.mock import patch
+
     from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
 
     code = '''def foo(x):
@@ -1202,6 +1203,7 @@ def test_function_generation_failure_with_no_existing_docstring_unchanged(commen
     when there was nothing to fall back to, the placeholder is still used,
     same as before."""
     from unittest.mock import patch
+
     from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
 
     code = "def bar(x):\n    return x\n"
@@ -1214,6 +1216,7 @@ def test_function_generation_failure_with_no_existing_docstring_unchanged(commen
 def test_class_generation_failure_preserves_existing_docstring(commenter):
     """Same fix, for _generate_class_docstring."""
     from unittest.mock import patch
+
     from PyCodeCommenter.commenter import PyCodeCommenter as _PCC
 
     code = '''class Foo:

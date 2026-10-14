@@ -20,6 +20,7 @@ try:
     )
     from .direct_providers import (
         PROVIDERS,
+        DirectProvider,
         ProviderUnavailable,
         install_command,
         make_provider,
@@ -33,6 +34,7 @@ except ImportError:
     from description_provider import DescriptionProvider, DraftingStopped, SwitchOnStop
     from direct_providers import (
         PROVIDERS,
+        DirectProvider,
         ProviderUnavailable,
         install_command,
         make_provider,
@@ -240,7 +242,7 @@ def direct_provider(
     model: Optional[str],
     base_url: Optional[str],
     assume_consent: bool = False,
-) -> DescriptionProvider:
+) -> DirectProvider:
     """Build a provider that uses the user's own key.
 
     The SDK is checked first, then consent, then the key, so a missing SDK
@@ -253,7 +255,7 @@ def direct_provider(
         assume_consent (bool): Record consent without asking (CI use).
 
     Returns:
-        DescriptionProvider: The provider.
+        DirectProvider: The provider.
 
     Raises:
         AISetupError: Consent was declined, no key is available, or the

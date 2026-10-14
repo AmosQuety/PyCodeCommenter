@@ -10,20 +10,19 @@ subprocess (faster, and keeps coverage instrumentation working if this
 suite is ever run under `pytest --cov`).
 """
 
-import sys
-import json
 import io as _io
+import json
+import sys
 import urllib.error as _urllib_error
 from email.message import Message as _Message
-
-from PyCodeCommenter.description_provider import (
-    DescriptionProvider,
-    DocstringDraft,
-)
 
 import pytest
 
 from PyCodeCommenter.cli import main
+from PyCodeCommenter.description_provider import (
+    DescriptionProvider,
+    DocstringDraft,
+)
 
 
 def run_cli(args, monkeypatch, capsys):

@@ -2,18 +2,15 @@
 CLI entry point for PyCodeCommenter.
 """
 
-import sys
-import json
 import argparse
-import os
 import difflib
+import json
+import os
 import shutil
+import sys
 from pathlib import Path
+
 from . import __version__
-from .commenter import PyCodeCommenter
-from .validator import DocstringValidator
-from .coverage import STRICT_NOTE, CoverageAnalyzer, shields_badge_dict
-from .config import load_config, ConfigError
 from .ai_setup import (
     AI_PROVIDER_CHOICES,
     AISetupError,
@@ -23,12 +20,16 @@ from .ai_setup import (
     report_ai_outcome,
     status,
 )
-from .draft_limits import DraftBudget
-from .run_report import GenerationReport
-from .progress import Progress
-from .review_cli import run_review
+from .commenter import PyCodeCommenter
+from .config import ConfigError, load_config
+from .coverage import STRICT_NOTE, CoverageAnalyzer, shields_badge_dict
 from .direct_providers import PROVIDERS
+from .draft_limits import DraftBudget
+from .progress import Progress
 from .remote_provider import DEFAULT_BACKEND_URL
+from .review_cli import run_review
+from .run_report import GenerationReport
+from .validator import DocstringValidator
 
 # Directories that are never treated as source when recursively collecting
 # .py files for `generate`/`validate` on a directory target. These are all
@@ -311,9 +312,7 @@ def _generate(args, description_provider, run_report, progress=None, budget=None
                 print(patched_code)
 
         if args.output_dir:
-            print(
-                f"Wrote {written_count}/{len(targets)} file(s) to " f"{args.output_dir}"
-            )
+            print(f"Wrote {written_count}/{len(targets)} file(s) to {args.output_dir}")
             sys.exit(1 if any_failed else 0)
         if args.dry_run:
             if not any_changed:
